@@ -2,6 +2,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from collections import Counter, deque
+pd.set_option('future.no_silent_downcasting', True)
 
 class RobustSignalGenerator:
     """
@@ -60,26 +61,22 @@ class RobustSignalGenerator:
 
         返回：AI 置信度映射到 [-1,1] 的综合得分
         """
-        # 1. 取出模型和它训练时用的列名
-        lgb_model   = model_dict["model"]
-        train_cols  = model_dict["features"]  # 训练时的那份列名列表，比如共 14 列
+        lgb_model = model_dict["model"]
+        train_cols = model_dict["features"]
 
-        # 2. 按照 train_cols 的顺序，逐列从 features 字典里取值，构造 DataFrame
-        #    如果某列在 features 里缺失，就用 0 填补
         row_data = {col: [features.get(col, 0)] for col in train_cols}
         X_df = pd.DataFrame(row_data)
+        # === 这里加一行，强制所有特征为 float 类型，防止 dtype 报错 ===
+        X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
 
-        # 3. 预测“上涨概率”、“下跌概率”，映射到 [-1,1] 并相减
-        proba_up   = lgb_model.predict_proba(X_df)[0][1]
-        proba_down = lgb_model.predict_proba(X_df)[0][0]  # 下跌概率是第 0 列，或 1 - up
-        # 如果你在训时是二分类且 predict_proba 返回 [p_down, p_up]，那么 proba_down = [0][0] 即可。
-        # 也可以直接写 proba_down = 1 - proba_up
-
+        proba_up = lgb_model.predict_proba(X_df)[0][1]
+        proba_down = lgb_model.predict_proba(X_df)[0][0]
         return self._score_from_proba(proba_up) - self._score_from_proba(proba_down)
 
     def get_factor_scores(self, features, period):
         def safe(key, default=0):
-            return features.get(key, default)
+            v = features.get(key, default)
+            return default if v is None else v
 
         return {
             'trend': np.tanh(safe(f'ema_diff_{period}', 0) * 5) + 2 * (safe(f'boll_perc_{period}', 0.5) - 0.5) + safe(f'supertrend_dir_{period}', 0),
@@ -197,6 +194,7 @@ class RobustSignalGenerator:
         atr_4h = features_4h.get('atr_pct_4h', 0)
         adx_4h = features_4h.get('adx_4h', 25)
         funding_4h = features_4h.get('funding_rate_4h', 0)
+        funding_4h = 0 if funding_4h is None else funding_4h  # 新增这一行，保证不是None
         th = self.dynamic_threshold(atr_4h, adx_4h, funding_4h)
 
         # 极端行情过滤
@@ -219,6 +217,8 @@ class RobustSignalGenerator:
                 'signal': 0,
                 'score': fused_score,
                 'position_size': 0.0,
+                'take_profit': None,
+                'stop_loss': None,
                 'details': details
             }
         # 多级仓位（调研建议，非线性映射）
@@ -233,9 +233,23 @@ class RobustSignalGenerator:
             pos_size = 0.1
 
         direction = 1 if fused_score > 0 else -1
+
+        # === 新增：止盈止损（以4h周期close和ATR为例，ATR可放大倍数自调）===
+        price = features_4h.get('close', 0)
+        atr = features_4h.get('atr_pct_4h', 0) * price
+        # 推荐参数可以调：1.5/1.0
+        if direction == 1:
+            take_profit = price + 1.5 * atr
+            stop_loss = price - 1.0 * atr
+        else:
+            take_profit = price - 1.5 * atr
+            stop_loss = price + 1.0 * atr
+
         return {
             'signal': direction,
             'score': fused_score,
             'position_size': pos_size,
+            'take_profit': take_profit,
+            'stop_loss': stop_loss,
             'details': details
         }

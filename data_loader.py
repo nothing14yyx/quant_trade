@@ -40,7 +40,7 @@ class DataLoader:
     _cache_lock = threading.Lock()
 
     # 正则：过滤 1000BONKUSDT / 1000000MOGUSDT…
-    MULTI_PATTERN = re.compile(r"^(?:[1-9]\d*?)[A-Z]+USDT$")
+    # MULTI_PATTERN = re.compile(r"^(?:[1-9]\d*?)[A-Z]+USDT$")
 
     # CoinMetrics 资产映射（如果需要再扩充）
     ASSET_MAP = {
@@ -178,7 +178,7 @@ class DataLoader:
             for t in tickers
             if (
                 t["symbol"].endswith("USDT")
-                and not self.MULTI_PATTERN.match(t["symbol"])
+                # and not self.MULTI_PATTERN.match(t["symbol"])
                 and t["symbol"] not in self.excluded
                 and float(t["quoteVolume"]) > 0
             )
@@ -190,17 +190,36 @@ class DataLoader:
 
     # ───────────────────────────── KLine 同步 ────────────────────────────
     def fetch_klines_raw(self, symbol: str, interval: str,
-                         start: pd.Timestamp, end: pd.Timestamp) -> List[List]:
-        self.kl_rate_limiter.acquire()
-        return self.client.get_klines(
-            symbol=symbol,
-            interval=interval,
-            startTime=int(start.timestamp() * 1000),
-            endTime=int(end.timestamp() * 1000),
-            limit=1000,
-        )
+                         start: pd.Timestamp, end: pd.Timestamp) -> list:
+        """
+        安全获取K线：只有币安返回-1121才raise BinanceAPIException，其它情况只log
+        """
+        self.kl_rate_limiter.acquire()  # 你原有的限速器，继续用
+        try:
+            res = self.client.futures_klines(
+                symbol=symbol,
+                interval=interval,
+                startTime=int(start.timestamp() * 1000),
+                endTime=int(end.timestamp() * 1000),
+                limit=1000,
+            )
+        except Exception as e:
+            logger.warning(f"[{symbol}] K线API请求直接抛异常: {e}")
+            raise
+
+        if isinstance(res, dict):
+            code = res.get("code", -1)
+            msg = res.get("msg", "Binance返回dict")
+            if code == -1121:
+                raise BinanceAPIException(None, code, msg)  # 只排除-1121
+            logger.warning(f"[{symbol}] K线API异常(code={code}): {msg}，但不是-1121，不排除")
+            return []
+        return res
 
     def incremental_update_klines(self, symbol: str, interval: str) -> None:
+        """
+        增量同步K线。只对-1121才加入排除，其它所有异常仅跳出本币本轮，不排除。
+        """
         sql = (
             "SELECT open_time FROM klines "
             "WHERE symbol=:s AND `interval`=:iv "
@@ -212,7 +231,7 @@ class DataLoader:
         start_dt = last["open_time"].iloc[0] if not last.empty else pd.to_datetime(self.since)
         end_dt = pd.Timestamp.utcnow().tz_localize(None)
 
-        rows: List[List] = []
+        rows = []
         cur = start_dt
         while cur < end_dt:
             try:
@@ -221,16 +240,18 @@ class DataLoader:
                     retries=self.retries, backoff=self.backoff
                 )
             except BinanceAPIException as e:
-                if e.code == -1121:  # 无效 symbol
+                if e.code == -1121:  # 只排除code==-1121
                     logger.warning("[%s] K线接口缺失 → 已排除", symbol)
                     self.excluded.append(symbol)
                     return
-                raise
+                logger.warning(f"[{symbol}] K线API异常: {e}，本轮跳过但不排除")
+                return  # 其它异常跳出本币本轮，不排除
+
             if not chunk:
-                break
+                break  # 没有数据就跳出，防止死循环
             rows.extend(chunk)
             cur = pd.to_datetime(chunk[-1][0] + 1, unit="ms")
-            time.sleep(0.25)
+            time.sleep(0.25)  # 你的默认sleep，也可以换成更短/更长
 
         if not rows:
             return
