@@ -17,7 +17,7 @@ data_loader:
   topn: 100             # 获取成交额排名前N的合约
   interval: "4h"       # 主周期K线
   aux_interval: ["1h", "1d"]   # 辅助周期K线
-  start:   # 起始日期
+  start: "2024-05-01" # 起始日期
   end:     # 结束日期
   cache_dir: "data/klines"
   sentiment_cache: "data/sentiment"
@@ -39,14 +39,14 @@ feature_selector:
 
 models:
   1h:
-    up: models/model_1h_up.lgb
-    down: models/model_1h_down.lgb
+    up: models/model_1h_up.pkl
+    down: models/model_1h_down.pkl
   4h:
-    up: models/model_4h_up.lgb
-    down: models/model_4h_down.lgb
+    up: models/model_4h_up.pkl
+    down: models/model_4h_down.pkl
   d1:
-    up: models/model_d1_up.lgb
-    down: models/model_d1_down.lgb
+    up: models/model_d1_up.pkl
+    down: models/model_d1_down.pkl
 
 feature_cols:
   1h:

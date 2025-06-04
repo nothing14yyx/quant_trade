@@ -1,8 +1,10 @@
 import time
 import pandas as pd
+import numpy as np
 from robust_signal_generator import RobustSignalGenerator
 from data_loader import DataLoader
 import yaml
+import json
 from sqlalchemy import create_engine, text
 from datetime import datetime, timezone
 from utils.helper import calc_features_full
@@ -14,7 +16,6 @@ from utils.robust_scaler import (
     load_scaler_params_from_json,
     apply_robust_z_with_params,
 )
-
 
 # === 初始化 ===
 loader = DataLoader(config_path="utils/config.yaml")
@@ -122,6 +123,10 @@ def main_loop(interval_sec: int = 60):
 
     while True:
         loop_start = time.time()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 【关键：每轮信号前，先同步K线到最新！】
+        sync_all_symbols_threaded(loader, symbols, ['1h', '4h', '1d'], max_workers=8)
+
         new_kline_time, has_new_kline = {}, False
         all_results = []
 
@@ -149,8 +154,13 @@ def main_loop(interval_sec: int = 60):
             if df_1h.empty or df_4h.empty or df_1d.empty:
                 continue
 
+            # ====== 新增：只保留最近60根K线 ======
+            df_1h = df_1h.tail(60)
+            df_4h = df_4h.tail(60)
+            df_1d = df_1d.tail(60)
+
             # 4.2 获取最新 time & price
-            last_time = df_1h["close_time"].iloc[-1]
+            last_time = df_1h["open_time"].iloc[-1]
             last_price = df_1h["close"].iloc[-1]
 
             # 4.3 判断是否有新 K 线
@@ -171,6 +181,8 @@ def main_loop(interval_sec: int = 60):
             feat_4h = feats_4h_df.iloc[-1].to_dict()
             feat_d1 = feats_d1_df.iloc[-1].to_dict()
 
+            feat_4h['close'] = df_4h['close'].iloc[-1]
+
             # 4.6 生成信号
             result = signal_generator.generate_signal(feat_1h, feat_4h, feat_d1)
 
@@ -179,53 +191,48 @@ def main_loop(interval_sec: int = 60):
             result["time"] = last_time
             result["price"] = last_price
             result["pos"] = result.get("position_size", 0.0)
-
             all_results.append(result)
-            print(">>> 本轮所有标的生成结果数：", len(all_results))
 
         # 5. 更新 last_kline_time
         last_kline_time.update(new_kline_time)
 
-        # 6. 写入 live_full_data
+        # 6. 写入 live_full_data（只保留主字段）
         if all_results:
             df_full = pd.DataFrame(all_results)
-            # 删除 details 和 position_size 两列，表结构里无此字段
-            if "details" in df_full.columns:
-                df_full = df_full.drop(columns=["details"])
-            if "position_size" in df_full.columns:
-                df_full = df_full.drop(columns=["position_size"])
+            save_cols = [
+                "symbol", "time", "price",
+                "signal", "score", "pos", "take_profit", "stop_loss"
+            ]
+            save_cols = [col for col in save_cols if col in df_full.columns]
+            df_full = df_full[save_cols]
             upsert_df(df_full, "live_full_data", engine, pk_cols=["symbol", "time"])
 
-        # 7. 写入并打印 Top10 强信号
-        if has_new_kline and all_results:
-            df_all = pd.DataFrame(all_results)
-            df_top10 = df_all.sort_values("score", ascending=False).head(10).reset_index(
-                drop=True
-            )
+        # 7. 写入并打印 Top10 强信号（按绝对分数排序）
+        if has_new_kline:
+            if all_results:
+                df_all = pd.DataFrame(all_results)
+                # 按绝对分数排序
+                df_top10 = df_all.reindex(df_all["score"].abs().sort_values(ascending=False).index).head(
+                    10).reset_index(drop=True)
+                print(f"[Top10强信号-{now}]")
+                for r in df_top10.itertuples(index=False):
+                    t_str = r.time.strftime("%Y-%m-%d %H:%M:%S")
+                    direction = "多" if r.signal == 1 else "空"
+                    stop_loss = getattr(r, "stop_loss", None)
+                    take_profit = getattr(r, "take_profit", None)
+                    stop_str = f"止盈={take_profit:.4f}" if take_profit is not None else "止盈=N/A"
+                    loss_str = f"止损={stop_loss:.4f}" if stop_loss is not None else "止损=N/A"
+                    print(f"{r.symbol} @ {t_str}: 方向={direction} "
+                        f"分数={r.score:.4f} 价格={r.price:.4f} pos={r.pos:.2f} "
+                        f"{stop_str} {loss_str}"
+                    )
 
-            for r in df_top10.itertuples(index=False):
-                t_str = r.time.strftime("%Y-%m-%d %H:%M:%S")
-                direction = "多" if r.signal == 1 else "空"
-                # 处理 stop_loss 和 take_profit 可能不存在的情况
-                stop_loss = getattr(r, "stop_loss", None)
-                take_profit = getattr(r, "take_profit", None)
-                stop_str = f"止盈={take_profit:.4f}" if take_profit is not None else "止盈=N/A"
-                loss_str = f"止损={stop_loss:.4f}" if stop_loss is not None else "止损=N/A"
-                print(
-                    f"{r.symbol} @ {t_str}: 方向={direction} "
-                    f"分数={r.score:.4f} 价格={r.price:.4f} pos={r.pos:.2f} "
-                    f"{stop_str} {loss_str}"
-                )
-
-            # 写入 live_top10_signals 前，删除 details 和 position_size
-            if "details" in df_top10.columns:
-                df_top10 = df_top10.drop(columns=["details"])
-            if "position_size" in df_top10.columns:
-                df_top10 = df_top10.drop(columns=["position_size"])
-            upsert_df(df_top10, "live_top10_signals", engine, pk_cols=["symbol", "time"])
+                df_top10 = df_top10[save_cols]
+                upsert_df(df_top10, "live_top10_signals", engine, pk_cols=["symbol", "time"])
+            else:
+                print(f"[{now}] 本轮无强信号（新K线，但没有达到阈值的信号）")
         else:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[Top10强信号-{now}] 本轮无强信号")
+            print(f"[{now}] 本轮无新K线，等待下一根K线更新...")
 
         print(f"本轮用时 {time.time() - loop_start:.2f} 秒")
         time.sleep(interval_sec)
