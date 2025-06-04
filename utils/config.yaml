@@ -1,0 +1,76 @@
+binance:
+  api_key: "WCJdahGXx81TUS5p3matSAazA74LAd21U1b4jw1i3eyGsgPJg6XfYTiOiyTWMxr6"      # 建议用环境变量
+  api_secret: "3OA2FJDRrSy0HB1pizMN5pLHXgVsADKUfUWAqWnKk07G8hgdOgNFx38Av5CDwGLW"
+  proxy:
+    http:  "http://127.0.0.1:7890"
+    https: "http://127.0.0.1:7890"
+
+mysql:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "123456"
+  database: "quant_trading"
+  charset: "utf8mb4"
+
+data_loader:
+  topn: 100             # 获取成交额排名前N的合约
+  interval: "4h"       # 主周期K线
+  aux_interval: ["1h", "1d"]   # 辅助周期K线
+  start:   # 起始日期
+  end:     # 结束日期
+  cache_dir: "data/klines"
+  sentiment_cache: "data/sentiment"
+  rate_limit_sleep: 0.05   # 每次请求后休息 50ms，1s 20 次 ≪ 2400/min
+  excluded_list: ["XMRUSDT"]
+
+feature_engineering:
+  cache_dir: "data/klines"
+  merged_dir: "data/merged"
+  merged_table_path: "data/merged/merged_table.csv"
+  feature_cols_path: "data/merged/feature_cols.txt"
+  topn: 100
+  mode: inference                        # train 或 inference
+  scaler_path: scalers/all_features_scaler.json
+
+feature_selector:
+  target: target_up   # 也可换 target_up
+  top_n: 100             # 每周期保留前 N
+
+models:
+  1h:
+    up: models/model_1h_up.lgb
+    down: models/model_1h_down.lgb
+  4h:
+    up: models/model_4h_up.lgb
+    down: models/model_4h_down.lgb
+  d1:
+    up: models/model_d1_up.lgb
+    down: models/model_d1_down.lgb
+
+feature_cols:
+  1h:
+    - rsi_slope_1h
+    - atr_pct_1h
+    - rsi_1h
+    - kc_perc_1h
+    - vol_roc_1h
+    - funding_rate_delta_1h
+    - bull_streak_1h
+    - rsi_slope_4h
+  4h:
+    - rsi_slope_4h
+    - atr_pct_4h
+    - vol_ma_ratio_4h
+    - bull_streak_4h
+    - bear_streak_4h
+    - funding_rate_delta_4h
+    - vol_roc_4h
+  d1:
+    - bull_streak_d1
+    - atr_pct_d1
+    - bear_streak_d1
+    - funding_rate_d1
+    - vol_ma_ratio_d1
+    - rsi_mul_vol_ma_ratio_d1
+    - ema10_ema50_d1

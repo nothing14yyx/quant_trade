@@ -1,0 +1,327 @@
+# -*- coding: utf-8 -*-
+"""
+DataLoader v2.3-patch1 (External indicators removed)  (2025-06-03)
+==================================================================
+在原版 DataLoader v2.3-patch1 的基础上，去掉所有“外部指标（日线）”相关的方法
+（update_onchain_metrics、update_macro_metrics）及其调用，使同步仅包含情绪、fundingRate、K 线。
+"""
+
+from __future__ import annotations
+import os, time, re, logging, threading, datetime as dt
+from typing import Dict, List, Optional
+
+import yaml, requests, pandas as pd, numpy as np
+from binance.client import Client
+from binance.exceptions import BinanceAPIException
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
+from utils.ratelimiter import RateLimiter  # 你的限速器
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
+def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
+                retry_on: tuple = (requests.exceptions.RequestException,)):
+    """简单指数退避重试包装"""
+    for i in range(retries):
+        try:
+            return fn()
+        except retry_on as exc:
+            logger.warning("Retry %s/%s for %s: %s", i + 1, retries, fn.__qualname__, exc)
+            time.sleep(backoff * (2 ** i))
+    raise RuntimeError(f"Failed after {retries} retries for {fn.__qualname__}")
+
+
+class DataLoader:
+
+    _sentiment_cache: Optional[pd.DataFrame] = None
+    _funding_cache: Dict[str, pd.DataFrame] = {}
+    _cache_lock = threading.Lock()
+
+    # 正则：过滤 1000BONKUSDT / 1000000MOGUSDT…
+    MULTI_PATTERN = re.compile(r"^(?:[1-9]\d*?)[A-Z]+USDT$")
+
+    # CoinMetrics 资产映射（如果需要再扩充）
+    ASSET_MAP = {
+        "BTCUSDT": "btc",
+        "ETHUSDT": "eth",
+    }
+
+    def __init__(self, config_path: str = "utils/config.yaml") -> None:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+
+        # Binance client
+        bin_cfg = cfg.get("binance", {})
+        self.client = Client(
+            api_key=os.getenv("BINANCE_API_KEY", bin_cfg.get("api_key", "")),
+            api_secret=os.getenv("BINANCE_API_SECRET", bin_cfg.get("api_secret", "")),
+        )
+        if bin_cfg.get("proxy"):
+            self.client.session.proxies.update(bin_cfg["proxy"])
+        self.kl_rate_limiter = RateLimiter(max_calls=5, period=1.0)
+
+        # MySQL
+        mysql_cfg = cfg["mysql"]
+        conn_str = (
+            f"mysql+pymysql://{mysql_cfg['user']}:{mysql_cfg['password']}"
+            f"@{mysql_cfg['host']}:{mysql_cfg.get('port',3306)}/{mysql_cfg['database']}"
+            f"?charset={mysql_cfg.get('charset','utf8mb4')}"
+        )
+        self.engine = create_engine(conn_str, pool_recycle=3600)
+
+        # Params
+        dl = cfg.get("data_loader", {})
+        self.topn       = dl.get("topn", 20)
+        self.main_iv    = dl.get("interval", "4h")
+        self.aux_ivs    = dl.get("aux_interval", ["1h"])
+        if isinstance(self.aux_ivs, str):
+            self.aux_ivs = [self.aux_ivs]
+        start_cfg = dl.get("start")
+        if start_cfg in (None, "", "auto-1y"):
+            self.since = (dt.date.today() - dt.timedelta(days=365)).isoformat()
+        else:
+            self.since = str(start_cfg)
+        self.till       = dl.get("end")
+        self.retries    = dl.get("retries", 3)
+        self.backoff    = dl.get("backoff", 1.0)
+        self.excluded   = dl.get("excluded_list", [])
+
+    # ───────────────────────────── FG 指数 ────────────────────────────────
+    SENTIMENT_URL = "https://api.alternative.me/fng/?limit=0&format=json"
+
+    def update_sentiment(self) -> None:
+        rows = _safe_retry(lambda: requests.get(self.SENTIMENT_URL, timeout=10).json(),
+                           retries=self.retries, backoff=self.backoff).get("data", [])
+        if not rows:
+            logger.warning("[sentiment] API empty")
+            return
+        df = pd.DataFrame(rows)
+        df["fg_index"] = df["value"].astype(float) / 100.0
+        df = df[["timestamp", "value", "value_classification", "fg_index"]].astype(
+            {"timestamp": "int", "value": "str", "value_classification": "str"}
+        )
+        sql = (
+            "REPLACE INTO sentiment (timestamp,value,value_classification,fg_index) "
+            "VALUES (:timestamp,:value,:value_classification,:fg_index)"
+        )
+        with self.engine.begin() as conn:
+            conn.execute(text(sql), df.to_dict("records"))
+        logger.info("[sentiment] %s rows", len(df))
+        with self._cache_lock:
+            self._sentiment_cache = None
+
+    def _sentiment_df(self) -> pd.DataFrame:
+        with self._cache_lock:
+            if self._sentiment_cache is None:
+                q = "SELECT timestamp AS open_time, fg_index FROM sentiment ORDER BY timestamp"
+                self._sentiment_cache = pd.read_sql(q, self.engine, parse_dates=["open_time"])
+            return self._sentiment_cache
+
+    # ───────────────────────────── Funding Rate ──────────────────────────
+    FUNDING_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
+
+    def update_funding_rate(self, symbol: str) -> None:
+        start_dt = pd.to_datetime(self.since)
+        last = pd.read_sql(
+            text("SELECT fundingTime FROM funding_rate WHERE symbol=:s ORDER BY fundingTime DESC LIMIT 1"),
+            self.engine, params={"s": symbol}, parse_dates=["fundingTime"]
+        )
+        if not last.empty:
+            start_dt = last["fundingTime"].iloc[0]
+        start_ms = int(start_dt.timestamp() * 1000)
+        end_ms = int(pd.Timestamp.utcnow().timestamp() * 1000)
+        rows: List[dict] = []
+        while start_ms < end_ms:
+            params = {"symbol": symbol, "startTime": start_ms, "endTime": end_ms, "limit": 1000}
+            payload = _safe_retry(
+                lambda: requests.get(self.FUNDING_URL, params=params, timeout=10).json(),
+                retries=self.retries, backoff=self.backoff
+            )
+            if not payload:
+                break
+            rows.extend(payload)
+            start_ms = payload[-1]["fundingTime"] + 1
+            time.sleep(0.2)
+        if not rows:
+            return
+        df = pd.DataFrame(rows)[["fundingTime", "fundingRate"]]
+        df.insert(0, "symbol", symbol)
+        df["fundingTime"] = pd.to_datetime(df["fundingTime"], unit="ms")
+        df["fundingRate"] = pd.to_numeric(df["fundingRate"], errors="coerce")
+        with self.engine.begin() as conn:
+            conn.execute(text(
+                "REPLACE INTO funding_rate (symbol, fundingTime, fundingRate) "
+                "VALUES (:symbol,:fundingTime,:fundingRate)"
+            ), df.to_dict("records"))
+        logger.info("[funding] %s ↦ %s", symbol, len(df))
+
+    def _funding_df(self, symbol: str) -> pd.DataFrame:
+        with self._cache_lock:
+            if symbol not in self._funding_cache:
+                q = (
+                    "SELECT fundingTime AS open_time, fundingRate AS funding_rate "
+                    "FROM funding_rate WHERE symbol=:sym ORDER BY fundingTime"
+                )
+                self._funding_cache[symbol] = pd.read_sql(text(q), self.engine,
+                                                          params={"sym": symbol},
+                                                          parse_dates=["open_time"])
+            return self._funding_cache[symbol]
+
+    # ───────────────────────────── 选币逻辑 ───────────────────────────────
+    def get_top_symbols(self, n: Optional[int] = None) -> List[str]:
+        tickers = _safe_retry(lambda: self.client.futures_ticker(),
+                              retries=self.retries, backoff=self.backoff)
+        cands = [
+            (t["symbol"], float(t["quoteVolume"]))
+            for t in tickers
+            if (
+                t["symbol"].endswith("USDT")
+                and not self.MULTI_PATTERN.match(t["symbol"])
+                and t["symbol"] not in self.excluded
+                and float(t["quoteVolume"]) > 0
+            )
+        ]
+        cands.sort(key=lambda x: x[1], reverse=True)
+        top = [s for s, _ in cands[: n or self.topn]]
+        logger.info("[symbol-select] %s", top)
+        return top
+
+    # ───────────────────────────── KLine 同步 ────────────────────────────
+    def fetch_klines_raw(self, symbol: str, interval: str,
+                         start: pd.Timestamp, end: pd.Timestamp) -> List[List]:
+        self.kl_rate_limiter.acquire()
+        return self.client.get_klines(
+            symbol=symbol,
+            interval=interval,
+            startTime=int(start.timestamp() * 1000),
+            endTime=int(end.timestamp() * 1000),
+            limit=1000,
+        )
+
+    def incremental_update_klines(self, symbol: str, interval: str) -> None:
+        sql = (
+            "SELECT open_time FROM klines "
+            "WHERE symbol=:s AND `interval`=:iv "
+            "ORDER BY open_time DESC LIMIT 1"
+        )
+        last = pd.read_sql(text(sql), self.engine,
+                           params={"s": symbol, "iv": interval},
+                           parse_dates=["open_time"])
+        start_dt = last["open_time"].iloc[0] if not last.empty else pd.to_datetime(self.since)
+        end_dt = pd.Timestamp.utcnow().tz_localize(None)
+
+        rows: List[List] = []
+        cur = start_dt
+        while cur < end_dt:
+            try:
+                chunk = _safe_retry(
+                    lambda: self.fetch_klines_raw(symbol, interval, cur, end_dt),
+                    retries=self.retries, backoff=self.backoff
+                )
+            except BinanceAPIException as e:
+                if e.code == -1121:  # 无效 symbol
+                    logger.warning("[%s] K线接口缺失 → 已排除", symbol)
+                    self.excluded.append(symbol)
+                    return
+                raise
+            if not chunk:
+                break
+            rows.extend(chunk)
+            cur = pd.to_datetime(chunk[-1][0] + 1, unit="ms")
+            time.sleep(0.25)
+
+        if not rows:
+            return
+
+        cols = [
+            "open_time", "open", "high", "low", "close", "volume",
+            "close_time", "quote_asset_volume", "num_trades",
+            "taker_buy_base", "taker_buy_quote", "ignore",
+        ]
+        df = pd.DataFrame(rows, columns=cols)
+        df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
+        df["close_time"] = pd.to_datetime(df["close_time"], unit="ms")
+        flt_cols = [c for c in cols if c not in ("open_time", "close_time", "num_trades", "ignore")]
+        df[flt_cols] = df[flt_cols].apply(pd.to_numeric, errors="coerce")
+        df["num_trades"] = pd.to_numeric(df["num_trades"], errors="coerce")
+        df.insert(0, "symbol", symbol)
+        df.insert(1, "interval", interval)
+
+        # Merge FG 指数
+        df = pd.merge_asof(
+            df.sort_values("open_time"),
+            self._sentiment_df(),
+            on="open_time",
+            direction="backward"
+        )
+
+        # Merge funding rate
+        fund = self._funding_df(symbol)
+        if not fund.empty:
+            df = pd.merge_asof(
+                df.sort_values("open_time"),
+                fund.sort_values("open_time"),
+                on="open_time",
+                direction="backward"
+            )
+        else:
+            df["funding_rate"] = None
+
+        # 构建待写入列列表
+        cols_final = [
+            "symbol", "interval", "open_time", "close_time",
+            "open", "high", "low", "close", "volume",
+            "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
+            "fg_index", "funding_rate",
+        ]
+
+        # NaN → None
+        df = df[cols_final].replace({np.nan: None})
+
+        # 关键字列名加反引号
+        sql_cols = ",".join(f"`{c}`" for c in cols_final)
+        sql_vals = ",".join(f":{c}" for c in cols_final)
+        sql = f"REPLACE INTO klines ({sql_cols}) VALUES ({sql_vals})"
+        with self.engine.begin() as conn:
+            conn.execute(text(sql), df.to_dict("records"))
+        logger.info("[%s-%s] 写入 %s 行", symbol, interval, len(df))
+
+    # ───────────────────────────── orchestration ───────────────────────────
+    def sync_all(self, max_workers: int = 8) -> None:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # 1. 更新 FG 指数
+        self.update_sentiment()
+
+        # 2. 更新 funding rate（并发）
+        symbols = self.get_top_symbols()
+        logger.info("[sync] funding … (%s)", len(symbols))
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = [ex.submit(self.update_funding_rate, sym) for sym in symbols]
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception:
+                    pass
+
+        # 3. 更新 K 线（并发）
+        intervals = [self.main_iv] + self.aux_ivs + ["1d"]
+        logger.info("[sync] klines … (%s × %s)", len(symbols), intervals)
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = [
+                ex.submit(self.incremental_update_klines, sym, iv)
+                for sym in symbols for iv in intervals
+            ]
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception as e:
+                    logger.exception("[klines] worker err: %s", e)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    dl = DataLoader()
+    dl.sync_all(max_workers=8)
