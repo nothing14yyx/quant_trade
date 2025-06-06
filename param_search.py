@@ -14,6 +14,7 @@ from backtester import (
     MODEL_PATHS,
     load_config,
     connect_mysql,
+)
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
     """利用历史特征与未来收益率计算各因子IC"""
