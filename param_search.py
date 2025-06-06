@@ -6,14 +6,16 @@ from sqlalchemy import create_engine
 from sklearn.model_selection import ParameterGrid
 
 from robust_signal_generator import RobustSignalGenerator
-from backtester import (
 
+from backtester import (
     FEATURE_COLS_1H,
     FEATURE_COLS_4H,
     FEATURE_COLS_D1,
     MODEL_PATHS,
     load_config,
     connect_mysql,
+)
+
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
     """利用历史特征与未来收益率计算各因子IC"""
