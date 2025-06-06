@@ -317,7 +317,7 @@ def main_loop(interval_sec: int = 60):
 
         elapsed = time.time() - loop_start
         wait = max(0, interval_sec - elapsed)
-        print(f"本轮完成，已写入信号，等待{wait:.1f}秒，时间：{now.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"本轮完成，已写入信号，时间：{now.strftime('%Y-%m-%d %H:%M:%S')}")
 
         time.sleep(wait)
 
