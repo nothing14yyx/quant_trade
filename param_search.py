@@ -19,9 +19,6 @@ from backtester import (
 )
 
 
-
-
-
 def convert_model_paths(paths: dict) -> dict:
     """将 backtester.MODEL_PATHS 的 (period, direction) 映射展开为嵌套字典"""
     nested = {}
@@ -31,8 +28,6 @@ def convert_model_paths(paths: dict) -> dict:
 
     FEATURE_COLS_1H, FEATURE_COLS_4H, FEATURE_COLS_D1,
     MODEL_PATHS, load_config, connect_mysql
-
-
 
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
