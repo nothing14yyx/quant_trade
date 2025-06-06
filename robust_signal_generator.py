@@ -226,7 +226,8 @@ class RobustSignalGenerator:
             - features_d1: dict，当前 1d 周期下的全部特征键值对（已标准化）
             - all_scores_list: list，可选，当前所有币种的 fused_score 列表，用于极端行情保护
             - raw_features_1h: dict，可选，未标准化的 1h 特征
-            - raw_features_4h: dict，可选，未标准化的 4h 特征
+            - raw_features_4h: dict，可选，未标准化的 4h 特征；其中 atr_pct_4h 为实际
+              比例（如 0.05 表示 5%），在计算止盈止损时会优先使用
             - raw_features_d1: dict，可选，未标准化的 1d 特征
         输出：
             一个 dict，包含 'signal'、'score'、'position_size'、'take_profit'、'stop_loss' 和 'details'
