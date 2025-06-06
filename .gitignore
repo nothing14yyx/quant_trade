@@ -1,0 +1,6 @@
+# Python 缓存和临时文件
+*.pyc
+__pycache__/
+dbn_trading_auto/
+.vscode/
+.idea/
