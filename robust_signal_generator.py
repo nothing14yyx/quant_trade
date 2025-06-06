@@ -349,7 +349,11 @@ class RobustSignalGenerator:
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
-        atr_abs = features_4h.get('atr_pct_4h', 0) * price
+        if raw_features_4h is not None and 'atr_pct_4h' in raw_features_4h:
+            atr_pct_4h = raw_features_4h['atr_pct_4h']
+        else:
+            atr_pct_4h = features_4h.get('atr_pct_4h', 0)
+        atr_abs = atr_pct_4h * price
         direction = int(np.sign(fused_score)) if fused_score != 0 else 1
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, direction)
 
