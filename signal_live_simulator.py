@@ -12,7 +12,7 @@ from utils.helper import calc_features_raw
 from utils.robust_scaler import load_scaler_params_from_json, apply_robust_z_with_params
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
-from utils.feature_health import health_check
+from utils.feature_health import apply_health_check_df
 # ———————— 程序开头：全局初始化 ————————
 
 # 1. 加载配置（config.yaml）并创建数据库引擎
@@ -218,13 +218,13 @@ def main_loop(interval_sec: int = 60):
             scaled_4h = apply_robust_z_with_params(last_raw_4h, SCALER_PARAMS)
             scaled_d1 = apply_robust_z_with_params(last_raw_d1, SCALER_PARAMS)
 
-            feat_1h = scaled_1h.iloc[0].to_dict()
-            feat_4h = scaled_4h.iloc[0].to_dict()
-            feat_d1 = scaled_d1.iloc[0].to_dict()
+            proc_1h = apply_health_check_df(scaled_1h, abs_clip={"atr_pct_1h": (0, 0.2)})
+            proc_4h = apply_health_check_df(scaled_4h, abs_clip={"atr_pct_4h": (0, 0.2)})
+            proc_d1 = apply_health_check_df(scaled_d1, abs_clip={"atr_pct_d1": (0, 0.2)})
 
-            feat_1h = health_check(feat_1h, abs_clip={"atr_pct_1h": (0, 0.2)})
-            feat_4h = health_check(feat_4h, abs_clip={"atr_pct_4h": (0, 0.2)})
-            feat_d1 = health_check(feat_d1, abs_clip={"atr_pct_d1": (0, 0.2)})
+            feat_1h = proc_1h.iloc[0].to_dict()
+            feat_4h = proc_4h.iloc[0].to_dict()
+            feat_d1 = proc_d1.iloc[0].to_dict()
 
             price_4h = df_4h["close"].iloc[-1]
             feat_1h["close"] = df_1h["close"].iloc[-1]
