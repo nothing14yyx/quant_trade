@@ -47,6 +47,7 @@ def run_single_backtest(df: pd.DataFrame, base_weights: dict, history_window: in
     """在给定参数下执行一次回测并返回总体绩效"""
     sg = RobustSignalGenerator(
 
+        model_paths=convert_model_paths(MODEL_PATHS),
         feature_cols_1h=FEATURE_COLS_1H,
         feature_cols_4h=FEATURE_COLS_4H,
         feature_cols_d1=FEATURE_COLS_D1,
