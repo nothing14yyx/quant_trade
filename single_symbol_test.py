@@ -57,9 +57,9 @@ feature_cols_d1 = config["feature_cols"]["d1"]
 
 signal_generator = RobustSignalGenerator(
     model_paths,
-    feature_cols_1h,
-    feature_cols_4h,
-    feature_cols_d1
+    feature_cols_1h=feature_cols_1h,
+    feature_cols_4h=feature_cols_4h,
+    feature_cols_d1=feature_cols_d1,
 )
 
 # =================== 6. 循环取最后 N 根 K 线，生成信号 ===================

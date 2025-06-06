@@ -53,9 +53,9 @@ model_paths = {
 }
 signal_generator = RobustSignalGenerator(
     model_paths,
-    feature_cols_1h,
-    feature_cols_4h,
-    feature_cols_d1
+    feature_cols_1h=feature_cols_1h,
+    feature_cols_4h=feature_cols_4h,
+    feature_cols_d1=feature_cols_d1,
 )
 
 # 5. 加载训练时保存的通用缩放参数（1%/99% 分位）

@@ -15,21 +15,6 @@ from backtester import (
     load_config,
     connect_mysql,
 
-    convert_model_paths,
-)
-
-
-def convert_model_paths(paths: dict) -> dict:
-    """将 backtester.MODEL_PATHS 的 (period, direction) 映射展开为嵌套字典"""
-    nested = {}
-    for (period, direction), p in paths.items():
-        nested.setdefault(period, {})[direction] = p
-    return nested
-
-    FEATURE_COLS_1H, FEATURE_COLS_4H, FEATURE_COLS_D1,
-    MODEL_PATHS, load_config, connect_mysql
-
-
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
     """利用历史特征与未来收益率计算各因子IC"""
     df = df.sort_values('open_time').reset_index(drop=True)
@@ -59,14 +44,6 @@ def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
 def run_single_backtest(df: pd.DataFrame, base_weights: dict, history_window: int, th_params: dict):
     """在给定参数下执行一次回测并返回总体绩效"""
     sg = RobustSignalGenerator(
-
-        convert_model_paths(MODEL_PATHS),
-
-
-        convert_model_paths(MODEL_PATHS),
-
-        MODEL_PATHS,
-
 
         feature_cols_1h=FEATURE_COLS_1H,
         feature_cols_4h=FEATURE_COLS_4H,
