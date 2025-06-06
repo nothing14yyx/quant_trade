@@ -39,14 +39,9 @@ class DataLoader:
     _funding_cache: Dict[str, pd.DataFrame] = {}
     _cache_lock = threading.Lock()
 
-    # 正则：过滤 1000BONKUSDT / 1000000MOGUSDT…
-    # MULTI_PATTERN = re.compile(r"^(?:[1-9]\d*?)[A-Z]+USDT$")
 
-    # CoinMetrics 资产映射（如果需要再扩充）
-    ASSET_MAP = {
-        "BTCUSDT": "btc",
-        "ETHUSDT": "eth",
-    }
+
+
 
     def __init__(self, config_path: str = "utils/config.yaml") -> None:
         with open(config_path, "r", encoding="utf-8") as f:
@@ -168,6 +163,65 @@ class DataLoader:
                                                           params={"sym": symbol},
                                                           parse_dates=["open_time"])
             return self._funding_cache[symbol]
+
+    # ───────────────────────────── Open Interest ─────────────────────────
+    def update_open_interest(self, symbol: str) -> None:
+        """同步单个合约的当前持仓量"""
+        payload = _safe_retry(
+            lambda: self.client.futures_open_interest(symbol=symbol),
+            retries=self.retries,
+            backoff=self.backoff,
+        )
+        if not payload:
+            return
+        ts = pd.to_datetime(payload.get("time", int(time.time() * 1000)), unit="ms")
+        oi = float(payload.get("openInterest", 0))
+        df = pd.DataFrame([
+            {"symbol": symbol, "timestamp": ts, "open_interest": oi}
+        ])
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "REPLACE INTO open_interest (symbol, timestamp, open_interest) "
+                    "VALUES (:symbol,:timestamp,:open_interest)"
+                ),
+                df.to_dict("records"),
+            )
+        logger.info("[open_interest] %s", symbol)
+
+    # ───────────────────────────── Depth Snapshot ─────────────────────────
+    def update_depth(self, symbol: str, limit: int = 200) -> None:
+        """同步单个合约的深度快照"""
+        payload = _safe_retry(
+            lambda: self.client.futures_depth(symbol=symbol, limit=limit),
+            retries=self.retries,
+            backoff=self.backoff,
+        )
+        if not payload:
+            return
+        ts = pd.to_datetime(payload.get("E", int(time.time() * 1000)), unit="ms")
+        rows = []
+        for price, qty in payload.get("bids", []):
+            rows.append({
+                "symbol": symbol, "timestamp": ts, "side": "bid",
+                "price": float(price), "quantity": float(qty)
+            })
+        for price, qty in payload.get("asks", []):
+            rows.append({
+                "symbol": symbol, "timestamp": ts, "side": "ask",
+                "price": float(price), "quantity": float(qty)
+            })
+        if not rows:
+            return
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "REPLACE INTO depth_snapshot (symbol, timestamp, side, price, quantity) "
+                    "VALUES (:symbol,:timestamp,:side,:price,:quantity)"
+                ),
+                rows,
+            )
+        logger.info("[depth] %s %s", symbol, len(rows))
 
     # ───────────────────────────── 选币逻辑 ───────────────────────────────
     def get_top_symbols(self, n: Optional[int] = None) -> List[str]:
@@ -353,11 +407,15 @@ class DataLoader:
         # 1. 更新 FG 指数
         self.update_sentiment()
 
-        # 2. 更新 funding rate（并发）
+        # 2. 更新 funding rate / open interest / depth （并发）
         symbols = self.get_top_symbols()
-        logger.info("[sync] funding … (%s)", len(symbols))
+        logger.info("[sync] funding/openInterest/depth … (%s)", len(symbols))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = [ex.submit(self.update_funding_rate, sym) for sym in symbols]
+            futures = []
+            for sym in symbols:
+                futures.append(ex.submit(self.update_funding_rate, sym))
+                futures.append(ex.submit(self.update_open_interest, sym))
+                futures.append(ex.submit(self.update_depth, sym))
             for f in as_completed(futures):
                 try:
                     f.result()
