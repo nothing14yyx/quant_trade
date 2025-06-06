@@ -26,7 +26,7 @@ def convert_model_paths(paths: dict) -> dict:
 
     FEATURE_COLS_1H, FEATURE_COLS_4H, FEATURE_COLS_D1,
     MODEL_PATHS, load_config, connect_mysql
-)
+
 
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
