@@ -251,23 +251,21 @@ class RobustSignalGenerator:
             (fs['4h']['trend'] < 0 and fs['4h']['momentum'] < 0 and fs['4h']['volatility'] < 0 and score_4h < 0)
         )
 
-        # ===== 6. 以 1h 为主 + 保留多周期共振强化 =====
-        # 三周期完全一致
+        # ===== 6. 多周期共振：使用 consensus_check =====
+        consensus_dir = self.consensus_check(score_1h, score_4h, score_d1)
         consensus_all = (
-            np.sign(score_1h) == np.sign(score_4h) == np.sign(score_d1)
-            and score_1h != 0
+            consensus_dir != 0 and np.sign(score_1h) == np.sign(score_4h) == np.sign(score_d1)
         )
-        # 仅 1h 与 4h 同向
         consensus_14 = (
-            np.sign(score_1h) == np.sign(score_4h)
-            and score_1h != 0
+            consensus_dir != 0 and np.sign(score_1h) == np.sign(score_4h) and not consensus_all
         )
 
         if consensus_all:
-            fused_score = 0.8 * score_1h + 0.2 * score_4h
-            fused_score *= 1.15
+            fused_score = 0.7 * score_1h + 0.2 * score_4h + 0.1 * score_d1
+            if strong_confirm:
+                fused_score *= 1.15
         elif consensus_14:
-            fused_score = 0.8 * score_1h + 0.2 * score_4h
+            fused_score = 0.75 * score_1h + 0.25 * score_4h
             if strong_confirm:
                 fused_score *= 1.10
         else:
@@ -336,17 +334,11 @@ class RobustSignalGenerator:
         else:
             pos_size = 0.1
 
-        # ===== 13. 止盈止损计算 =====
+        # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
-        TAKE_PROFIT_PCT = 0.015
-        STOP_LOSS_PCT = 0.01
-
-        if fused_score > 0:
-            take_profit = price * (1 + TAKE_PROFIT_PCT)
-            stop_loss   = price * (1 - STOP_LOSS_PCT)
-        else:
-            take_profit = price * (1 - TAKE_PROFIT_PCT)
-            stop_loss   = price * (1 + STOP_LOSS_PCT)
+        atr_abs = features_4h.get('atr_pct_4h', 0) * price
+        direction = int(np.sign(fused_score)) if fused_score != 0 else 1
+        take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, direction)
 
         # ===== 14. 最终返回 =====
         direction = int(np.sign(fused_score))  # 1 表示做多，-1 表示做空
