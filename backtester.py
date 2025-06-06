@@ -49,14 +49,22 @@ FEATURE_COLS_D1 = [
     'funding_rate_delta_d1',  # 日线资金费率变化
 ]
 
+# 预训练模型路径
 MODEL_PATHS = {
-    ('1h', 'up'):   'models/model_1h_up.lgb',
-    ('1h', 'down'): 'models/model_1h_down.lgb',
-    ('4h', 'up'):   'models/model_4h_up.lgb',
-    ('4h', 'down'): 'models/model_4h_down.lgb',
-    ('d1', 'up'):   'models/model_d1_up.lgb',
-    ('d1', 'down'): 'models/model_d1_down.lgb',
+    ('1h', 'up'):   'models/model_1h_up.pkl',
+    ('1h', 'down'): 'models/model_1h_down.pkl',
+    ('4h', 'up'):   'models/model_4h_up.pkl',
+    ('4h', 'down'): 'models/model_4h_down.pkl',
+    ('d1', 'up'):   'models/model_d1_up.pkl',
+    ('d1', 'down'): 'models/model_d1_down.pkl',
 }
+
+# 将上面的 (period, direction) 键值对转换为嵌套字典
+def convert_model_paths(paths: dict) -> dict:
+    nested = {}
+    for (period, direction), p in paths.items():
+        nested.setdefault(period, {})[direction] = p
+    return nested
 
 # =========== 数据库&配置 ===========
 def load_config(path='utils/config.yaml'):
@@ -78,10 +86,10 @@ def run_backtest():
     # 按币种分组
     all_symbols = df['symbol'].unique().tolist()
     sg = RobustSignalGenerator(
-        MODEL_PATHS,
+        model_paths=convert_model_paths(MODEL_PATHS),
         feature_cols_1h=FEATURE_COLS_1H,
         feature_cols_4h=FEATURE_COLS_4H,
-        feature_cols_d1=FEATURE_COLS_D1
+        feature_cols_d1=FEATURE_COLS_D1,
     )
 
     results = []
