@@ -58,6 +58,13 @@ MODEL_PATHS = {
     ('d1', 'down'): 'models/model_d1_down.lgb',
 }
 
+# 将上面的 (period, direction) 键值对转换为嵌套字典
+def convert_model_paths(paths: dict) -> dict:
+    nested = {}
+    for (period, direction), p in paths.items():
+        nested.setdefault(period, {})[direction] = p
+    return nested
+
 # =========== 数据库&配置 ===========
 def load_config(path='utils/config.yaml'):
     with open(path, 'r', encoding='utf-8') as f:
@@ -78,7 +85,7 @@ def run_backtest():
     # 按币种分组
     all_symbols = df['symbol'].unique().tolist()
     sg = RobustSignalGenerator(
-        MODEL_PATHS,
+        convert_model_paths(MODEL_PATHS),
         feature_cols_1h=FEATURE_COLS_1H,
         feature_cols_4h=FEATURE_COLS_4H,
         feature_cols_d1=FEATURE_COLS_D1
