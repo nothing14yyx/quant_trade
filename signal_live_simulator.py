@@ -194,7 +194,7 @@ def main_loop(interval_sec: int = 60):
 
         all_full_results: list[dict] = []
         all_fused_scores: list[float] = []
-        feat_dicts: Dict[str, tuple[dict, dict, dict, float]] = {}
+        feat_dicts: Dict[str, tuple[dict, dict, dict, float, dict]] = {}
 
         # 6. 先计算融合分数
         for sym in symbols:
@@ -222,6 +222,10 @@ def main_loop(interval_sec: int = 60):
             feat_4h = scaled_4h.iloc[0].to_dict()
             feat_d1 = scaled_d1.iloc[0].to_dict()
 
+            raw_feat_1h = last_raw_1h.iloc[0].to_dict()
+            raw_feat_4h = last_raw_4h.iloc[0].to_dict()
+            raw_feat_d1 = last_raw_d1.iloc[0].to_dict()
+
             feat_1h = health_check(feat_1h, abs_clip={"atr_pct_1h": (0, 0.2)})
             feat_4h = health_check(feat_4h, abs_clip={"atr_pct_4h": (0, 0.2)})
             feat_d1 = health_check(feat_d1, abs_clip={"atr_pct_d1": (0, 0.2)})
@@ -231,18 +235,29 @@ def main_loop(interval_sec: int = 60):
             feat_4h["price"] = price_4h
             feat_d1["close"] = df_d1["close"].iloc[-1]
 
-            result = signal_generator.generate_signal(feat_1h, feat_4h, feat_d1)
+            result = signal_generator.generate_signal(
+                feat_1h,
+                feat_4h,
+                feat_d1,
+                raw_features_1h=raw_feat_1h,
+                raw_features_4h=raw_feat_4h,
+                raw_features_d1=raw_feat_d1,
+            )
             fused_score = result["score"]
             all_fused_scores.append(fused_score)
-            feat_dicts[sym] = (feat_1h, feat_4h, feat_d1, price_4h)
+            feat_dicts[sym] = (feat_1h, feat_4h, feat_d1, price_4h, raw_feat_1h)
 
         # 7. 计算最终信号
-        for sym, (feat_1h, feat_4h, feat_d1, price_4h) in feat_dicts.items():
+        for sym, (feat_1h, feat_4h, feat_d1, price_4h, raw_feat_1h) in feat_dicts.items():
             df_1h = feat_data[sym]["1h"]
             kline_close_time = df_1h["close_time"].iloc[-1] if "close_time" in df_1h.columns else None
 
             result = signal_generator.generate_signal(
-                feat_1h, feat_4h, feat_d1, all_scores_list=all_fused_scores
+                feat_1h,
+                feat_4h,
+                feat_d1,
+                all_scores_list=all_fused_scores,
+                raw_features_1h=raw_feat_1h,
             )
             record = {
                 "symbol": sym,

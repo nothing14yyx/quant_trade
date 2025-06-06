@@ -209,13 +209,25 @@ class RobustSignalGenerator:
                 return direction
         return 0
 
-    def generate_signal(self, features_1h, features_4h, features_d1, all_scores_list=None):
+    def generate_signal(
+        self,
+        features_1h,
+        features_4h,
+        features_d1,
+        all_scores_list=None,
+        raw_features_1h=None,
+        raw_features_4h=None,
+        raw_features_d1=None,
+    ):
         """
         输入：
-            - features_1h: dict，当前 1h 周期下的全部特征键值对
-            - features_4h: dict，当前 4h 周期下的全部特征键值对
-            - features_d1: dict，当前 1d 周期下的全部特征键值对
+            - features_1h: dict，当前 1h 周期下的全部特征键值对（已标准化）
+            - features_4h: dict，当前 4h 周期下的全部特征键值对（已标准化）
+            - features_d1: dict，当前 1d 周期下的全部特征键值对（已标准化）
             - all_scores_list: list，可选，当前所有币种的 fused_score 列表，用于极端行情保护
+            - raw_features_1h: dict，可选，未标准化的 1h 特征
+            - raw_features_4h: dict，可选，未标准化的 4h 特征
+            - raw_features_d1: dict，可选，未标准化的 1d 特征
         输出：
             一个 dict，包含 'signal'、'score'、'position_size'、'take_profit'、'stop_loss' 和 'details'
         """
@@ -308,9 +320,10 @@ class RobustSignalGenerator:
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
-        atr_1h = features_1h.get('atr_pct_1h', 0)
-        adx_1h = features_1h.get('adx_1h', 0)
-        funding_1h = features_1h.get('funding_rate_1h', 0) or 0
+        raw_f1h = raw_features_1h or features_1h
+        atr_1h = raw_f1h.get('atr_pct_1h', features_1h.get('atr_pct_1h', 0))
+        adx_1h = raw_f1h.get('adx_1h', features_1h.get('adx_1h', 0))
+        funding_1h = raw_f1h.get('funding_rate_1h', features_1h.get('funding_rate_1h', 0)) or 0
         th = self.dynamic_threshold(atr_1h, adx_1h, funding_1h)
 
         if abs(fused_score) < th:
