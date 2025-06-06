@@ -39,14 +39,9 @@ class DataLoader:
     _funding_cache: Dict[str, pd.DataFrame] = {}
     _cache_lock = threading.Lock()
 
-    # 正则：过滤 1000BONKUSDT / 1000000MOGUSDT…
-    # MULTI_PATTERN = re.compile(r"^(?:[1-9]\d*?)[A-Z]+USDT$")
 
-    # CoinMetrics 资产映射（如果需要再扩充）
-    ASSET_MAP = {
-        "BTCUSDT": "btc",
-        "ETHUSDT": "eth",
-    }
+
+
 
     def __init__(self, config_path: str = "utils/config.yaml") -> None:
         with open(config_path, "r", encoding="utf-8") as f:
