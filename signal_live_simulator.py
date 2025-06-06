@@ -12,7 +12,7 @@ from utils.helper import calc_features_raw
 from utils.robust_scaler import load_scaler_params_from_json, apply_robust_z_with_params
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
-from utils.feature_health import apply_health_check_df
+from utils.feature_health import apply_health_check_df,health_check
 # ———————— 程序开头：全局初始化 ————————
 
 # 1. 加载配置（config.yaml）并创建数据库引擎
