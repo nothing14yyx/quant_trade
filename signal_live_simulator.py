@@ -1,42 +1,77 @@
 import time
-import pandas as pd
-import numpy as np
-from robust_signal_generator import RobustSignalGenerator
-from data_loader import DataLoader
-import yaml
-import json
-from sqlalchemy import create_engine, text
 from datetime import datetime, timezone
-from utils.helper import calc_features_full
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-# 导入 Robust-z 工具
-from utils.robust_scaler import (
-    load_scaler_params_from_json,
-    apply_robust_z_with_params,
-)
+import pandas as pd
+import yaml
+from sqlalchemy import create_engine
 
-# === 初始化 ===
-loader = DataLoader(config_path="utils/config.yaml")
-with open('utils/config.yaml', 'r', encoding='utf-8') as f:
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from utils.helper import calc_features_raw
+from utils.robust_scaler import load_scaler_params_from_json, apply_robust_z_with_params
+from data_loader import DataLoader
+from robust_signal_generator import RobustSignalGenerator
+from utils.feature_health import health_check
+# ———————— 程序开头：全局初始化 ————————
+
+# 1. 加载配置（config.yaml）并创建数据库引擎
+with open("utils/config.yaml", "r", encoding="utf-8") as f:
     cfg = yaml.safe_load(f)
-mysql_cfg = cfg['mysql']
+
+mysql_cfg = cfg["mysql"]
 engine = create_engine(
-    f"mysql+pymysql://{mysql_cfg['user']}:{mysql_cfg['password']}@"
-    f"{mysql_cfg['host']}:{mysql_cfg.get('port', 3306)}/{mysql_cfg['database']}?"
+    f"mysql+pymysql://{mysql_cfg['user']}:{mysql_cfg['password']}"
+    f"@{mysql_cfg['host']}:{mysql_cfg.get('port', 3306)}/{mysql_cfg['database']}?"
     f"charset={mysql_cfg.get('charset', 'utf8mb4')}"
 )
 
-# —— 预加载 Robust-z 参数 JSON ——#
-SCALER_PATH = Path(cfg['feature_engineering']['scaler_path'])
+# 2. 实例化 DataLoader（用于同步行情）
+loader = DataLoader(config_path="utils/config.yaml")
+
+# 3. 读取 feature_cols.txt，为 RobustSignalGenerator 构造时保留旧特征列表
+with open("data/merged/feature_cols.txt", "r", encoding="utf-8") as f:
+    all_cols = [line.strip() for line in f if line.strip()]
+feature_cols_1h = [c for c in all_cols if c.endswith("_1h")]
+feature_cols_4h = [c for c in all_cols if c.endswith("_4h")]
+feature_cols_d1 = [c for c in all_cols if c.endswith("_d1")]
+
+# 4. 初始化 RobustSignalGenerator（使用模型路径与旧特征列表）
+model_paths = {
+    "1h": {
+        "up": cfg["models"]["1h"]["up"],
+        "down": cfg["models"]["1h"]["down"]
+    },
+    "4h": {
+        "up": cfg["models"]["4h"]["up"],
+        "down": cfg["models"]["4h"]["down"]
+    },
+    "d1": {
+        "up": cfg["models"]["d1"]["up"],
+        "down": cfg["models"]["d1"]["down"]
+    },
+}
+signal_generator = RobustSignalGenerator(
+    model_paths,
+    feature_cols_1h,
+    feature_cols_4h,
+    feature_cols_d1
+)
+
+# 5. 加载训练时保存的通用缩放参数（1%/99% 分位）
+SCALER_PATH = Path(cfg["feature_engineering"]["scaler_path"])
 if not SCALER_PATH.is_file():
     raise FileNotFoundError(f"未找到 scaler 参数文件：{SCALER_PATH}")
 SCALER_PARAMS = load_scaler_params_from_json(str(SCALER_PATH))
 
+# 6. 获取 TopN 标的列表
+symbols = loader.get_top_symbols()
 
-def sync_all_symbols_threaded(loader, symbols, intervals, max_workers=8):
-    """并发地为多个标的、多个周期执行增量更新 K 线。"""
+
+def sync_all_symbols_threaded(loader: DataLoader, symbols: list[str], intervals: list[str], max_workers: int = 8):
+    """
+    并发增量更新 K 线：对每个 symbol 和 interval 同时调用 incremental_update_klines。
+    """
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(loader.incremental_update_klines, sym, intv): (sym, intv)
@@ -48,7 +83,6 @@ def sync_all_symbols_threaded(loader, symbols, intervals, max_workers=8):
                 future.result()
             except Exception as e:
                 print(f"[线程同步异常] {sym}-{intv}: {e}")
-
 
 def upsert_df(df, table_name, engine, pk_cols):
     """将 DataFrame 的数据写入 MySQL（有主键冲突则更新）。"""
@@ -75,169 +109,194 @@ def upsert_df(df, table_name, engine, pk_cols):
         cursor.close()
         conn.close()
 
-
-def calc_latest_features(df: pd.DataFrame, period: str) -> dict | None:
-    """
-    提取 DataFrame df 中对应周期的最新特征，并做 Robust-z 标准化后返回字典。
-    如果数据不足 60 行、或最后一行有 NaN，就返回 None。
-    """
-    if len(df) < 60:
-        return None
-    tail_df = df.tail(60)
-    feats = calc_features_full(tail_df, period=period)
-    if feats is None or feats.empty or feats.iloc[-1].isnull().any():
-        return None
-
-    # —— 将最后一行原始特征转成单行 DataFrame，再做 Robust-z ——#
-    raw_series = feats.iloc[-1]
-    single_df = raw_series.to_frame().T  # 1×N DataFrame
-    scaled_df = apply_robust_z_with_params(single_df, SCALER_PARAMS)
-    return scaled_df.iloc[0].to_dict()
-
-
 def main_loop(interval_sec: int = 60):
-    # 1. 获取所有同时存在 1h/4h/1d 数据的标的列表
-    symbols = loader.get_top_symbols()
-    last_sentiment_date, last_kline_time = None, {}
-
-    # 2. 读取 feature_cols.txt，初始化 RobustSignalGenerator
-    with open("data/merged/feature_cols.txt", "r", encoding="utf-8") as f:
-        all_cols = [line.strip() for line in f if line.strip()]
-    feature_cols_1h = [c for c in all_cols if c.endswith("_1h")]
-    feature_cols_4h = [c for c in all_cols if c.endswith("_4h")]
-    feature_cols_d1 = [c for c in all_cols if c.endswith("_d1")]
-
-    model_paths = {
-        "1h": {"up": "models/model_1h_up.pkl", "down": "models/model_1h_down.pkl"},
-        "4h": {"up": "models/model_4h_up.pkl", "down": "models/model_4h_down.pkl"},
-        "d1": {"up": "models/model_d1_up.pkl", "down": "models/model_d1_down.pkl"},
-    }
-    signal_generator = RobustSignalGenerator(
-        model_paths, feature_cols_1h, feature_cols_4h, feature_cols_d1
-    )
-
-    # 3. SQL 模板：从 klines 表里拉数据
-    sql_template = text(
-        "SELECT * FROM klines WHERE symbol=:symbol AND `interval`=:interval ORDER BY open_time"
-    )
+    last_1h_kline_time = None
 
     while True:
         loop_start = time.time()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # 【关键：每轮信号前，先同步K线到最新！】
-        sync_all_symbols_threaded(loader, symbols, ['1h', '4h', '1d'], max_workers=8)
+        now = datetime.now(timezone.utc)
 
-        new_kline_time, has_new_kline = {}, False
-        all_results = []
+        # 1. 动态获取数据库里拥有 >=60 条1h K线的币种
+        df_symbols_ok = pd.read_sql("""
+            SELECT symbol FROM klines
+            WHERE `interval`='1h'
+            GROUP BY symbol
+            HAVING COUNT(*) >= 60
+        """, engine)
+        symbols = df_symbols_ok["symbol"].tolist()
 
-        # 4. 遍历所有标的
+        if not symbols:
+            print("数据库没有任何币的1h K线（或都不足60条），等待...")
+            time.sleep(interval_sec)
+            continue
+
+        # 2. 多线程同步K线
+        sync_all_symbols_threaded(loader, symbols, ["1h", "4h", "1d"], max_workers=8)
+
+        placeholders = ",".join(f"'{s}'" for s in symbols)
+
+        # 3. 查询每个币种最新的1h K线 close_time
+        sql = f"""
+            SELECT symbol, MAX(close_time) AS close_time
+            FROM klines
+            WHERE symbol IN ({placeholders}) AND `interval`='1h'
+              AND close_time < '{now.strftime('%Y-%m-%d %H:%M:%S')}'
+            GROUP BY symbol
+        """
+        df_last_1h = pd.read_sql(sql, engine, parse_dates=["close_time"])
+
+        # 有币没有最新K线就跳过
+        missing = set(symbols) - set(df_last_1h["symbol"].tolist())
+        if missing:
+            print("这些币没有有效1h线，将自动跳过:", missing)
+            symbols = [s for s in symbols if s in df_last_1h["symbol"].tolist()]
+        if not symbols:
+            print("本轮全部币都不可用，等待...")
+            time.sleep(interval_sec)
+            continue
+
+        min_last_time = df_last_1h["close_time"].min()
+        max_last_time = df_last_1h["close_time"].max()
+        if min_last_time != max_last_time:
+            print(f"有币种1h尚未收盘, min={min_last_time}, max={max_last_time}，等待...")
+            time.sleep(interval_sec)
+            continue
+
+        if last_1h_kline_time == min_last_time:
+            print(f"无新1h K线，等待... {min_last_time}")
+            time.sleep(interval_sec)
+            continue
+
+        last_1h_kline_time = min_last_time
+
+        # 4. 拉特征
+        sql_feat = f"""
+            SELECT symbol, `interval`, open_time, close_time, open, close, high, low, volume, fg_index, funding_rate
+            FROM klines
+            WHERE symbol IN ({placeholders})
+              AND `interval` IN ('1h','4h','1d')
+            ORDER BY symbol, `interval`, open_time
+        """
+        df_all = pd.read_sql(sql_feat, engine, parse_dates=["open_time", "close_time"])
+
+        # 5. 按symbol+周期分组，数据不足60条的自动跳过
+        from typing import Dict, Optional
+        feat_data: Dict[str, Dict[str, Optional[pd.DataFrame]]] = {
+            sym: {} for sym in symbols
+        }
         for sym in symbols:
-            # 4.1 拉取 1h/4h/1d K 线
-            df_1h = pd.read_sql(
-                sql_template,
-                engine,
-                params={"symbol": sym, "interval": "1h"},
-                parse_dates=["open_time", "close_time"],
-            )
-            df_4h = pd.read_sql(
-                sql_template,
-                engine,
-                params={"symbol": sym, "interval": "4h"},
-                parse_dates=["open_time", "close_time"],
-            )
-            df_1d = pd.read_sql(
-                sql_template,
-                engine,
-                params={"symbol": sym, "interval": "1d"},
-                parse_dates=["open_time", "close_time"],
-            )
-            if df_1h.empty or df_4h.empty or df_1d.empty:
+            for iv in ("1h", "4h", "1d"):
+                df_si = df_all[(df_all["symbol"] == sym) & (df_all["interval"] == iv)]
+                if len(df_si) < 60:
+                    feat_data[sym][iv] = None
+                else:
+                    feat_data[sym][iv] = df_si.iloc[-60:].reset_index(drop=True)
+
+        all_full_results: list[dict] = []
+        all_fused_scores: list[float] = []
+        feat_dicts: Dict[str, tuple[dict, dict, dict, float]] = {}
+
+        # 6. 先计算融合分数
+        for sym in symbols:
+            df_1h = feat_data[sym].get("1h")
+            df_4h = feat_data[sym].get("4h")
+            df_d1 = feat_data[sym].get("1d")
+            if df_1h is None or df_4h is None or df_d1 is None:
                 continue
 
-            # ====== 新增：只保留最近60根K线 ======
-            df_1h = df_1h.tail(60)
-            df_4h = df_4h.tail(60)
-            df_1d = df_1d.tail(60)
-
-            # 4.2 获取最新 time & price
-            last_time = df_1h["open_time"].iloc[-1]
-            last_price = df_1h["close"].iloc[-1]
-
-            # 4.3 判断是否有新 K 线
-            prev_time = last_kline_time.get(sym)
-            if prev_time is None or last_time > prev_time:
-                has_new_kline = True
-            new_kline_time[sym] = last_time
-
-            # 4.4 计算整张特征表
-            feats_1h_df = calc_features_full(df_1h, "1h")
-            feats_4h_df = calc_features_full(df_4h, "4h")
-            feats_d1_df = calc_features_full(df_1d, "d1")
-            if feats_1h_df.empty or feats_4h_df.empty or feats_d1_df.empty:
+            raw_1h = calc_features_raw(df_1h, "1h")
+            raw_4h = calc_features_raw(df_4h, "4h")
+            raw_d1 = calc_features_raw(df_d1, "d1")
+            if raw_1h.empty or raw_4h.empty or raw_d1.empty:
                 continue
 
-            # 4.5 取最后一行特征字典
-            feat_1h = feats_1h_df.iloc[-1].to_dict()
-            feat_4h = feats_4h_df.iloc[-1].to_dict()
-            feat_d1 = feats_d1_df.iloc[-1].to_dict()
+            last_raw_1h = raw_1h.iloc[[-1]]
+            last_raw_4h = raw_4h.iloc[[-1]]
+            last_raw_d1 = raw_d1.iloc[[-1]]
 
-            feat_4h['close'] = df_4h['close'].iloc[-1]
+            scaled_1h = apply_robust_z_with_params(last_raw_1h, SCALER_PARAMS)
+            scaled_4h = apply_robust_z_with_params(last_raw_4h, SCALER_PARAMS)
+            scaled_d1 = apply_robust_z_with_params(last_raw_d1, SCALER_PARAMS)
 
-            # 4.6 生成信号
+            feat_1h = scaled_1h.iloc[0].to_dict()
+            feat_4h = scaled_4h.iloc[0].to_dict()
+            feat_d1 = scaled_d1.iloc[0].to_dict()
+
+            feat_1h = health_check(feat_1h, abs_clip={"atr_pct_1h": (0, 0.2)})
+            feat_4h = health_check(feat_4h, abs_clip={"atr_pct_4h": (0, 0.2)})
+            feat_d1 = health_check(feat_d1, abs_clip={"atr_pct_d1": (0, 0.2)})
+
+            price_4h = df_4h["close"].iloc[-1]
+            feat_1h["close"] = df_1h["close"].iloc[-1]
+            feat_4h["price"] = price_4h
+            feat_d1["close"] = df_d1["close"].iloc[-1]
+
             result = signal_generator.generate_signal(feat_1h, feat_4h, feat_d1)
+            fused_score = result["score"]
+            all_fused_scores.append(fused_score)
+            feat_dicts[sym] = (feat_1h, feat_4h, feat_d1, price_4h)
 
-            # 4.7 补充 symbol、time、price、pos
-            result["symbol"] = sym
-            result["time"] = last_time
-            result["price"] = last_price
-            result["pos"] = result.get("position_size", 0.0)
-            all_results.append(result)
+        # 7. 计算最终信号
+        for sym, (feat_1h, feat_4h, feat_d1, price_4h) in feat_dicts.items():
+            df_1h = feat_data[sym]["1h"]
+            kline_close_time = df_1h["close_time"].iloc[-1] if "close_time" in df_1h.columns else None
 
-        # 5. 更新 last_kline_time
-        last_kline_time.update(new_kline_time)
+            result = signal_generator.generate_signal(
+                feat_1h, feat_4h, feat_d1, all_scores_list=all_fused_scores
+            )
+            record = {
+                "symbol": sym,
+                "time": kline_close_time,
+                "price": feat_1h.get("close"),
+                "signal": result["signal"],
+                "score": result["score"],
+                "pos": result.get("position_size", 0.0),
+                "take_profit": result.get("take_profit"),
+                "stop_loss": result.get("stop_loss"),
+            }
+            all_full_results.append(record)
 
-        # 6. 写入 live_full_data（只保留主字段）
-        if all_results:
-            df_full = pd.DataFrame(all_results)
-            save_cols = [
-                "symbol", "time", "price",
-                "signal", "score", "pos", "take_profit", "stop_loss"
-            ]
-            save_cols = [col for col in save_cols if col in df_full.columns]
-            df_full = df_full[save_cols]
-            upsert_df(df_full, "live_full_data", engine, pk_cols=["symbol", "time"])
+        # 8. 批量写入
+        if all_full_results:
+            df_full = pd.DataFrame(all_full_results)
 
-        # 7. 写入并打印 Top10 强信号（按绝对分数排序）
-        if has_new_kline:
-            if all_results:
-                df_all = pd.DataFrame(all_results)
-                # 按绝对分数排序
-                df_top10 = df_all.reindex(df_all["score"].abs().sort_values(ascending=False).index).head(
-                    10).reset_index(drop=True)
-                print(f"[Top10强信号-{now}]")
-                for r in df_top10.itertuples(index=False):
-                    t_str = r.time.strftime("%Y-%m-%d %H:%M:%S")
-                    direction = "多" if r.signal == 1 else "空"
-                    stop_loss = getattr(r, "stop_loss", None)
-                    take_profit = getattr(r, "take_profit", None)
-                    stop_str = f"止盈={take_profit:.4f}" if take_profit is not None else "止盈=N/A"
-                    loss_str = f"止损={stop_loss:.4f}" if stop_loss is not None else "止损=N/A"
-                    print(f"{r.symbol} @ {t_str}: 方向={direction} "
-                        f"分数={r.score:.4f} 价格={r.price:.4f} pos={r.pos:.2f} "
-                        f"{stop_str} {loss_str}"
-                    )
+            # —— 8.1 用 append 模式追加写入 live_full_data，保留历史所有条目 ——
+            df_full.to_sql(
+                "live_full_data",
+                engine,
+                index=False,
+                if_exists="append",
+            )
 
-                df_top10 = df_top10[save_cols]
-                upsert_df(df_top10, "live_top10_signals", engine, pk_cols=["symbol", "time"])
-            else:
-                print(f"[{now}] 本轮无强信号（新K线，但没有达到阈值的信号）")
-        else:
-            print(f"[{now}] 本轮无新K线，等待下一根K线更新...")
+            df_all_results = pd.DataFrame(all_full_results)
+            # ——— 确保 score 为浮点数，否则 abs() 失效 ———
+            df_all_results["score"] = pd.to_numeric(df_all_results["score"], errors="coerce")
+            df_all_results["abs_score"] = df_all_results["score"].abs()
 
-        print(f"本轮用时 {time.time() - loop_start:.2f} 秒")
-        time.sleep(interval_sec)
+            df_top10 = (
+                df_all_results
+                .sort_values("abs_score", ascending=False)
+                .head(10)
+                .drop(columns=["abs_score"])
+            )
 
+            # —— 8.2 追加写入 live_top10_signals（append 模式） ——
+            print("===== 本轮 top10（按 |score| 排序） =====")
+            print(df_top10[["symbol", "time", "score"]].to_string(index=False))
+            print("=====================================")
 
+            df_top10.to_sql(
+                "live_top10_signals",
+                engine,
+                index=False,
+                if_exists="append"
+            )
+
+        elapsed = time.time() - loop_start
+        wait = max(0, interval_sec - elapsed)
+        print(f"本轮完成，已写入信号，等待{wait:.1f}秒，时间：{now}")
+
+        time.sleep(wait)
 
 if __name__ == "__main__":
     main_loop(interval_sec=60)

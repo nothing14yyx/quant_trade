@@ -30,12 +30,12 @@ class RobustSignalGenerator:
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         self.base_weights = {
-            'ai': 0.42,
-            'trend': 0.14,
-            'momentum': 0.12,
-            'volatility': 0.08,
-            'volume': 0.13,
-            'sentiment': 0.06,
+            'ai': 0.2,
+            'trend': 0.2,
+            'momentum': 0.2,
+            'volatility': 0.2,
+            'volume': 0.1,
+            'sentiment': 0.05,
             'funding': 0.05
         }
 
@@ -52,6 +52,24 @@ class RobustSignalGenerator:
     def _score_from_proba(p):
         # 概率[0,1]映射到[-1,1]
         return 2 * p - 1
+
+    def compute_tp_sl(self, price, atr, direction, tp_mult=1.5, sl_mult=1.0):
+        """
+        计算止盈止损价格
+        :param price: 当前价格
+        :param atr:   ATR绝对值（如4h的ATR*close）
+        :param direction: 1=多头，-1=空头
+        :param tp_mult: 止盈倍数
+        :param sl_mult: 止损倍数
+        :return: (take_profit, stop_loss)
+        """
+        if direction == 1:
+            take_profit = price + tp_mult * atr
+            stop_loss   = price - sl_mult * atr
+        else:
+            take_profit = price - tp_mult * atr
+            stop_loss   = price + sl_mult * atr
+        return take_profit, stop_loss
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
     def get_ai_score(self, features, model_dict):
@@ -73,17 +91,60 @@ class RobustSignalGenerator:
         proba_down = lgb_model.predict_proba(X_df)[0][0]
         return self._score_from_proba(proba_up) - self._score_from_proba(proba_down)
 
-    def get_factor_scores(self, features, period):
-        def safe(key, default=0):
+    # robust_signal_generator.py
+
+    def get_factor_scores(self, features: dict, period: str) -> dict:
+        """
+        输入：
+          - features: 单周期特征字典（如 {'ema_diff_1h': 0.12, 'boll_perc_1h': 0.45, ...}）
+          - period:   "1h" / "4h" / "d1"
+        输出：一个 dict，包含6个子因子得分。
+        """
+
+        def safe(key: str, default=0):
+            """如果指定 key 不存在或 value 为 None，就返回 default，否则返回实际值。"""
             v = features.get(key, default)
             return default if v is None else v
 
         return {
-            'trend': np.tanh(safe(f'ema_diff_{period}', 0) * 5) + 2 * (safe(f'boll_perc_{period}', 0.5) - 0.5) + safe(f'supertrend_dir_{period}', 0),
-            'momentum': (safe(f'rsi_{period}', 50) - 50) / 50 + safe(f'willr_{period}', -50) / 50 + np.tanh(safe(f'macd_hist_{period}', 0) * 5),
+            # —— 趋势 因子 ——
+            # 1) ema_diff     → ema_diff_{period}
+            # 2) boll_perc    → (close - lower_bb) / (upper_bb - lower_bb)
+            # 3) supertrend   → supertrend_dir_{period}
+            'trend': (
+                    np.tanh(safe(f'ema_diff_{period}', 0) * 5)
+                    + 2 * (safe(f'boll_perc_{period}', 0.5) - 0.5)
+                    + safe(f'supertrend_dir_{period}', 0)
+            ),
+
+            # —— 动量 因子 ——
+            # 1) rsi          → rsi_{period}
+            # 2) willr        → willr_{period}
+            # 3) macd_hist    → macd_hist_{period}
+            'momentum': (
+                    (safe(f'rsi_{period}', 50) - 50) / 50
+                    + safe(f'willr_{period}', -50) / 50
+                    + np.tanh(safe(f'macd_hist_{period}', 0) * 5)
+            ),
+
+            # —— 波动 因子 ——
+            # 1) atr_pct      → atr_pct_{period}（% 带入 tanh 拉伸）
             'volatility': np.tanh(safe(f'atr_pct_{period}', 0) * 8),
-            'volume': np.tanh(safe(f'vol_ma_ratio_{period}', 0)) + np.tanh(safe(f'obv_delta_{period}', 0) / 1e5),
+
+            # —— 成交量 因子 ——
+            # 1) vol_ma_ratio → vol_ma_ratio_{period}
+            # 2) obv_delta    → obv_delta_{period}
+            'volume': (
+                    np.tanh(safe(f'vol_ma_ratio_{period}', 0))
+                    + np.tanh(safe(f'obv_delta_{period}', 0) / 1e5)
+            ),
+
+            # —— 情绪 因子 ——
+            # 固定用日线情绪：fg_index_d1
             'sentiment': (safe('fg_index_d1', 50) - 50) / 50,
+
+            # —— 资金费率 因子 ——
+            # funding_rate_{period}
             'funding': np.tanh(safe(f'funding_rate_{period}', 0) * 100),
         }
 
@@ -150,68 +211,110 @@ class RobustSignalGenerator:
 
     def generate_signal(self, features_1h, features_4h, features_d1, all_scores_list=None):
         """
-        输入：三个周期特征 dict，all_scores_list: 当前所有币种的分数（用于极端行情过滤）
-        输出：signal, score, position_size, details
+        输入：
+            - features_1h: dict，当前 1h 周期下的全部特征键值对
+            - features_4h: dict，当前 4h 周期下的全部特征键值对
+            - features_d1: dict，当前 1d 周期下的全部特征键值对
+            - all_scores_list: list，可选，当前所有币种的 fused_score 列表，用于极端行情保护
+        输出：
+            一个 dict，包含 'signal'、'score'、'position_size'、'take_profit'、'stop_loss' 和 'details'
         """
-        # >>>>> 修改点：把 get_ai_score 的调用全部改为只传 model_dict，不再传 feature_cols_xx
+
+        # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores = {
-            '1h': self.get_ai_score(features_1h, self.models['1h']['up'])   -
+            '1h': self.get_ai_score(features_1h, self.models['1h']['up']) -
                    self.get_ai_score(features_1h, self.models['1h']['down']),
-            '4h': self.get_ai_score(features_4h, self.models['4h']['up'])   -
+            '4h': self.get_ai_score(features_4h, self.models['4h']['up']) -
                    self.get_ai_score(features_4h, self.models['4h']['down']),
-            'd1': self.get_ai_score(features_d1, self.models['d1']['up'])   -
+            'd1': self.get_ai_score(features_d1, self.models['d1']['up']) -
                    self.get_ai_score(features_d1, self.models['d1']['down'])
         }
 
+        # ===== 2. 计算多因子部分的分数 =====
         fs = {
             '1h': self.get_factor_scores(features_1h, '1h'),
             '4h': self.get_factor_scores(features_4h, '4h'),
             'd1': self.get_factor_scores(features_d1, 'd1')
         }
+
+        # ===== 3. 动态权重更新 =====
         weights = self.dynamic_weight_update()
+
+        # ===== 4. 合并 AI 与多因子分数，得到各周期总分 =====
         score_1h = self.combine_score(ai_scores['1h'], fs['1h'], weights)
         score_4h = self.combine_score(ai_scores['4h'], fs['4h'], weights)
         score_d1 = self.combine_score(ai_scores['d1'], fs['d1'], weights)
 
-        # 多指标一致性门控（调研增强）
+        # ===== 5. 判断 4h 强确认条件 =====
         strong_confirm = (
             (fs['4h']['trend'] > 0 and fs['4h']['momentum'] > 0 and fs['4h']['volatility'] > 0 and score_4h > 0) or
             (fs['4h']['trend'] < 0 and fs['4h']['momentum'] < 0 and fs['4h']['volatility'] < 0 and score_4h < 0)
         )
-        consensus_dir = self.consensus_check(score_1h, score_4h, score_d1)
-        if consensus_dir != 0:
-            # 共振方向强时主用4h分数
-            fused_score = score_4h
-            if strong_confirm:
-                fused_score *= 1.15  # 强信号加权
-        else:
-            fused_score = 0.5 * score_4h  # 分歧时弱化
 
-        # 分数历史入队，给动态分位阈值用
+        # ===== 6. 以 1h 为主 + 保留多周期共振强化 =====
+        # 三周期完全一致
+        consensus_all = (
+            np.sign(score_1h) == np.sign(score_4h) == np.sign(score_d1)
+            and score_1h != 0
+        )
+        # 仅 1h 与 4h 同向
+        consensus_14 = (
+            np.sign(score_1h) == np.sign(score_4h)
+            and score_1h != 0
+        )
+
+        if consensus_all:
+            fused_score = 0.8 * score_1h + 0.2 * score_4h
+            fused_score *= 1.15
+        elif consensus_14:
+            fused_score = 0.8 * score_1h + 0.2 * score_4h
+            if strong_confirm:
+                fused_score *= 1.10
+        else:
+            fused_score = score_1h
+
+        # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
+        if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
+            return {
+                'signal': 0,
+                'score': float('nan'),
+                'position_size': 0.0,
+                'take_profit': None,
+                'stop_loss': None,
+                'details': {
+                    'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
+                    'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
+                    'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
+                    'strong_confirm': strong_confirm,
+                    'consensus_14': consensus_14, 'consensus_all': consensus_all,
+                    'note': 'fused_score was NaN'
+                }
+            }
+
+        # ===== 8. 把 fused_score 入历史，用于动态阈值计算 =====
         self.history_scores.append(fused_score)
 
-        # 阈值
-        atr_4h = features_4h.get('atr_pct_4h', 0)
-        adx_4h = features_4h.get('adx_4h', 25)
-        funding_4h = features_4h.get('funding_rate_4h', 0)
-        funding_4h = 0 if funding_4h is None else funding_4h  # 新增这一行，保证不是None
-        th = self.dynamic_threshold(atr_4h, adx_4h, funding_4h)
-
-        # 极端行情过滤
+        # ===== 9. 极端行情保护 =====
         if all_scores_list is not None:
             crowding_dir = self.crowding_protection(np.sign(all_scores_list))
-            if crowding_dir != 0 and np.sign(fused_score) == crowding_dir:
-                fused_score *= 0.5  # 自动降权
+            if (crowding_dir != 0) and (np.sign(fused_score) == crowding_dir):
+                fused_score *= 0.5
 
+        # ===== 10. 准备 details，用于回测与调试 =====
         details = {
-            'ai_1h': ai_scores['1h'], 'ai_4h': ai_scores['4h'], 'ai_d1': ai_scores['d1'],
-            'factors_1h': fs['1h'], 'factors_4h': fs['4h'], 'factors_d1': fs['d1'],
-            'score_1h': score_1h, 'score_4h': score_4h, 'score_d1': score_d1,
-            'atr_4h': atr_4h, 'adx_4h': adx_4h, 'funding_4h': funding_4h, 'threshold': th,
-            'strong_confirm': strong_confirm, 'consensus_dir': consensus_dir
+            'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
+            'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
+            'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
+            'strong_confirm': strong_confirm,
+            'consensus_14': consensus_14, 'consensus_all': consensus_all
         }
 
-        # 动态阈值过滤弱信号
+        # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
+        atr_1h = features_1h.get('atr_pct_1h', 0)
+        adx_1h = features_1h.get('adx_1h', 0)
+        funding_1h = features_1h.get('funding_rate_1h', 0) or 0
+        th = self.dynamic_threshold(atr_1h, adx_1h, funding_1h)
+
         if abs(fused_score) < th:
             return {
                 'signal': 0,
@@ -221,7 +324,8 @@ class RobustSignalGenerator:
                 'stop_loss': None,
                 'details': details
             }
-        # 多级仓位（调研建议，非线性映射）
+
+        # ===== 12. 多级仓位逻辑（替代 calculate_position_size） =====
         abs_score = abs(fused_score)
         if abs_score > 0.8:
             pos_size = 1.0
@@ -232,19 +336,20 @@ class RobustSignalGenerator:
         else:
             pos_size = 0.1
 
-        direction = 1 if fused_score > 0 else -1
+        # ===== 13. 止盈止损计算 =====
+        price = features_1h.get('close', 0)
+        TAKE_PROFIT_PCT = 0.015
+        STOP_LOSS_PCT = 0.01
 
-        # === 新增：止盈止损（以4h周期close和ATR为例，ATR可放大倍数自调）===
-        price = features_4h.get('close', 0)
-        atr = features_4h.get('atr_pct_4h', 0) * price
-        # 推荐参数可以调：1.5/1.0
-        if direction == 1:
-            take_profit = price + 1.5 * atr
-            stop_loss = price - 1.0 * atr
+        if fused_score > 0:
+            take_profit = price * (1 + TAKE_PROFIT_PCT)
+            stop_loss   = price * (1 - STOP_LOSS_PCT)
         else:
-            take_profit = price - 1.5 * atr
-            stop_loss = price + 1.0 * atr
+            take_profit = price * (1 - TAKE_PROFIT_PCT)
+            stop_loss   = price * (1 + STOP_LOSS_PCT)
 
+        # ===== 14. 最终返回 =====
+        direction = int(np.sign(fused_score))  # 1 表示做多，-1 表示做空
         return {
             'signal': direction,
             'score': fused_score,

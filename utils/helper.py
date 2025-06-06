@@ -1,126 +1,112 @@
-# utils/helper.py  — 去掉外部指标后的版本
-
-from __future__ import annotations
-import json
-from pathlib import Path
-from typing import Dict, Tuple
-
 import numpy as np
 import pandas as pd
-import ta
+import pandas_ta as ta
 
-# --------- 全局配置（只保留 fg_index 和 funding_rate，如果这两个也不需要可以一并删掉） ---------
-LAGGED_COLS = [
-    "fg_index",
-    "funding_rate",
-]
+def assign_safe(feats: pd.DataFrame, name: str, series):
+    feats[name] = np.asarray(series, dtype="float64")
+    # print(f"{name}: {feats[name].dtype}")
 
+def calc_mfi_np(high, low, close, volume, window=14):
+    # 1. 典型价格
+    tp = (high + low + close) / 3
+    # 2. 原始 Money Flow
+    mf = tp * volume
+    # 3. 区分正/负流入
+    pmf = np.where(tp > np.roll(tp, 1), mf, 0)
+    nmf = np.where(tp < np.roll(tp, 1), mf, 0)
+    # 第一行没有前一行，补0
+    pmf[0] = 0
+    nmf[0] = 0
+    # 4. 滚动窗口求和
+    sum_pmf = pd.Series(pmf).rolling(window).sum().to_numpy()
+    sum_nmf = pd.Series(nmf).rolling(window).sum().to_numpy()
+    # 5. MFI公式
+    mfi = 100 * sum_pmf / (sum_pmf + sum_nmf)
+    return mfi
 
-# ------------------------------------------------------------------ #
-# ❶  训练阶段: 统计 robust-z 参数并保存
-# ------------------------------------------------------------------ #
-def fit_scaler(df: pd.DataFrame, save_path: str | Path = "scaler.json") -> Dict[str, Tuple[float, float, float, float]]:
-    """
-    统计每个数值列的 1%/99% 分位，裁剪后计算均值和标准差，保存为 robust-z 参数。
-    """
-    params: Dict[str, Tuple[float, float, float, float]] = {}
-    for col in df.columns:
-        arr = df[col].astype(float).values
-        arr = arr[np.isfinite(arr)]
-        if arr.size == 0:
-            continue
-        p1, p99 = np.percentile(arr, [1, 99])
-        arr = np.clip(arr, p1, p99)
-        mu, std = arr.mean(), arr.std() if arr.std() > 1e-8 else 1.0
-        params[col] = (float(p1), float(p99), float(mu), float(std))
-
-    Path(save_path).write_text(json.dumps(params, indent=2))
-    return params
-
-
-# ------------------------------------------------------------------ #
-# ❷  推理 / 通用: 计算全部特征（去掉外部指标后的版本）
-# ------------------------------------------------------------------ #
-def calc_features_full(df_raw: pd.DataFrame, period: str) -> pd.DataFrame:
-    """
-    统一特征计算入口，去掉所有 vix/dxy/链上等外部指标。
-    只保留：基础价格、成交量、FG 指数、funding_rate，以及纯技术指标的计算。
-    """
-    df = df_raw.copy()
-
-    # ---------- 滞后列一次性 forward-fill ----------
-    # 只对 fg_index 和 funding_rate 做前向填充
-    df[LAGGED_COLS] = df[LAGGED_COLS].ffill()
-
-    # ---------- 价格列 ----------
-    open_, high, low, close, vol = df["open"], df["high"], df["low"], df["close"], df["volume"]
-
+def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats = pd.DataFrame(index=df.index)
+    for col in ["open", "high", "low", "close", "volume"]:
+        feats[col] = np.full(len(feats), np.nan, dtype="float64")
 
-    # —— 1. 趋势 & 动量 ——
-    feats[f"ema10_ema50_{period}"] = ta.trend.ema_indicator(close, 10) - ta.trend.ema_indicator(close, 50)
-    feats[f"rsi_{period}"]         = ta.momentum.rsi(close, 14)
-    feats[f"rsi_slope_{period}"]   = feats[f"rsi_{period}"].diff()
+    for col in ["open", "high", "low", "close", "volume"]:
+        assign_safe(feats, col, df[col].astype(float))
 
-    # —— 2. 波动率 ——
-    def safe_atr(_high, _low, _close, win: int = 14):
-        if len(_high) < win:
-            return pd.Series(np.nan, index=_high.index)
-        return ta.volatility.average_true_range(_high, _low, _close, win)
+    if "fg_index" in df:
+        assign_safe(feats, "fg_index", df["fg_index"].astype(float).ffill())
+    if "funding_rate" in df:
+        assign_safe(feats, "funding_rate", df["funding_rate"].astype(float).ffill())
 
-    feats[f"atr_pct_{period}"] = safe_atr(high, low, close) / close
+    assign_safe(feats, f"ema_diff_{period}", ta.ema(feats["close"], 10) - ta.ema(feats["close"], 50))
+    assign_safe(feats, f"rsi_{period}", ta.rsi(feats["close"], length=14))
+    feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
+    assign_safe(feats, f"atr_pct_{period}", ta.atr(feats["high"], feats["low"], feats["close"], length=14) / feats["close"])
 
-    # Bollinger & Keltner
-    try:
-        bb = ta.volatility.BollingerBands(close, 20, 2)
-        feats[f"bb_width_{period}"] = bb.bollinger_hband() - bb.bollinger_lband()
-    except Exception:
-        feats[f"bb_width_{period}"] = np.nan
+    assign_safe(feats, f"adx_{period}", ta.adx(feats["high"], feats["low"], feats["close"], length=14)["ADX_14"])
+    feats[f"adx_delta_{period}"] = feats[f"adx_{period}"].diff()
+    assign_safe(feats, f"cci_{period}", ta.cci(feats["high"], feats["low"], feats["close"], length=14))
+    feats[f"cci_delta_{period}"] = feats[f"cci_{period}"].diff()
+    assign_safe(feats, f"mfi_{period}",
+                calc_mfi_np(feats["high"].values, feats["low"].values, feats["close"].values, feats["volume"].values,
+                            window=14))
 
-    try:
-        kc = ta.volatility.KeltnerChannel(high, low, close, 20, 10)
-        feats[f"kc_perc_{period}"] = (
-            (close - kc.keltner_channel_lband()) /
-            (kc.keltner_channel_hband() - kc.keltner_channel_lband())
-        )
-    except Exception:
-        feats[f"kc_perc_{period}"] = np.nan
+    bb = ta.bbands(feats["close"], length=20)
+    assign_safe(feats, f"bb_width_{period}", bb["BBU_20_2.0"] - bb["BBL_20_2.0"])
+    assign_safe(feats, f"boll_perc_{period}", (feats["close"] - bb["BBL_20_2.0"]) / (bb["BBU_20_2.0"] - bb["BBL_20_2.0"]).replace(0, np.nan))
 
-    # —— 3. 量能 ——
-    feats[f"vol_roc_{period}"]      = vol.pct_change()
-    feats[f"vol_ma_ratio_{period}"] = vol / vol.rolling(20).mean()
+    kc = ta.kc(feats["high"], feats["low"], feats["close"], length=20)
+    assign_safe(feats, f"kc_perc_{period}", (feats["close"] - kc["KCLe_20_2"]) / (kc["KCUe_20_2"] - kc["KCLe_20_2"]).replace(0, np.nan))
 
-    # —— 4. 连涨 / 连跌 (避免未来泄漏) ——
-    bull = (close > open_).astype(int)
-    bear = (close < open_).astype(int)
-    feats[f"bull_streak_{period}"] = bull.rolling(3, closed="left").sum()
-    feats[f"bear_streak_{period}"] = bear.rolling(3, closed="left").sum()
+    dc = ta.donchian(feats["high"], feats["low"], lower_length=20, upper_length=20)
+    assign_safe(feats, f"donchian_perc_{period}", (feats["close"] - dc["DCL_20_20"]) / (dc["DCU_20_20"] - dc["DCL_20_20"]).replace(0, np.nan))
+    assign_safe(feats, f"donchian_delta_{period}", dc["DCU_20_20"] - dc["DCL_20_20"])
 
-    # —— 5. 滞后列（仅 fg_index 与 funding_rate）+ Δ ——
-    for col in LAGGED_COLS:
-        feats[f"{col}_{period}"] = df[col]
-        vals = pd.to_numeric(df[col], errors="coerce")
-        feats[f"{col}_delta_{period}"] = vals.diff()
+    assign_safe(feats, f"vol_roc_{period}", ta.roc(feats["volume"], length=5))
+    assign_safe(feats, f"vol_ma_ratio_{period}", feats["volume"] / ta.sma(feats["volume"], length=10).replace(0, np.nan))
 
-    # —— 6. 简单交互 —— 存在且非全空才计算
-    pairs = [("rsi", "vol_ma_ratio"), ("atr_pct", "bb_width")]
-    for a, b in pairs:
-        ca, cb = f"{a}_{period}", f"{b}_{period}"
-        if ca in feats and cb in feats and feats[ca].notna().any() and feats[cb].notna().any():
-            feats[f"{a}_mul_{b}_{period}"] = feats[ca] * feats[cb]
+    feats[f"bull_streak_{period}"] = (
+        feats["close"].gt(feats["open"]).astype(float)
+        .groupby(feats["close"].le(feats["open"]).astype(int).cumsum())
+        .cumsum()
+    )
+    feats[f"bear_streak_{period}"] = (
+        feats["close"].lt(feats["open"]).astype(float)
+        .groupby(feats["close"].ge(feats["open"]).astype(int).cumsum())
+        .cumsum()
+    )
 
-    # —— 7. Robust-z 统一缩放 ——
+    assign_safe(feats, f"rsi_mul_vol_ma_ratio_{period}", feats[f"rsi_{period}"] * feats[f"vol_ma_ratio_{period}"])
+    assign_safe(feats, f"willr_{period}", ta.willr(feats["high"], feats["low"], feats["close"], length=14))
+
+    macd = ta.macd(feats["close"])
+    assign_safe(feats, f"macd_{period}", macd["MACD_12_26_9"])
+    assign_safe(feats, f"macd_signal_{period}", macd["MACDs_12_26_9"])
+    assign_safe(feats, f"macd_hist_{period}", macd["MACDh_12_26_9"])
+
+    assign_safe(feats, f"obv_{period}", ta.obv(feats["close"], feats["volume"]))
+    feats[f"obv_delta_{period}"] = feats[f"obv_{period}"].diff()
+
+    st = ta.supertrend(feats["high"], feats["low"], feats["close"])
+    assign_safe(feats, f"supertrend_dir_{period}", st.get("SUPERTd_7_3.0", pd.Series(index=df.index, data=np.nan)))
+
+    return feats
+
+def calc_features_full(df: pd.DataFrame, period: str) -> pd.DataFrame:
+    feats = calc_features_raw(df, period)
+
     for col in feats.columns:
-        # 跳过标记列
-        if feats[col].dtype == "int64":
-            continue
-        arr = feats[col].astype(float).values
-        mask = np.isfinite(arr)
-        if not mask.any():
-            continue
-        p1, p99 = np.percentile(arr[mask], [1, 99])
-        arr = np.clip(arr, p1, p99)
-        mu, std = arr[mask].mean(), arr[mask].std() if arr[mask].std() > 1e-8 else 1.0
-        feats[col] = (arr - mu) / std
+        if pd.api.types.is_numeric_dtype(feats[col]):
+            arr = feats[col].astype(float).values
+            p1, p99 = np.nanpercentile(arr, [1, 99])
+            clipped = np.clip(arr, p1, p99)
+            mu = np.nanmean(clipped)
+            sigma = np.nanstd(clipped) + 1e-6
+            feats[col] = ((clipped - mu) / sigma).astype("float64")
 
+    flag_df = pd.DataFrame(index=feats.index)
+    for col in feats.columns:
+        flag_df[f"{col}_isnan"] = feats[col].isna().astype(int)
+
+    feats = pd.concat([feats, flag_df], axis=1)
+    feats = feats.fillna(0)
     return feats

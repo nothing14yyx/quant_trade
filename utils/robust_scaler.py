@@ -1,66 +1,53 @@
 # utils/robust_scaler.py
 
-import numpy as np
 import json
+import numpy as np
 import pandas as pd
 
-def compute_robust_z_params(df: pd.DataFrame, cols: list[str]) -> dict:
+def compute_robust_z_params(df: pd.DataFrame, cols: list) -> dict:
     """
-    计算 df 中若干列的剪裁/缩放参数：
-      lower: 0.25% 分位
-      upper: 99.75% 分位
-      mean : 平均值
-      std  : 标准差（加 1e-6 避免除 0）
-    返回形式：
+    计算训练集所有数值特征列的 1% / 99% 分位、均值和标准差，并返回一个 dict：
     {
-      "rsi_1h": {"lower":  10.123, "upper": 90.456, "mean": 50.789, "std": 12.345},
-      ...
+      "col1": {"lower": xx, "upper": xx, "mean": xx, "std": xx},
+      "col2": {…}, …
     }
     """
-    scaler_params = {}
+    params = {}
     for col in cols:
-        arr = df[col].values
-        arr_nonan = arr[~pd.isna(arr)]
-        if len(arr_nonan) == 0:
-            continue
-
-        lower = np.percentile(arr_nonan, 0.25)
-        upper = np.percentile(arr_nonan, 99.75)
-        mean = np.mean(arr_nonan)
-        std = np.std(arr_nonan) + 1e-6
-
-        scaler_params[col] = {
+        arr = df[col].dropna().values
+        # ===== 从原来的 0.25%/99.75% 改为 1%/99% =====
+        lower, upper = np.nanpercentile(arr, [1, 99])
+        clipped = np.clip(arr, lower, upper)
+        mu = float(np.nanmean(clipped))
+        sigma = float(np.nanstd(clipped)) + 1e-6
+        params[col] = {
             "lower": float(lower),
             "upper": float(upper),
-            "mean": float(mean),
-            "std": float(std),
+            "mean": mu,
+            "std": sigma
         }
-    return scaler_params
+    return params
 
-def save_scaler_params_to_json(params: dict, filepath: str):
-    """将 compute_robust_z_params 的结果写入 JSON 文件。"""
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(params, f, indent=2, ensure_ascii=False)
+def save_scaler_params_to_json(params: dict, path: str) -> None:
+    with open(path, "w") as f:
+        json.dump(params, f, indent=2)
 
-def load_scaler_params_from_json(filepath: str) -> dict:
-    """从 JSON 文件加载剪裁/缩放参数。"""
-    with open(filepath, "r", encoding="utf-8") as f:
+def load_scaler_params_from_json(path: str) -> dict:
+    with open(path, "r") as f:
         return json.load(f)
 
 def apply_robust_z_with_params(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     """
-    用已知的剪裁/缩放参数，对 df 中对应列做 Robust-z：
-      1. clip(lower, upper)
-      2. (x - mean) / std
+    对传入的 DataFrame（每列应与 params 中键对应）按给定的 lower/upper/mean/std 做剪裁 + 归一化，
+    返回相同索引、已缩放好的 DataFrame。
     """
-    df_out = df.copy()
+    df_scaled = df.copy()
     for col, p in params.items():
-        if col not in df_out.columns:
+        if col not in df_scaled.columns:
             continue
-        lower = p["lower"]
-        upper = p["upper"]
-        mean = p["mean"]
-        std = p["std"]
-        df_out[col] = df_out[col].clip(lower, upper)
-        df_out[col] = (df_out[col] - mean) / std
-    return df_out
+        arr = df_scaled[col].values.astype(float)
+        # 用训练时保存的 lower/upper 进行剪裁
+        arr_clipped = np.clip(arr, p["lower"], p["upper"])
+        # 再用训练时的 mean/std 归一化
+        df_scaled[col] = (arr_clipped - p["mean"]) / p["std"]
+    return df_scaled

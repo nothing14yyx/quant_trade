@@ -171,23 +171,28 @@ class DataLoader:
 
     # ───────────────────────────── 选币逻辑 ───────────────────────────────
     def get_top_symbols(self, n: Optional[int] = None) -> List[str]:
+        # 1. 拉所有“处于TRADING状态”的永续USDT合约
+        info = self.client.futures_exchange_info()
+        trading_perp_usdt = {
+            s['symbol'] for s in info['symbols']
+            if s['status'] == 'TRADING'
+               and s['contractType'] == 'PERPETUAL'
+               and s['quoteAsset'] == 'USDT'
+        }
+        # 2. 继续用24小时成交量筛主流币
         tickers = _safe_retry(lambda: self.client.futures_ticker(),
                               retries=self.retries, backoff=self.backoff)
         cands = [
             (t["symbol"], float(t["quoteVolume"]))
             for t in tickers
-            if (
-                t["symbol"].endswith("USDT")
-                # and not self.MULTI_PATTERN.match(t["symbol"])
-                and t["symbol"] not in self.excluded
-                and float(t["quoteVolume"]) > 0
-            )
+            if t["symbol"] in trading_perp_usdt
+               and t["symbol"] not in self.excluded
+               and float(t["quoteVolume"]) > 0
         ]
         cands.sort(key=lambda x: x[1], reverse=True)
         top = [s for s, _ in cands[: n or self.topn]]
         logger.info("[symbol-select] %s", top)
         return top
-
     # ───────────────────────────── KLine 同步 ────────────────────────────
     def fetch_klines_raw(self, symbol: str, interval: str,
                          start: pd.Timestamp, end: pd.Timestamp) -> list:
@@ -264,6 +269,9 @@ class DataLoader:
         df = pd.DataFrame(rows, columns=cols)
         df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
         df["close_time"] = pd.to_datetime(df["close_time"], unit="ms")
+        # 新增：只保留已收盘K线
+        now = pd.Timestamp.utcnow().replace(tzinfo=None)
+        df = df[df["close_time"] <= now]
         flt_cols = [c for c in cols if c not in ("open_time", "close_time", "num_trades", "ignore")]
         df[flt_cols] = df[flt_cols].apply(pd.to_numeric, errors="coerce")
         df["num_trades"] = pd.to_numeric(df["num_trades"], errors="coerce")
@@ -300,6 +308,35 @@ class DataLoader:
 
         # NaN → None
         df = df[cols_final].replace({np.nan: None})
+
+        # ==== 加在此处！====
+        df = df.dropna(subset=["symbol"])
+        df["symbol"] = df["symbol"].astype(str).str.strip()
+        df = df[df["symbol"].str.len() > 0]
+        # 如果还不放心再加
+        df = df[df["symbol"].str.upper().str.match(r"^[A-Z0-9]+USDT$")]  # 只保留类似 BTCUSDT 这种格式的币种
+
+        # 打印本批唯一 symbol，方便你人工排查异常币名
+        # print("本批symbol唯一值:", df["symbol"].unique())
+        # ==== 新增：drop掉主K线字段全为0的无效行 ====
+        main_cols = ["open", "high", "low", "close", "volume"]
+        # 类型安全转换，防止"0"字符串混入
+        for col in main_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        before = len(df)
+        df = df[~((df[main_cols] == 0).all(axis=1) | df[main_cols].isna().all(axis=1))]
+        # 新增更严格过滤
+        df = df[df["close"] != 0]
+        df = df[df["volume"] != 0]
+        after = len(df)
+        if before - after > 0:
+            print(f"[{symbol}-{interval}] K线全为0/NaN的行已剔除：{before - after} 条")
+
+        # =============================================
+        # 新增空表保护！！！
+        if df.empty:
+            # print(f"[{symbol}-{interval}] 本批K线全部无效，已跳过写入。")
+            return
 
         # 关键字列名加反引号
         sql_cols = ",".join(f"`{c}`" for c in cols_final)
@@ -345,4 +382,4 @@ class DataLoader:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     dl = DataLoader()
-    dl.sync_all(max_workers=8)
+    dl.sync_all(max_workers=5)
