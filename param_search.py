@@ -14,6 +14,11 @@ from backtester import (
     MODEL_PATHS,
     load_config,
     connect_mysql,
+
+    convert_model_paths,
+)
+
+
 )
 
 
@@ -26,6 +31,7 @@ def convert_model_paths(paths: dict) -> dict:
 
     FEATURE_COLS_1H, FEATURE_COLS_4H, FEATURE_COLS_D1,
     MODEL_PATHS, load_config, connect_mysql
+
 
 
 
@@ -61,7 +67,11 @@ def run_single_backtest(df: pd.DataFrame, base_weights: dict, history_window: in
 
         convert_model_paths(MODEL_PATHS),
 
+
+        convert_model_paths(MODEL_PATHS),
+
         MODEL_PATHS,
+
 
         feature_cols_1h=FEATURE_COLS_1H,
         feature_cols_4h=FEATURE_COLS_4H,
