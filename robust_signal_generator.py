@@ -9,7 +9,7 @@ class RobustSignalGenerator:
     多周期AI+多因子+动态阈值+极端行情防护 融合信号生成器（调研增强版）
     """
 
-    def __init__(self, model_paths, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=500):
+    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=500):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         for period, path_dict in model_paths.items():

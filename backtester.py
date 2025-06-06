@@ -37,6 +37,7 @@ FEATURE_COLS_D1 = [
     'boll_perc_d1',  # 日线 布林带位置（价格相对布林带）
 ]
 
+# 预训练模型路径
 MODEL_PATHS = {
     ('1h', 'up'):   'models/model_1h_up.pkl',
     ('1h', 'down'): 'models/model_1h_down.pkl',
@@ -73,10 +74,12 @@ def run_backtest():
     # 按币种分组
     all_symbols = df['symbol'].unique().tolist()
     sg = RobustSignalGenerator(
-        convert_model_paths(MODEL_PATHS),
+
+        model_paths=convert_model_paths(MODEL_PATHS),
+
         feature_cols_1h=FEATURE_COLS_1H,
         feature_cols_4h=FEATURE_COLS_4H,
-        feature_cols_d1=FEATURE_COLS_D1
+        feature_cols_d1=FEATURE_COLS_D1,
     )
 
     results = []
