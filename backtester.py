@@ -7,55 +7,43 @@ from robust_signal_generator import RobustSignalGenerator
 
 # ====== 配置特征字段（和实盘一致！）======
 FEATURE_COLS_1H = [
-    'fg_index_1h',         # 1h情绪
-    'boll_perc_4h',        # 4h波动率
-    'rsi_1h',              # 1h动量
-    'rsi_4h',              # 4h动量
-    'ema_diff_1h',         # 1h趋势
-    'atr_pct_1h',          # 1h波动率
-    'ema_diff_4h',         # 4h趋势
-    'boll_perc_d1',        # 日线波动率
-    'boll_perc_1h',        # 1h波动率
-    'adx_1h',              # 1h结构
-    'stochrsi_k_1h',       # 1h动量
-    'rsi_delta_1h',        # 1h动量斜率
+    'atr_pct_1h',  # 1h 周期波动率（ATR）
+    'rsi_slope_1h',  # 1h 周期 RSI 斜率（动量变化）
+    'kc_perc_1h',  # 1h 周期 Keltner 通道位置（波动位置）
+    'cci_delta_1h',  # 1h 周期 CCI 变化率（顺势动量）
+    'vol_ma_ratio_1h',  # 1h 周期 成交量/MA（短期量能变化）
+    'rsi_mul_vol_ma_ratio_1h',  # 1h 周期 RSI × (成交量/MA)（动量与量能交互）
+    'vol_roc_1h',  # 1h 周期 成交量 ROC（量能动量）
+    'adx_1h',  # 1h 周期 趋势强度（ADX）
 ]
 FEATURE_COLS_4H = [
-    'fg_index_4h',            # 4h情绪
-    'rsi_delta_4h',           # 4h动量斜率
-    'candle_body_ratio_4h',   # 4h结构
-    'atr_pct_4h',             # 4h波动率
-    'boll_perc_4h',           # 4h波动率
-    'boll_perc_d1',           # d1波动率
-    'rsi_4h',                 # 4h动量
-    'stochrsi_k_4h',          # 4h动量
-    'rsi_d1',                 # d1动量
-    'adx_4h',                 # 4h结构
-    'funding_rate_delta_4h',  # 4h资金费率变化
-    'obv_delta_4h',           # 4h量能
+    'atr_pct_4h',  # 4h 周期波动率（ATR）
+    'vol_ma_ratio_4h',  # 4h 周期 成交量/MA（中期量能变化）
+    'vol_roc_4h',  # 4h 周期 成交量 ROC（中期量能动量）
+    'rsi_slope_4h',  # 4h 周期 RSI 斜率（动量变化）
+    'cci_delta_4h',  # 4h 周期 CCI 变化率（顺势动量）
+    'rsi_mul_vol_ma_ratio_4h',  # 4h 周期 RSI × (成交量/MA)（动量与量能交互）
+    'adx_4h',  # 4h 周期 趋势强度（ADX）
+    'boll_perc_4h',  # 4h 周期 布林带位置（价格相对布林带）
 ]
 FEATURE_COLS_D1 = [
-    'fg_index_d1',            # 日线情绪
-    'atr_pct_d1',             # 日线波动率
-    'rsi_delta_d1',           # 日线动量斜率
-    'candle_body_ratio_d1',   # 日线结构
-    'rsi_d1',                 # 日线动量
-    'boll_perc_d1',           # 日线波动率
-    'stochrsi_k_d1',          # 日线动量
-    'obv_delta_d1',           # 日线量能
-    'adx_d1',                 # 日线结构
-    'ema_diff_d1',            # 日线趋势
-    'macd_hist_d1',           # 日线趋势
-    'funding_rate_delta_d1',  # 日线资金费率变化
+    'atr_pct_d1',  # 日线波动率（ATR）
+    'rsi_slope_d1',  # 日线 RSI 斜率（动量变化）
+    'rsi_mul_vol_ma_ratio_d1',  # 日线 RSI × (成交量/MA)（动量与量能交互）
+    'vol_ma_ratio_d1',  # 日线 成交量/MA（量能变化）
+    'vol_roc_d1',  # 日线 成交量 ROC（量能动量）
+    'cci_delta_d1',  # 日线 CCI 变化率（顺势动量）
+    'adx_d1',  # 日线 趋势强度（ADX）
+    'boll_perc_d1',  # 日线 布林带位置（价格相对布林带）
 ]
 
 MODEL_PATHS = {
-    ('1h', 'up'):   'models/model_1h_up.lgb',
-    ('1h', 'down'): 'models/model_1h_down.lgb',
-    ('4h', 'up'):   'models/model_4h_up.lgb',
-    ('4h', 'down'): 'models/model_4h_down.lgb',
-    ('d1', 'up'):   'models/model_d1_up.lgb',
-    ('d1', 'down'): 'models/model_d1_down.lgb',
+    ('1h', 'up'):   'models/model_1h_up.pkl',
+    ('1h', 'down'): 'models/model_1h_down.pkl',
+    ('4h', 'up'):   'models/model_4h_up.pkl',
+    ('4h', 'down'): 'models/model_4h_down.pkl',
+    ('d1', 'up'):   'models/model_d1_up.pkl',
+    ('d1', 'down'): 'models/model_d1_down.pkl',
 }
 
 # 将上面的 (period, direction) 键值对转换为嵌套字典
