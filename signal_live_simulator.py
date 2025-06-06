@@ -302,17 +302,17 @@ def main_loop(interval_sec: int = 60):
                 .drop(columns=["abs_score"])
             )
 
-            # —— 8.2 追加写入 live_top10_signals（append 模式） ——
+            # —— 8.2 写入 live_top10_signals（遇到主键冲突则更新） ——
             df_top10["time"] = pd.to_datetime(df_top10["time"]).dt.strftime("%Y-%m-%d %H:%M:%S")
             print("===== 本轮 top10（按 |score| 排序） =====")
             print(df_top10[["symbol", "time", "signal", "score", "price", "take_profit", "stop_loss"]].to_string(index=False))
             print("=====================================")
 
-            df_top10.to_sql(
+            upsert_df(
+                df_top10,
                 "live_top10_signals",
                 engine,
-                index=False,
-                if_exists="append"
+                pk_cols=["symbol", "time"],
             )
 
         elapsed = time.time() - loop_start
