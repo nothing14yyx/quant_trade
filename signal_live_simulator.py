@@ -12,7 +12,7 @@ from utils.helper import calc_features_raw
 from utils.robust_scaler import load_scaler_params_from_json, apply_robust_z_with_params
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
-from utils.feature_health import apply_health_check_df
+from utils.feature_health import apply_health_check_df,health_check
 # ———————— 程序开头：全局初始化 ————————
 
 # 1. 加载配置（config.yaml）并创建数据库引擎
@@ -292,6 +292,7 @@ def main_loop(interval_sec: int = 60):
             df_all_results = pd.DataFrame(all_full_results)
             # ——— 确保 score 为浮点数，否则 abs() 失效 ———
             df_all_results["score"] = pd.to_numeric(df_all_results["score"], errors="coerce")
+            df_all_results["time"] = pd.to_datetime(df_all_results["time"]).dt.strftime("%Y-%m-%d %H:%M:%S")
             df_all_results["abs_score"] = df_all_results["score"].abs()
 
             df_top10 = (
@@ -302,8 +303,9 @@ def main_loop(interval_sec: int = 60):
             )
 
             # —— 8.2 追加写入 live_top10_signals（append 模式） ——
+            df_top10["time"] = pd.to_datetime(df_top10["time"]).dt.strftime("%Y-%m-%d %H:%M:%S")
             print("===== 本轮 top10（按 |score| 排序） =====")
-            print(df_top10[["symbol", "time", "score"]].to_string(index=False))
+            print(df_top10[["symbol", "time", "signal", "score", "price", "take_profit", "stop_loss"]].to_string(index=False))
             print("=====================================")
 
             df_top10.to_sql(
@@ -315,7 +317,7 @@ def main_loop(interval_sec: int = 60):
 
         elapsed = time.time() - loop_start
         wait = max(0, interval_sec - elapsed)
-        print(f"本轮完成，已写入信号，等待{wait:.1f}秒，时间：{now}")
+        print(f"本轮完成，已写入信号，等待{wait:.1f}秒，时间：{now.strftime('%Y-%m-%d %H:%M:%S')}")
 
         time.sleep(wait)
 
