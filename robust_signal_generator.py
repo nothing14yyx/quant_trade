@@ -111,32 +111,50 @@ class RobustSignalGenerator:
             # 1) ema_diff     → ema_diff_{period}
             # 2) boll_perc    → (close - lower_bb) / (upper_bb - lower_bb)
             # 3) supertrend   → supertrend_dir_{period}
+            # 4) adx_delta    → adx_delta_{period}
+            # 5) bull/bear    → bull_streak_{period} - bear_streak_{period}
             'trend': (
                     np.tanh(safe(f'ema_diff_{period}', 0) * 5)
                     + 2 * (safe(f'boll_perc_{period}', 0.5) - 0.5)
                     + safe(f'supertrend_dir_{period}', 0)
+                    + np.tanh(safe(f'adx_delta_{period}', 0) / 10)
+                    + np.tanh((safe(f'bull_streak_{period}', 0) - safe(f'bear_streak_{period}', 0)) / 3)
             ),
 
             # —— 动量 因子 ——
             # 1) rsi          → rsi_{period}
             # 2) willr        → willr_{period}
             # 3) macd_hist    → macd_hist_{period}
+            # 4) rsi_slope    → rsi_slope_{period}
+            # 5) mfi          → mfi_{period}
             'momentum': (
                     (safe(f'rsi_{period}', 50) - 50) / 50
                     + safe(f'willr_{period}', -50) / 50
                     + np.tanh(safe(f'macd_hist_{period}', 0) * 5)
+                    + np.tanh(safe(f'rsi_slope_{period}', 0) * 10)
+                    + (safe(f'mfi_{period}', 50) - 50) / 50
             ),
 
             # —— 波动 因子 ——
             # 1) atr_pct      → atr_pct_{period}（% 带入 tanh 拉伸）
-            'volatility': np.tanh(safe(f'atr_pct_{period}', 0) * 8),
+            # 2) bb_width     → bb_width_{period}
+            # 3) donchian_delta → donchian_delta_{period}
+            'volatility': (
+                    np.tanh(safe(f'atr_pct_{period}', 0) * 8)
+                    + np.tanh(safe(f'bb_width_{period}', 0) * 2)
+                    + np.tanh(safe(f'donchian_delta_{period}', 0) * 5)
+            ),
 
             # —— 成交量 因子 ——
             # 1) vol_ma_ratio → vol_ma_ratio_{period}
             # 2) obv_delta    → obv_delta_{period}
+            # 3) vol_roc      → vol_roc_{period}
+            # 4) rsi_mul_vol_ma_ratio → rsi_mul_vol_ma_ratio_{period}
             'volume': (
                     np.tanh(safe(f'vol_ma_ratio_{period}', 0))
                     + np.tanh(safe(f'obv_delta_{period}', 0) / 1e5)
+                    + np.tanh(safe(f'vol_roc_{period}', 0) / 5)
+                    + np.tanh(safe(f'rsi_mul_vol_ma_ratio_{period}', 0) / 100)
             ),
 
             # —— 情绪 因子 ——
