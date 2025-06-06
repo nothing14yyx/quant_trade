@@ -7,6 +7,23 @@ from sklearn.model_selection import ParameterGrid
 
 from robust_signal_generator import RobustSignalGenerator
 from backtester import (
+
+    FEATURE_COLS_1H,
+    FEATURE_COLS_4H,
+    FEATURE_COLS_D1,
+    MODEL_PATHS,
+    load_config,
+    connect_mysql,
+)
+
+
+def convert_model_paths(paths: dict) -> dict:
+    """将 backtester.MODEL_PATHS 的 (period, direction) 映射展开为嵌套字典"""
+    nested = {}
+    for (period, direction), p in paths.items():
+        nested.setdefault(period, {})[direction] = p
+    return nested
+
     FEATURE_COLS_1H, FEATURE_COLS_4H, FEATURE_COLS_D1,
     MODEL_PATHS, load_config, connect_mysql
 )
@@ -41,7 +58,11 @@ def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
 def run_single_backtest(df: pd.DataFrame, base_weights: dict, history_window: int, th_params: dict):
     """在给定参数下执行一次回测并返回总体绩效"""
     sg = RobustSignalGenerator(
+
+        convert_model_paths(MODEL_PATHS),
+
         MODEL_PATHS,
+
         feature_cols_1h=FEATURE_COLS_1H,
         feature_cols_4h=FEATURE_COLS_4H,
         feature_cols_d1=FEATURE_COLS_D1,
