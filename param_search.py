@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
@@ -40,8 +41,17 @@ def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
     return ic_scores
 
 
+def precompute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
+    """预先计算一次 IC 分数，供多次回测复用"""
+    return compute_ic_scores(df, rsg)
+
+
 def run_single_backtest(
-    df: pd.DataFrame, base_weights: dict, history_window: int, th_params: dict
+    df: pd.DataFrame,
+    base_weights: dict,
+    history_window: int,
+    th_params: dict,
+    ic_scores: dict,
 ) -> tuple:
     """在给定参数下执行一次回测，返回平均收益率和夏普比"""
     sg = RobustSignalGenerator(
@@ -61,7 +71,7 @@ def run_single_backtest(
 
         sg.dynamic_threshold = dyn_th.__get__(sg, RobustSignalGenerator)
 
-    sg.ic_scores.update(compute_ic_scores(df, sg))
+    sg.ic_scores.update(ic_scores)
 
     all_symbols = df["symbol"].unique().tolist()
     fee_rate = 0.0005
@@ -113,9 +123,24 @@ def run_single_backtest(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rows", type=int, default=None, help="只取最近 N 行数据")
+    args = parser.parse_args()
+
     cfg = load_config()
     engine = connect_mysql(cfg)
     df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time", "close_time"])
+    if args.rows:
+        df = df.tail(args.rows)
+
+    # 预先计算 IC 分数，避免在每次回测时重复计算
+    tmp_sg = RobustSignalGenerator(
+        model_paths=convert_model_paths(MODEL_PATHS),
+        feature_cols_1h=FEATURE_COLS_1H,
+        feature_cols_4h=FEATURE_COLS_4H,
+        feature_cols_d1=FEATURE_COLS_D1,
+    )
+    cached_ic = precompute_ic_scores(df, tmp_sg)
 
     param_grid = {
         "history_window": [300, 500],
@@ -138,7 +163,13 @@ def main() -> None:
             "funding": 0.05,
         }
         th_params = {"base": params["th_base"], "min_thres": 0.06, "max_thres": 0.25}
-        tot_ret, sharpe = run_single_backtest(df, base_weights, params["history_window"], th_params)
+        tot_ret, sharpe = run_single_backtest(
+            df,
+            base_weights,
+            params["history_window"],
+            th_params,
+            cached_ic,
+        )
         metric = sharpe if not np.isnan(sharpe) else -np.inf
         if metric > best_metric:
             best_metric = metric
