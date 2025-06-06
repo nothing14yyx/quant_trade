@@ -281,12 +281,12 @@ def main_loop(interval_sec: int = 60):
         if all_full_results:
             df_full = pd.DataFrame(all_full_results)
 
-            # —— 8.1 用 append 模式追加写入 live_full_data，保留历史所有条目 ——
-            df_full.to_sql(
+            # —— 8.1 使用 upsert 写入 live_full_data，保留历史所有条目 ——
+            upsert_df(
+                df_full,
                 "live_full_data",
                 engine,
-                index=False,
-                if_exists="append",
+                pk_cols=["symbol", "time"],
             )
 
             df_all_results = pd.DataFrame(all_full_results)
