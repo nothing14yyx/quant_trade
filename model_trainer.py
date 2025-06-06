@@ -1,4 +1,4 @@
-# model_trainer.py  (2025-06-03, fixed early-stopping issue)
+# model_trainer.py  (2025-06-03, 已添加按 open_time 排序)
 # ----------------------------------------------------------------
 import yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
@@ -15,44 +15,47 @@ engine = create_engine(
     f"@{mysql_cfg['host']}:{mysql_cfg.get('port',3306)}/{mysql_cfg['database']}?charset=utf8mb4"
 )
 
-# ---------- 2. 读取特征大表 ----------
+# ---------- 2. 读取特征大表并按时间排序 ----------
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time"])
+# 确保整表按 open_time 升序排列，再 reset_index
+df = df.sort_values("open_time").reset_index(drop=True)
 
-# ---------- 3. 固定特征列 ----------
+# ---------- 3. 固定特征列 （来自 feature_selector 输出） ----------
 feature_cols = {
     '1h': [
-        'rsi_slope_1h',
-        'atr_pct_1h',
-        'rsi_1h',
-        'kc_perc_1h',
-        'vol_roc_1h',
-        'funding_rate_delta_1h',
-        'bull_streak_1h',
-        'rsi_slope_4h',
+        'atr_pct_1h',              # 1h 周期波动率（ATR）
+        'rsi_slope_1h',            # 1h 周期 RSI 斜率（动量变化）
+        'kc_perc_1h',              # 1h 周期 Keltner 通道位置（波动位置）
+        'cci_delta_1h',            # 1h 周期 CCI 变化率（顺势动量）
+        'vol_ma_ratio_1h',         # 1h 周期 成交量/MA（短期量能变化）
+        'rsi_mul_vol_ma_ratio_1h', # 1h 周期 RSI × (成交量/MA)（动量与量能交互）
+        'vol_roc_1h',              # 1h 周期 成交量 ROC（量能动量）
+        'adx_1h',                  # 1h 周期 趋势强度（ADX）
     ],
     '4h': [
-        'rsi_slope_4h',
-        'atr_pct_4h',
-        'vol_ma_ratio_4h',
-        'bull_streak_4h',
-        'bear_streak_4h',
-        'funding_rate_delta_4h',
-        'vol_roc_4h',
+        'atr_pct_4h',              # 4h 周期波动率（ATR）
+        'vol_ma_ratio_4h',         # 4h 周期 成交量/MA（中期量能变化）
+        'vol_roc_4h',              # 4h 周期 成交量 ROC（中期量能动量）
+        'rsi_slope_4h',            # 4h 周期 RSI 斜率（动量变化）
+        'cci_delta_4h',            # 4h 周期 CCI 变化率（顺势动量）
+        'rsi_mul_vol_ma_ratio_4h', # 4h 周期 RSI × (成交量/MA)（动量与量能交互）
+        'adx_4h',                  # 4h 周期 趋势强度（ADX）
+        'boll_perc_4h',            # 4h 周期 布林带位置（价格相对布林带）
     ],
     'd1': [
-        'bull_streak_d1',
-        'atr_pct_d1',
-        'bear_streak_d1',
-        'funding_rate_d1',
-        'vol_ma_ratio_d1',
-        'rsi_mul_vol_ma_ratio_d1',
-        'ema10_ema50_d1',
+        'atr_pct_d1',              # 日线波动率（ATR）
+        'rsi_slope_d1',            # 日线 RSI 斜率（动量变化）
+        'rsi_mul_vol_ma_ratio_d1', # 日线 RSI × (成交量/MA)（动量与量能交互）
+        'vol_ma_ratio_d1',         # 日线 成交量/MA（量能变化）
+        'vol_roc_d1',              # 日线 成交量 ROC（量能动量）
+        'cci_delta_d1',            # 日线 CCI 变化率（顺势动量）
+        'adx_d1',                  # 日线 趋势强度（ADX）
+        'boll_perc_d1',            # 日线 布林带位置（价格相对布林带）
     ],
 }
 
 # ---------- 4. 目标列 ----------
 targets = {"up": "target_up", "down": "target_down"}
-
 
 # ---------- 5. 训练函数 ----------
 def train_one(df_all: pd.DataFrame,
@@ -65,20 +68,23 @@ def train_one(df_all: pd.DataFrame,
         if col not in df_all.columns:
             df_all[col] = np.nan
 
-    # 5-2  NaN 标记列
+    # 5-2  生成 NaN 标记列，并把标志加入特征列表
     feat_use = features.copy()
     for col in features:
         nan_flag = f"{col}_isnan"
         df_all[nan_flag] = df_all[col].isna().astype(int)
         feat_use.append(nan_flag)
 
+    # 5-3  过滤掉标签为 NaN 的行后再取训练集
     data = df_all.dropna(subset=[tgt])
-    X, y = data[feat_use], data[tgt]
+    # 此时 data 已经继承了原始 df_all 的顺序，且原始 df_all 事先已按 open_time 排序
+    X = data[feat_use]
+    y = data[tgt]
 
-    # 5-3  类别不平衡补偿
+    # 5-4  计算类别不平衡补偿
     pos_weight = (y == 0).sum() / max((y == 1).sum(), 1)
 
-    # 5-4  随机搜索 + 时间序列交叉验证（无 early-stopping）
+    # 5-5  随机搜索 + 时间序列交叉验证（此处不再传 early-stopping callbacks）
     base = lgb.LGBMClassifier(
         objective="binary",
         metric="auc",
@@ -110,11 +116,11 @@ def train_one(df_all: pd.DataFrame,
         verbose=1,
         refit=True,
     )
-    search.fit(X, y)                # ← 不再传 callbacks
+    search.fit(X, y)
 
     best = search.best_estimator_
 
-    # 5-5  用最后 20 % 样本做验证，重新训练并 early-stop
+    # 5-6  用最后 20% 样本做验证，重新训练并 early-stop
     cut = int(len(X) * 0.8)
     X_tr, X_val = X.iloc[:cut], X.iloc[cut:]
     y_tr, y_val = y.iloc[:cut], y.iloc[cut:]
@@ -130,18 +136,17 @@ def train_one(df_all: pd.DataFrame,
         ],
     )
 
-    # 5-6  保存模型与特征列
+    # 5-7  保存模型与特征列
     model_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump({"model": best, "features": feat_use},
                 model_path, compress=3)
     print(f"✔ Saved: {model_path.name}  (CV-AUC {search.best_score_:.4f})")
 
-    # 5-7  打印前 15 个重要特征
+    # 5-8  打印前 15 个重要特征
     imp = (pd.Series(best.feature_importances_, index=feat_use)
              .sort_values(ascending=False)
              .head(15))
     print(imp.to_string())
-
 
 # ---------- 6. 周期 × 方向 训练循环 ----------
 for period, cols in feature_cols.items():

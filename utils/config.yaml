@@ -22,7 +22,7 @@ data_loader:
   cache_dir: "data/klines"
   sentiment_cache: "data/sentiment"
   rate_limit_sleep: 0.05   # 每次请求后休息 50ms，1s 20 次 ≪ 2400/min
-  excluded_list: ["XMRUSDT"]
+  excluded_list: [""]
 
 feature_engineering:
   cache_dir: "data/klines"
@@ -30,7 +30,7 @@ feature_engineering:
   merged_table_path: "data/merged/merged_table.csv"
   feature_cols_path: "data/merged/feature_cols.txt"
   topn: 100
-  mode: inference                        # train 或 inference
+  mode: train                        # train 或 inference
   scaler_path: scalers/all_features_scaler.json
 
 feature_selector:
@@ -47,6 +47,9 @@ models:
   d1:
     up: models/model_d1_up.pkl
     down: models/model_d1_down.pkl
+
+database:
+  uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
 
 feature_cols:
   1h:
