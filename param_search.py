@@ -19,7 +19,7 @@ from backtester import (
 )
 
 
-)
+
 
 
 def convert_model_paths(paths: dict) -> dict:
