@@ -5,8 +5,10 @@ from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 from sqlalchemy import create_engine
 
+CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
+
 # ---------- 1. 读取配置 ----------
-with open("utils/config.yaml", "r", encoding="utf-8") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     cfg = yaml.safe_load(f)
 
 mysql_cfg = cfg["mysql"]

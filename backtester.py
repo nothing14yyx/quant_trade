@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import yaml
@@ -6,8 +7,11 @@ from sqlalchemy import create_engine
 from robust_signal_generator import RobustSignalGenerator
 from utils.helper import calc_features_raw
 
+# 配置文件路径
+CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
+
 # ====== 配置特征字段（从 config.yaml 读取）======
-with open("utils/config.yaml", "r", encoding="utf-8") as _f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
     _cfg = yaml.safe_load(_f)
 FEATURE_COLS_1H = _cfg.get("feature_cols", {}).get("1h", [])
 FEATURE_COLS_4H = _cfg.get("feature_cols", {}).get("4h", [])
@@ -31,7 +35,7 @@ def convert_model_paths(paths: dict) -> dict:
     return nested
 
 # =========== 数据库&配置 ===========
-def load_config(path='utils/config.yaml'):
+def load_config(path=CONFIG_PATH):
     with open(path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 def connect_mysql(cfg):
