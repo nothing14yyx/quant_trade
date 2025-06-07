@@ -245,10 +245,12 @@ class RobustSignalGenerator:
             - all_scores_list: list，可选，当前所有币种的 fused_score 列表，用于极端行情保护
             - raw_features_1h: dict，可选，未标准化的 1h 特征
             - raw_features_4h: dict，可选，未标准化的 4h 特征；其中 atr_pct_4h 为实际
-              比例（如 0.05 表示 5%），在计算止盈止损时会优先使用
+              比例（如 0.05 表示 5%），在计算止盈止损和指标计算时会优先使用
             - raw_features_d1: dict，可选，未标准化的 1d 特征
         输出：
             一个 dict，包含 'signal'、'score'、'position_size'、'take_profit'、'stop_loss' 和 'details'
+        说明：若传入 raw_features_*，则多因子计算与动态阈值、止盈止损均使用原始数据，
+              标准化后的 features_* 仅用于 AI 模型预测。
         """
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
@@ -262,10 +264,12 @@ class RobustSignalGenerator:
         }
 
         # ===== 2. 计算多因子部分的分数 =====
+        # 若提供了未标准化的原始特征，则优先用于多因子逻辑计算，
+        # 避免标准化偏移导致阈值判断失真
         fs = {
-            '1h': self.get_factor_scores(features_1h, '1h'),
-            '4h': self.get_factor_scores(features_4h, '4h'),
-            'd1': self.get_factor_scores(features_d1, 'd1')
+            '1h': self.get_factor_scores(raw_features_1h or features_1h, '1h'),
+            '4h': self.get_factor_scores(raw_features_4h or features_4h, '4h'),
+            'd1': self.get_factor_scores(raw_features_d1 or features_d1, 'd1')
         }
 
         # ===== 3. 动态权重更新 =====
