@@ -20,6 +20,8 @@
 
 完成安装后，可运行 `pytest` 执行自带的单元测试。
 
+通过python param_search.py --rows 10000(可选)调整信号权重
+
 从 v2.1 起，`feature_selector.py` 会在计算特征覆盖率和训练模型前，
 按 1h、4h、1d 等周期对数据下采样，只评估对应时间点的特征表现。
 同样地，`model_trainer.py` 在训练各周期模型时也会先过滤相应的
