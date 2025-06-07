@@ -88,8 +88,7 @@ class RobustSignalGenerator:
         X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
 
         proba_up = lgb_model.predict_proba(X_df)[0][1]
-        proba_down = lgb_model.predict_proba(X_df)[0][0]
-        return self._score_from_proba(proba_up) - self._score_from_proba(proba_down)
+        return self._score_from_proba(proba_up)
 
     # robust_signal_generator.py
 
@@ -169,10 +168,14 @@ class RobustSignalGenerator:
     def dynamic_weight_update(self):
         # IC驱动动态权重分配（可扩展为每因子滑窗IC）
         ic_arr = np.array([max(0, v) for v in self.ic_scores.values()])
-        if ic_arr.sum() > 0:
-            w = ic_arr / ic_arr.sum()
+        base_arr = np.array([self.base_weights[k] for k in self.ic_scores.keys()])
+
+        combined = ic_arr * base_arr
+        if combined.sum() > 0:
+            w = combined / combined.sum()
         else:
-            w = np.ones_like(ic_arr) / len(ic_arr)
+            w = base_arr / base_arr.sum()
+
         return dict(zip(self.ic_scores.keys(), w))
 
     def dynamic_threshold(self, atr, adx, funding=0, base=0.12, min_thres=0.06, max_thres=0.25):
@@ -199,9 +202,11 @@ class RobustSignalGenerator:
         ]
         # 排序赋权（绝对值越大权重越高）
         abs_idx = np.argsort(-np.abs(raw_scores))
-        sorted_weights = np.array([weights[k] for k in weights])
-        sorted_weights = sorted_weights[abs_idx]
         sorted_scores = np.array(raw_scores)[abs_idx]
+
+        weight_values = np.array([weights[k] for k in weights])
+        sorted_weights = np.sort(weight_values)[::-1]
+
         fused_score = np.dot(sorted_scores, sorted_weights)
         # 可选：中位融合
         # fused_score = np.median(raw_scores)
@@ -254,14 +259,11 @@ class RobustSignalGenerator:
         """
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
-        ai_scores = {
-            '1h': self.get_ai_score(features_1h, self.models['1h']['up']) -
-                   self.get_ai_score(features_1h, self.models['1h']['down']),
-            '4h': self.get_ai_score(features_4h, self.models['4h']['up']) -
-                   self.get_ai_score(features_4h, self.models['4h']['down']),
-            'd1': self.get_ai_score(features_d1, self.models['d1']['up']) -
-                   self.get_ai_score(features_d1, self.models['d1']['down'])
-        }
+        ai_scores = {}
+        for p, feats in [('1h', features_1h), ('4h', features_4h), ('d1', features_d1)]:
+            score_up = self.get_ai_score(feats, self.models[p]['up'])
+            score_down = self.get_ai_score(feats, self.models[p]['down'])
+            ai_scores[p] = 0.5 * (score_up - score_down)
 
         # ===== 2. 计算多因子部分的分数 =====
         # 若提供了未标准化的原始特征，则优先用于多因子逻辑计算，
