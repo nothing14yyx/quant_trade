@@ -4,6 +4,7 @@ import numpy as np
 import yaml
 from sqlalchemy import create_engine
 from robust_signal_generator import RobustSignalGenerator
+from utils.helper import calc_features_raw
 
 # ====== 配置特征字段（和实盘一致！）======
 FEATURE_COLS_1H = [
@@ -101,13 +102,55 @@ def run_backtest():
         for col in FEATURE_COLS_D1:
             if col not in df_sym: df_sym[col] = np.nan
 
+        # === 计算未归一化的原始特征，用于动态阈值和 ATR 等逻辑 ===
+        base_cols = ['open', 'high', 'low', 'close', 'volume']
+        if 'fg_index' in df_sym.columns:
+            base_cols.append('fg_index')
+        if 'funding_rate' in df_sym.columns:
+            base_cols.append('funding_rate')
+
+        df_raw = df_sym[['open_time'] + base_cols].copy()
+        df_raw.set_index('open_time', inplace=True)
+
+        raw_1h_df = calc_features_raw(df_raw, '1h')
+
+        agg = {
+            'open': 'first', 'high': 'max', 'low': 'min',
+            'close': 'last', 'volume': 'sum'
+        }
+        if 'fg_index' in df_raw.columns:
+            agg['fg_index'] = 'last'
+        if 'funding_rate' in df_raw.columns:
+            agg['funding_rate'] = 'last'
+
+        df_4h = df_raw.resample('4h', label='left', closed='left').agg(agg).dropna()
+        raw_4h_df = calc_features_raw(df_4h, '4h')
+
+        df_d1 = df_raw.resample('1d', label='left', closed='left').agg(agg).dropna()
+        raw_d1_df = calc_features_raw(df_d1, 'd1')
+
         # 回测主循环：每根K线跑融合信号
         signals = []
         for i in range(1, len(df_sym)):   # i=0没法t+1建仓
             feats_1h = {c: df_sym.at[i, c] for c in FEATURE_COLS_1H}
             feats_4h = {c: df_sym.at[i, c] for c in FEATURE_COLS_4H}
             feats_d1 = {c: df_sym.at[i, c] for c in FEATURE_COLS_D1}
-            result = sg.generate_signal(feats_1h, feats_4h, feats_d1)
+
+            ts = df_sym.at[i, 'open_time']
+            raw1h = raw_1h_df.loc[ts].to_dict() if ts in raw_1h_df.index else {}
+            r4 = raw_4h_df.loc[:ts]
+            raw4h = r4.iloc[-1].to_dict() if not r4.empty else {}
+            r1d = raw_d1_df.loc[:ts]
+            rawd1 = r1d.iloc[-1].to_dict() if not r1d.empty else {}
+
+            result = sg.generate_signal(
+                feats_1h,
+                feats_4h,
+                feats_d1,
+                raw_features_1h=raw1h,
+                raw_features_4h=raw4h,
+                raw_features_d1=rawd1,
+            )
             signals.append({
                 'open_time': df_sym.at[i, 'open_time'],
                 'signal': result['signal'],
