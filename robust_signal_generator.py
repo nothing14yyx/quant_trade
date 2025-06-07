@@ -88,8 +88,7 @@ class RobustSignalGenerator:
         X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
 
         proba_up = lgb_model.predict_proba(X_df)[0][1]
-        proba_down = lgb_model.predict_proba(X_df)[0][0]
-        return self._score_from_proba(proba_up) - self._score_from_proba(proba_down)
+        return self._score_from_proba(proba_up)
 
     # robust_signal_generator.py
 
