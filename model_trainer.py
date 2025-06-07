@@ -121,9 +121,18 @@ def train_one(df_all: pd.DataFrame,
 
 # ---------- 6. 周期 × 方向 训练循环 ----------
 for period, cols in feature_cols.items():
+
+    # === 根据周期过滤对应时间行 ===
+    if period == "4h":
+        subset = df[df["open_time"].dt.hour % 4 == 0]
+    elif period in {"1d", "d1"}:
+        subset = df[df["open_time"].dt.hour == 0]
+    else:
+        subset = df
+
     for tag, tgt_col in targets.items():
         print(f"\n🚀  Train {period}  {tag}")
         out_file = Path(f"models/model_{period}_{tag}.pkl")
-        train_one(df, cols, tgt_col, out_file)
+        train_one(subset.copy(), cols, tgt_col, out_file)
 
 print("\n✅  All models finished.")
