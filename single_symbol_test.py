@@ -86,7 +86,9 @@ for idx in range(-N, 0):
         feat_4h = scaled_4h_df.iloc[0].to_dict()
         feat_d1 = scaled_d1_df.iloc[0].to_dict()
 
-        # 为了止盈止损，需要保证 feat_4h['close'] 是原始 close 价格
+        # 为了止盈止损，需要保证 feat_1h['close'] 和 feat_4h['close']
+        # 均使用未缩放的原始收盘价
+        feat_1h['close'] = dfs_raw["1h"]['close'].iloc[idx]
         feat_4h['close'] = dfs_raw["4h"]['close'].iloc[idx]
 
     else:
@@ -97,10 +99,20 @@ for idx in range(-N, 0):
 
         # raw_feats 里本身就包含 'close'（原始收盘价），不需要再覆盖
 
-    # --- 6.3 生成信号 ---
-    result = signal_generator.generate_signal(feat_1h, feat_4h, feat_d1)
+    # --- 6.3 创建原始特征字典，用于计算止盈止损等 ---
+    raw_1h = raw_feats["1h"].iloc[idx].to_dict()
+    raw_4h = raw_feats["4h"].iloc[idx].to_dict()
+    raw_d1 = raw_feats["1d"].iloc[idx].to_dict()
 
-    # --- 6.4 打印结果，方便比对 ---
+    # --- 6.4 生成信号（需传入 raw 特征以获得正确的止盈止损） ---
+    result = signal_generator.generate_signal(
+        feat_1h, feat_4h, feat_d1,
+        raw_features_1h=raw_1h,
+        raw_features_4h=raw_4h,
+        raw_features_d1=raw_d1
+    )
+
+    # --- 6.5 打印结果，方便比对 ---
     print("="*60)
     print(f"时间 (1h): {dfs_raw['1h']['open_time'].iloc[idx]}")
     print("Feat 1h (最后一行)：", feat_1h)
