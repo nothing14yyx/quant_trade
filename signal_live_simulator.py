@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import yaml
 from sqlalchemy import create_engine
 import json
@@ -14,6 +15,17 @@ from utils.robust_scaler import load_scaler_params_from_json, apply_robust_z_wit
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
 from utils.feature_health import apply_health_check_df, health_check
+
+
+def np_encoder(obj):
+    """json.dumps helper for NumPy data types."""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    return obj
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 # ———————— 程序开头：全局初始化 ————————
@@ -303,7 +315,7 @@ def main_loop(interval_sec: int = 60):
                     "raw_feat_4h": raw_feat_4h,
                     "raw_feat_d1": raw_feat_d1,
                     **(result.get("details") or {}),
-                }),
+                }, default=np_encoder),
             }
             all_full_results.append(record)
 
