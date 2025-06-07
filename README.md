@@ -7,6 +7,7 @@
 - **ModelTrainer**：使用 LightGBM 训练多周期预测模型。
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
 - **Backtester**：依据生成的信号回测策略表现。
+- **FeatureSelector**：根据实际周期下采样后的数据挑选最重要的特征。
 
 `RobustSignalGenerator` 提供 `update_ic_scores(df)` 方法，可在启动回测或模拟时
 传入近期历史数据，自动计算因子 IC 用于调整权重。
@@ -18,3 +19,6 @@
 在开始之前，请执行 `pip install -r requirements.txt` 安装依赖。
 
 完成安装后，可运行 `pytest` 执行自带的单元测试。
+
+从 v2.1 起，`feature_selector.py` 会在计算特征覆盖率和训练模型前，
+按 1h、4h、1d 等周期对数据下采样，只评估对应时间点的特征表现。
