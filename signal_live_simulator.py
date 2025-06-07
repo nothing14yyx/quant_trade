@@ -12,11 +12,13 @@ from utils.helper import calc_features_raw
 from utils.robust_scaler import load_scaler_params_from_json, apply_robust_z_with_params
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
-from utils.feature_health import apply_health_check_df,health_check
+from utils.feature_health import apply_health_check_df, health_check
+
+CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 # ———————— 程序开头：全局初始化 ————————
 
 # 1. 加载配置（config.yaml）并创建数据库引擎
-with open("utils/config.yaml", "r", encoding="utf-8") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     cfg = yaml.safe_load(f)
 
 mysql_cfg = cfg["mysql"]
@@ -27,7 +29,7 @@ engine = create_engine(
 )
 
 # 2. 实例化 DataLoader（用于同步行情）
-loader = DataLoader(config_path="utils/config.yaml")
+loader = DataLoader(config_path=str(CONFIG_PATH))
 
 # 3. 读取 feature_cols.txt，为 RobustSignalGenerator 构造时保留旧特征列表
 with open("data/merged/feature_cols.txt", "r", encoding="utf-8") as f:
