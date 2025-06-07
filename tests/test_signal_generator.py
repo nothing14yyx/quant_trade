@@ -158,3 +158,20 @@ def test_update_ic_scores(monkeypatch):
     rsg.update_ic_scores(df)
     assert rsg.ic_scores["ai"] == 1
     assert rsg.ic_scores["trend"] == 2
+
+
+def test_fused_score_not_extreme():
+    """正常输入下 combine_score 不应给出極值"""
+    rsg = make_dummy_rsg()
+
+    factor_scores = {
+        'trend': 0.8,
+        'momentum': 0.7,
+        'volatility': 0.6,
+        'volume': 0.5,
+        'sentiment': 0.1,
+        'funding': 0.0,
+    }
+
+    fused = rsg.combine_score(0.8, factor_scores)
+    assert abs(fused) < 1
