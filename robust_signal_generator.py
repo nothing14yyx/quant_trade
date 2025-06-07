@@ -12,7 +12,7 @@ class RobustSignalGenerator:
       用于动态调整权重
     """
 
-    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=500):
+    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=300):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         for period, path_dict in model_paths.items():
@@ -33,7 +33,7 @@ class RobustSignalGenerator:
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         self.base_weights = {
-            'ai': 0.2,
+            'ai': 0.15,
             'trend': 0.2,
             'momentum': 0.2,
             'volatility': 0.2,
@@ -166,7 +166,7 @@ class RobustSignalGenerator:
 
         return dict(zip(self.ic_scores.keys(), w))
 
-    def dynamic_threshold(self, atr, adx, funding=0, base=0.12, min_thres=0.06, max_thres=0.25):
+    def dynamic_threshold(self, atr, adx, funding=0, base=0.10, min_thres=0.06, max_thres=0.25):
         # 波动/趋势/资金费率 动态加权 + 分位阈值
         thres = base + min(0.08, abs(atr) * 3) + min(0.08, max(adx - 20, 0) * 0.004) + min(0.05, abs(funding) * 5)
         # 分位阈值补充防“弱信号出手”
