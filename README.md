@@ -8,6 +8,9 @@
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
 - **Backtester**：依据生成的信号回测策略表现。
 
+`RobustSignalGenerator` 提供 `update_ic_scores(df)` 方法，可在启动回测或模拟时
+传入近期历史数据，自动计算因子 IC 用于调整权重。
+
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置。
 
 ## 安装与测试
