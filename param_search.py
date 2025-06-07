@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
+from tqdm import tqdm
 
 from robust_signal_generator import RobustSignalGenerator
 from backtester import (
@@ -152,7 +153,7 @@ def main() -> None:
     best = None
     best_metric = -np.inf
 
-    for params in grid:
+    for params in tqdm(grid, desc="Grid Search"):
         base_weights = {
             "ai": params["ai_w"],
             "trend": params["trend_w"],
