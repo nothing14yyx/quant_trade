@@ -41,6 +41,89 @@ def connect_mysql(cfg):
     )
     return create_engine(url)
 
+
+def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: float, slippage: float) -> pd.DataFrame:
+    """根据信号和K线计算回测交易明细"""
+    trades = []
+    in_pos = False
+    entry_price = entry_time = pos_size = score = direction = tp = sl = None
+    for i in range(1, len(df_sym)):
+        if not in_pos:
+            if i-1 < len(sig_df) and sig_df.at[i-1, 'signal'] != 0:
+                direction = sig_df.at[i-1, 'signal']
+                entry_price = df_sym.at[i, 'open'] * (1 + slippage * direction)
+                entry_time = df_sym.at[i, 'open_time']
+                pos_size = sig_df.at[i-1, 'position_size']
+                score = sig_df.at[i-1, 'score']
+                tp = sig_df.at[i-1, 'take_profit']
+                sl = sig_df.at[i-1, 'stop_loss']
+                in_pos = True
+            continue
+
+        high = df_sym.at[i, 'high']
+        low = df_sym.at[i, 'low']
+        exit_price = None
+        exit_time = None
+        if direction == 1:
+            if low <= sl:
+                exit_price = sl
+                exit_time = df_sym.at[i, 'open_time']
+            elif high >= tp:
+                exit_price = tp
+                exit_time = df_sym.at[i, 'open_time']
+        else:
+            if high >= sl:
+                exit_price = sl
+                exit_time = df_sym.at[i, 'open_time']
+            elif low <= tp:
+                exit_price = tp
+                exit_time = df_sym.at[i, 'open_time']
+
+        if exit_price is None and i < len(sig_df) and sig_df.at[i, 'signal'] == -direction:
+            exit_price = df_sym.at[i, 'close'] * (1 - slippage * direction)
+            exit_time = df_sym.at[i, 'close_time']
+
+        if exit_price is not None:
+            pnl = (exit_price - entry_price) * direction * pos_size
+            ret = pnl / entry_price - 2 * fee_rate
+            holding_s = (exit_time - entry_time).total_seconds()
+            trades.append({
+                'symbol': df_sym.at[i, 'symbol'],
+                'entry_time': entry_time,
+                'entry_price': entry_price,
+                'exit_time': exit_time,
+                'exit_price': exit_price,
+                'signal': direction,
+                'score': score,
+                'position_size': pos_size,
+                'pnl': pnl,
+                'ret': ret,
+                'holding_s': holding_s
+            })
+            in_pos = False
+
+    if in_pos:
+        exit_price = df_sym.at[len(df_sym)-1, 'close'] * (1 - slippage * direction)
+        exit_time = df_sym.at[len(df_sym)-1, 'close_time']
+        pnl = (exit_price - entry_price) * direction * pos_size
+        ret = pnl / entry_price - 2 * fee_rate
+        holding_s = (exit_time - entry_time).total_seconds()
+        trades.append({
+            'symbol': df_sym.at[len(df_sym)-1, 'symbol'],
+            'entry_time': entry_time,
+            'entry_price': entry_price,
+            'exit_time': exit_time,
+            'exit_price': exit_price,
+            'signal': direction,
+            'score': score,
+            'position_size': pos_size,
+            'pnl': pnl,
+            'ret': ret,
+            'holding_s': holding_s
+        })
+
+    return pd.DataFrame(trades)
+
 # =========== 融合信号回测 ===========
 def run_backtest(*, recent_days: int | None = None):
     cfg = load_config()
@@ -138,41 +221,14 @@ def run_backtest(*, recent_days: int | None = None):
                 'signal': result['signal'],
                 'score': result['score'],
                 'position_size': result['position_size'],
+                'take_profit': result['take_profit'],
+                'stop_loss': result['stop_loss'],
                 'details': result['details'],
             })
         sig_df = pd.DataFrame(signals)
         sig_df['symbol'] = symbol
 
-        # 只保留有信号的行，用t+1建仓/平仓
-        valid_idx = sig_df[sig_df['signal'] != 0].index + 1  # t+1
-        valid_idx = valid_idx[valid_idx < len(df_sym)]
-        trades = []
-        for idx in valid_idx:
-            entry_time  = df_sym.at[idx, 'open_time']
-            entry_price = df_sym.at[idx, 'open'] * (1 + slippage * np.sign(sig_df.at[idx-1, 'signal']))
-            exit_time   = df_sym.at[idx, 'close_time']
-            exit_price  = df_sym.at[idx, 'close'] * (1 - slippage * np.sign(sig_df.at[idx-1, 'signal']))
-            direction   = sig_df.at[idx-1, 'signal']
-            # 止损止盈可选（此处不做，建议后续加）
-            pos_size = sig_df.at[idx-1, 'position_size']
-            pnl = (exit_price - entry_price) * direction * pos_size
-            ret = pnl / entry_price - 2 * fee_rate
-            holding_s = (exit_time - entry_time).total_seconds()
-            score = sig_df.at[idx-1, 'score']
-            trades.append({
-                'symbol': symbol,
-                'entry_time': entry_time,
-                'entry_price': entry_price,
-                'exit_time': exit_time,
-                'exit_price': exit_price,
-                'signal': direction,
-                'score': score,
-                'position_size': pos_size,
-                'pnl': pnl,
-                'ret': ret,
-                'holding_s': holding_s
-            })
-        trades_df = pd.DataFrame(trades)
+        trades_df = simulate_trades(df_sym, sig_df, fee_rate=fee_rate, slippage=slippage)
         trades_all.append(trades_df)
 
         # 汇总绩效
