@@ -167,6 +167,21 @@ def check_basic_stats(df: pd.DataFrame):
     pd.reset_option("display.width")
 
 
+def check_new_features(df: pd.DataFrame):
+    print("\n=== 6. 新增特征检查 ===")
+    required_cols = [
+        "close_spread_1h_4h", "close_spread_1h_d1",
+        "ma_ratio_1h_4h", "ma_ratio_1h_d1",
+        "hour_of_day", "day_of_week",
+    ]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        print("缺失列：", missing)
+    else:
+        stats = df[required_cols].describe().loc[["count", "mean"]]
+        print(stats)
+
+
 def simple_time_series_cv(df: pd.DataFrame, prefix: str = "1h"):
     print("\n=== 6. 简单时序 CV 验证（LightGBM） ===")
     feature_cols = [c for c in df.columns if c.endswith(f"_{prefix}") or c.endswith(f"_{prefix}_isnan")]
@@ -256,7 +271,10 @@ def main():
     # 5. 部分指标基本统计量
     check_basic_stats(df)
 
-    # 6. 简单时序 CV 验证
+    # 6. 新增特征检查
+    check_new_features(df)
+
+    # 7. 简单时序 CV 验证
     if not args.skip_cv:
         simple_time_series_cv(df, prefix="1h")
 
