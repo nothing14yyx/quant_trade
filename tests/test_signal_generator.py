@@ -137,3 +137,24 @@ def test_factor_scores_use_raw_features():
     assert captured['1h'] == raw_1h
     assert captured['4h'] == raw_4h
     assert captured['d1'] == raw_d1
+
+
+def test_update_ic_scores(monkeypatch):
+    rsg = make_dummy_rsg()
+
+    import pandas as pd
+    df = pd.DataFrame({"open_time": [0], "open": [1], "close": [1]})
+
+    def fake_compute_ic_scores(df_arg, rsg_arg):
+        assert df_arg is df
+        assert rsg_arg is rsg
+        return {k: i for i, k in enumerate(rsg.base_weights, 1)}
+
+    import types, sys
+    monkeypatch.setitem(sys.modules, "param_search", types.SimpleNamespace(
+        compute_ic_scores=fake_compute_ic_scores
+    ))
+
+    rsg.update_ic_scores(df)
+    assert rsg.ic_scores["ai"] == 1
+    assert rsg.ic_scores["trend"] == 2
