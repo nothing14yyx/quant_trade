@@ -83,6 +83,9 @@ def run_backtest():
         feature_cols_d1=FEATURE_COLS_D1,
     )
 
+    # 根据近期历史数据更新因子 IC 分数
+    sg.update_ic_scores(df.tail(1000))
+
     results = []
     trades_all = []
 

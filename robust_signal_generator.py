@@ -5,8 +5,11 @@ from collections import Counter, deque
 pd.set_option('future.no_silent_downcasting', True)
 
 class RobustSignalGenerator:
-    """
-    多周期AI+多因子+动态阈值+极端行情防护 融合信号生成器（调研增强版）
+    """多周期 AI + 多因子 融合信号生成器。
+
+    - 支持动态阈值与极端行情防护
+    - 可通过 :func:`update_ic_scores` 读取历史数据并计算因子 IC
+      用于动态调整权重
     """
 
     def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=500):
@@ -164,6 +167,13 @@ class RobustSignalGenerator:
             # funding_rate_{period}
             'funding': np.tanh(safe(f'funding_rate_{period}', 0) * 100),
         }
+
+    def update_ic_scores(self, df):
+        """根据给定的历史数据计算并更新各因子的 IC 分数"""
+        from param_search import compute_ic_scores
+        ic = compute_ic_scores(df, self)
+        self.ic_scores.update(ic)
+        return self.ic_scores
 
     def dynamic_weight_update(self):
         # IC驱动动态权重分配（可扩展为每因子滑窗IC）
