@@ -53,29 +53,24 @@ database:
 
 feature_cols:
   1h:
-    - kc_perc_1h
-    - rsi_slope_1h
-    - atr_pct_1h
-    - vol_ma_ratio_1h
-    - fg_index
-    - funding_rate
-    - boll_perc_1h
-    - cci_delta_1h
+    - hour_of_day
+    - fg_index_x            # 情绪，Top2，极端行情捕捉
+    - atr_pct_1h            # 波动率，Top4，强泛化能力
+    - rsi_mul_vol_ma_ratio_1h # 动量与量能结合，Top10，捕捉异动
+    - rsi_slope_1h          # 动量斜率，Top14
+    - vol_ma_ratio_1h       # 量能活跃度，Top15
+    - cci_delta_1h          # 顺势动量，Top16
   4h:
-    - kc_perc_4h
-    - rsi_slope_4h
-    - atr_pct_4h
-    - vol_ma_ratio_4h
-    - fg_index_d1
-    - funding_rate_4h
-    - boll_perc_4h
-    - cci_delta_4h
+    - fg_index_x            # 情绪（4h同样有效，Top1）
+    - atr_pct_4h            # 波动率，Top11
+    - vol_roc_4h            # 量能变化，Top8
+    - cci_delta_4h          # 顺势动量，Top29
+    - rsi_slope_4h          # 动量斜率，Top31
+    - willr_4h              # 超买超卖信号，Top48
   d1:
-    - kc_perc_d1
-    - rsi_slope_d1
-    - atr_pct_d1
-    - vol_ma_ratio_d1
-    - fg_index_d1
-    - funding_rate_d1
-    - boll_perc_d1
-    - cci_delta_d1
+    - fg_index_x            # 情绪（日线依然有效，Top1）
+    - atr_pct_1h            # 短周期波动（日线Top3，适合极端大行情）
+    - day_of_week           # 周期性（日线高权重，Top5）
+    - cci_delta_1h          # 顺势动量（Top8）
+    - adx_4h                # 趋势强度（Top22）
+    - bb_width_chg_d1       # 布林带宽变化（日线极端行情，Top30）
