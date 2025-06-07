@@ -6,37 +6,12 @@ from sqlalchemy import create_engine
 from robust_signal_generator import RobustSignalGenerator
 from utils.helper import calc_features_raw
 
-# ====== 配置特征字段（和实盘一致！）======
-FEATURE_COLS_1H = [
-    'atr_pct_1h',  # 1h 波动率（ATR百分比）
-    'rsi_slope_1h',  # 1h RSI斜率（动量变化）
-    'kc_perc_1h',  # 1h Keltner通道分位（趋势/顺势）
-    'vol_ma_ratio_1h',  # 1h 成交量/均线（量能）
-    'boll_perc_1h',  # 1h 布林分位（价格偏离度）
-    'fg_index',  # 日度情绪（恐惧贪婪）
-    'funding_rate',  # 资金费率
-    'cci_delta_1h',  # 1h CCI变化（顺势波动）
-]
-FEATURE_COLS_4H = [
-    'atr_pct_4h',  # 4h 波动率
-    'rsi_slope_4h',  # 4h RSI斜率
-    'kc_perc_4h',  # 4h Keltner通道分位
-    'vol_ma_ratio_4h',  # 4h 成交量/均线
-    'boll_perc_4h',  # 4h 布林分位
-    'fg_index_d1',  # 日度情绪（恐惧贪婪）
-    'funding_rate_4h',  # 4h 资金费率
-    'cci_delta_4h',  # 4h CCI变化
-]
-FEATURE_COLS_D1 = [
-    'atr_pct_d1',  # 日线波动率
-    'rsi_slope_d1',  # 日线RSI斜率
-    'kc_perc_d1',  # 日线Keltner通道分位
-    'vol_ma_ratio_d1',  # 日线量能/均线
-    'boll_perc_d1',  # 日线布林分位
-    'fg_index_d1',  # 日线情绪
-    'funding_rate_d1',  # 日线资金费率
-    'cci_delta_d1',  # 日线CCI变化
-]
+# ====== 配置特征字段（从 config.yaml 读取）======
+with open("utils/config.yaml", "r", encoding="utf-8") as _f:
+    _cfg = yaml.safe_load(_f)
+FEATURE_COLS_1H = _cfg.get("feature_cols", {}).get("1h", [])
+FEATURE_COLS_4H = _cfg.get("feature_cols", {}).get("4h", [])
+FEATURE_COLS_D1 = _cfg.get("feature_cols", {}).get("d1", [])
 
 # 预训练模型路径
 MODEL_PATHS = {
