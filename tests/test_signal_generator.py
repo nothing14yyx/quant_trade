@@ -92,3 +92,42 @@ def test_generate_signal_raw_atr():
     res2 = rsg.generate_signal(features_1h, features_4h, features_d1)
     assert res2['take_profit'] == pytest.approx(115)
     assert res2['stop_loss'] == pytest.approx(90)
+
+
+def test_factor_scores_use_raw_features():
+    """确保提供 raw_features_* 时多因子计算使用原始数据"""
+    rsg = make_dummy_rsg()
+
+    captured = {}
+
+    def fake_get_factor_scores(features, period):
+        captured[period] = features
+        return {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0,
+                'sentiment': 0, 'funding': 0}
+
+    rsg.get_factor_scores = fake_get_factor_scores
+    rsg.get_ai_score = lambda f, m: 0
+    rsg.combine_score = lambda ai, fs, weights=None: 0
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.models = {
+        '1h': {'up': None, 'down': None},
+        '4h': {'up': None, 'down': None},
+        'd1': {'up': None, 'down': None},
+    }
+
+    feats_1h = {'atr_pct_1h': 0.1}
+    feats_4h = {'atr_pct_4h': 0.1}
+    feats_d1 = {'atr_pct_d1': 0.1}
+
+    raw_1h = {'atr_pct_1h': 0.2}
+    raw_4h = {'atr_pct_4h': 0.2}
+    raw_d1 = {'atr_pct_d1': 0.2}
+
+    rsg.generate_signal(feats_1h, feats_4h, feats_d1,
+                        raw_features_1h=raw_1h,
+                        raw_features_4h=raw_4h,
+                        raw_features_d1=raw_d1)
+
+    assert captured['1h'] == raw_1h
+    assert captured['4h'] == raw_4h
+    assert captured['d1'] == raw_d1
