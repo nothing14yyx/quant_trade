@@ -1,11 +1,14 @@
 import pandas as pd
 import yaml
+from pathlib import Path
 from sqlalchemy import create_engine
 from utils.helper import calc_features_full  # 确保是新版 helper（全 float64）
 from utils.robust_scaler import load_scaler_params_from_json, apply_robust_z_with_params
 
+CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
+
 # === 1. 读取配置 ===
-with open("utils/config.yaml", "r", encoding="utf-8") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     cfg = yaml.safe_load(f)
 
 mysql_cfg = cfg["mysql"]
