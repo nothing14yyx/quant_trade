@@ -169,6 +169,14 @@ class FeatureEngineer:
                 direction="backward",
             )
 
+            # --- 跨周期衍生特征 ---
+            merged["close_spread_1h_4h"] = merged["close_1h"] - merged["close_4h"]
+            merged["close_spread_1h_d1"] = merged["close_1h"] - merged["close_d1"]
+            merged["ma_ratio_1h_4h"] = merged["sma_10_1h"] / merged["sma_10_4h"].replace(0, np.nan)
+            merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(0, np.nan)
+            merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged["atr_pct_4h"].replace(0, np.nan)
+            merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged["bb_width_4h"].replace(0, np.nan)
+
             # 7. 将原始 1h K 线回拼回 merged，打上 target_up/target_down
             raw = df_1h.reset_index()  # raw["open_time"] 是 datetime64[ns]
 
@@ -180,6 +188,8 @@ class FeatureEngineer:
             )
 
             out["symbol"] = sym
+            out["hour_of_day"] = out["open_time"].dt.hour.astype(float)
+            out["day_of_week"] = out["open_time"].dt.dayofweek.astype(float)
             out = self.add_up_down_targets(out)
 
             # 8. 删除完全为 NaN 的列
