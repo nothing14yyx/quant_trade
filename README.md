@@ -33,6 +33,16 @@ python backtester.py --recent-days 7
 同样地，`model_trainer.py` 在训练各周期模型时也会先过滤相应的
 时间行，确保 4h 与 1d 模型仅使用自身周期的数据。
 
+## live_full_data 表
+
+`signal_live_simulator.py` 会持续将实时信号写入 `live_full_data`。自 v2.2
+起，该表新增 `indicators` 字段（建议 `TEXT` 或 `JSON` 类型），内容为
+JSON 字符串，包含：
+
+- `feat_1h`、`feat_4h`、`feat_d1`：标准化后的特征
+- `raw_feat_1h`、`raw_feat_4h`、`raw_feat_d1`：原始特征
+- `details`：信号生成时返回的调试信息
+
 
 
 
