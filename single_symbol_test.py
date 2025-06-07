@@ -11,13 +11,15 @@ import pytest
 from feature_engineering import calc_features_raw, apply_robust_z_with_params, load_scaler_params_from_json
 from robust_signal_generator import RobustSignalGenerator
 
+CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
+
 # =================== 0. 切换开关 ===================
 # 如果 USE_NORMALIZED = True，则对 calc_features_raw 的输出做 Robust‐Z 缩放后再传给模型
 # 如果 USE_NORMALIZED = False，则直接把 calc_features_raw 的 raw 特征传给模型（不做缩放）
 USE_NORMALIZED = True
 
 # =================== 1. 读取配置 ===================
-with open("utils/config.yaml", "r", encoding="utf-8") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
 mysql_cfg = config['mysql']
