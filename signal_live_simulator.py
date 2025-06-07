@@ -194,7 +194,7 @@ def main_loop(interval_sec: int = 60):
 
         all_full_results: list[dict] = []
         all_fused_scores: list[float] = []
-        feat_dicts: Dict[str, tuple[dict, dict, dict, float, dict]] = {}
+        feat_dicts: Dict[str, tuple[dict, dict, dict, float, dict, dict, dict]] = {}
 
         # 6. 先计算融合分数
         for sym in symbols:
@@ -251,10 +251,26 @@ def main_loop(interval_sec: int = 60):
             )
             fused_score = result["score"]
             all_fused_scores.append(fused_score)
-            feat_dicts[sym] = (feat_1h, feat_4h, feat_d1, price_4h, raw_feat_1h)
+            feat_dicts[sym] = (
+                feat_1h,
+                feat_4h,
+                feat_d1,
+                price_4h,
+                raw_feat_1h,
+                raw_feat_4h,
+                raw_feat_d1,
+            )
 
         # 7. 计算最终信号
-        for sym, (feat_1h, feat_4h, feat_d1, price_4h, raw_feat_1h) in feat_dicts.items():
+        for sym, (
+            feat_1h,
+            feat_4h,
+            feat_d1,
+            price_4h,
+            raw_feat_1h,
+            raw_feat_4h,
+            raw_feat_d1,
+        ) in feat_dicts.items():
             df_1h = feat_data[sym]["1h"]
             kline_close_time = df_1h["close_time"].iloc[-1] if "close_time" in df_1h.columns else None
 
@@ -264,6 +280,8 @@ def main_loop(interval_sec: int = 60):
                 feat_d1,
                 all_scores_list=all_fused_scores,
                 raw_features_1h=raw_feat_1h,
+                raw_features_4h=raw_feat_4h,
+                raw_features_d1=raw_feat_d1,
             )
             record = {
                 "symbol": sym,
