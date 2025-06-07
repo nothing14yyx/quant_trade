@@ -1,4 +1,5 @@
 import argparse
+from collections import deque
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
@@ -62,15 +63,10 @@ def run_single_backtest(
     history_window: int,
     th_params: dict,
     ic_scores: dict,
+    sg: RobustSignalGenerator,
 ) -> tuple:
     """在给定参数下执行一次回测，返回平均收益率和夏普比"""
-    sg = RobustSignalGenerator(
-        model_paths=convert_model_paths(MODEL_PATHS),
-        feature_cols_1h=FEATURE_COLS_1H,
-        feature_cols_4h=FEATURE_COLS_4H,
-        feature_cols_d1=FEATURE_COLS_D1,
-        history_window=history_window,
-    )
+    sg.history_scores = deque(maxlen=history_window)
     sg.base_weights = base_weights
 
     if th_params:
@@ -143,14 +139,14 @@ def main() -> None:
     if args.rows:
         df = df.tail(args.rows)
 
-    # 预先计算 IC 分数，避免在每次回测时重复计算
-    tmp_sg = RobustSignalGenerator(
+    # 预先加载模型并实例化一次信号生成器
+    sg = RobustSignalGenerator(
         model_paths=convert_model_paths(MODEL_PATHS),
         feature_cols_1h=FEATURE_COLS_1H,
         feature_cols_4h=FEATURE_COLS_4H,
         feature_cols_d1=FEATURE_COLS_D1,
     )
-    cached_ic = precompute_ic_scores(df, tmp_sg)
+    cached_ic = precompute_ic_scores(df, sg)
 
     param_grid = {
         "history_window": [300, 500],
@@ -179,6 +175,7 @@ def main() -> None:
             params["history_window"],
             th_params,
             cached_ic,
+            sg,
         )
         metric = sharpe if not np.isnan(sharpe) else -np.inf
         if metric > best_metric:
