@@ -33,23 +33,6 @@ python backtester.py --recent-days 7
 同样地，`model_trainer.py` 在训练各周期模型时也会先过滤相应的
 时间行，确保 4h 与 1d 模型仅使用自身周期的数据。
 
-## 统计最近七天胜率
 
-`scripts/weekly_win_rate.py` 用于快速查看最近一周的交易表现。
-脚本会优先读取仓库根目录的 `backtest_fusion_trades_all.csv`，
-若不存在则从 `utils/config.yaml` 中的 `database.uri` 连接
-`live_full_data` 表获取数据。
 
-运行方式如下：
-
-```bash
-python scripts/weekly_win_rate.py
-```
-
-也可以显式指定数据来源：
-
-```bash
-python scripts/weekly_win_rate.py --csv path/to/file.csv
-python scripts/weekly_win_rate.py --db mysql+pymysql://user:pwd@host/db
-```
 
