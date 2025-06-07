@@ -37,11 +37,14 @@ orig_cols = {
 all_features = [c for c in df.columns if c not in orig_cols]
 
 # ---------- 2. 按周期归类 ----------
-# 注意：此处只匹配 *_1h/*_4h/*_d1，不会误把 _isnan 或其他列包含进来
+# 默认仅匹配 *_1h/*_4h/*_d1 结尾。为了让小时/周标记以及 _x/_y/_feat 列也能参与评估，
+# 这里在后缀判断中额外加入這些情況。
+base_suffixes = ("_1h", "_4h", "_d1", "_x", "_y", "_feat")
+time_cols = {"hour_of_day", "day_of_week"}
 feature_pool = {
-    "1h": [c for c in all_features if c.endswith("_1h") or c.endswith("_4h") or c.endswith("_d1")],
-    "4h": [c for c in all_features if c.endswith("_4h") or c.endswith("_d1")],
-    "1d": [c for c in all_features if c.endswith("_d1")],
+    "1h": [c for c in all_features if c.endswith(base_suffixes) or c in time_cols],
+    "4h": [c for c in all_features if c.endswith(base_suffixes) or c in time_cols],
+    "1d": [c for c in all_features if c.endswith(base_suffixes) or c in time_cols],
 }
 
 yaml_out = {}
