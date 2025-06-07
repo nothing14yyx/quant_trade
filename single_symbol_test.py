@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 # Skip this integration test when running in automated environments
-pytest.skip("requires database access", allow_module_level=True)
+# pytest.skip("requires database access", allow_module_level=True)
 
 from feature_engineering import calc_features_raw, apply_robust_z_with_params, load_scaler_params_from_json
 from robust_signal_generator import RobustSignalGenerator
