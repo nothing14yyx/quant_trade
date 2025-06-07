@@ -150,11 +150,12 @@ def run_backtest(*, recent_days: int | None = None):
         for idx in valid_idx:
             entry_time  = df_sym.at[idx, 'open_time']
             entry_price = df_sym.at[idx, 'open'] * (1 + slippage * np.sign(sig_df.at[idx-1, 'signal']))
-            exit_time   = df_sym.at[idx, 'open_time']
+            exit_time   = df_sym.at[idx, 'close_time']
             exit_price  = df_sym.at[idx, 'close'] * (1 - slippage * np.sign(sig_df.at[idx-1, 'signal']))
             direction   = sig_df.at[idx-1, 'signal']
             # 止损止盈可选（此处不做，建议后续加）
-            pnl = (exit_price - entry_price) * direction
+            pos_size = sig_df.at[idx-1, 'position_size']
+            pnl = (exit_price - entry_price) * direction * pos_size
             ret = pnl / entry_price - 2 * fee_rate
             holding_s = (exit_time - entry_time).total_seconds()
             score = sig_df.at[idx-1, 'score']
@@ -166,6 +167,7 @@ def run_backtest(*, recent_days: int | None = None):
                 'exit_price': exit_price,
                 'signal': direction,
                 'score': score,
+                'position_size': pos_size,
                 'pnl': pnl,
                 'ret': ret,
                 'holding_s': holding_s
@@ -182,20 +184,28 @@ def run_backtest(*, recent_days: int | None = None):
             }
         else:
             n = len(trades_df)
+            weights = trades_df['position_size']
             cumprod = (trades_df['ret'] + 1.0).cumprod()
             total_ret = cumprod.iloc[-1] - 1.0
-            wins = trades_df[trades_df['ret'] > 0]['ret']
-            losses = trades_df[trades_df['ret'] <= 0]['ret']
-            win_rate = len(wins) / n
-            avg_pnl = trades_df['pnl'].mean()
-            avg_win = wins.mean() if not wins.empty else 0
-            avg_loss = losses.mean() if not losses.empty else 0
+
+            win_mask = trades_df['ret'] > 0
+            loss_mask = ~win_mask
+
+            win_rate = weights[win_mask].sum() / weights.sum() if weights.sum() != 0 else np.nan
+            avg_pnl = np.average(trades_df['pnl'], weights=weights)
+            avg_win = np.average(trades_df.loc[win_mask, 'pnl'], weights=weights[win_mask]) if win_mask.any() else 0
+            avg_loss = np.average(trades_df.loc[loss_mask, 'pnl'], weights=weights[loss_mask]) if loss_mask.any() else 0
+
             hwm = cumprod.cummax()
             drawdown = cumprod / hwm - 1.0
             max_dd = drawdown.min()
-            ret_std = trades_df['ret'].std()
-            sharpe = trades_df['ret'].mean() / ret_std * np.sqrt(n) if ret_std else np.nan
-            avg_hold = trades_df['holding_s'].mean()
+
+            weighted_ret = np.average(trades_df['ret'], weights=weights)
+            ret_var = np.average((trades_df['ret'] - weighted_ret) ** 2, weights=weights)
+            ret_std = np.sqrt(ret_var)
+            sharpe = weighted_ret / ret_std * np.sqrt(n) if ret_std else np.nan
+
+            avg_hold = np.average(trades_df['holding_s'], weights=weights)
             summary = {
                 'symbol': symbol, 'n_trades': n, 'total_ret': total_ret, 'win_rate': win_rate,
                 'avg_pnl': avg_pnl, 'avg_win': avg_win, 'avg_loss': avg_loss,
