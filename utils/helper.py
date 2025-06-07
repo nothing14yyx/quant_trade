@@ -43,9 +43,14 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         assign_safe(feats, "funding_rate", df["funding_rate"].astype(float).ffill())
 
     assign_safe(feats, f"ema_diff_{period}", ta.ema(feats["close"], 10) - ta.ema(feats["close"], 50))
+    assign_safe(feats, f"sma_10_{period}", ta.sma(feats["close"], length=10))
+    feats[f"pct_chg1_{period}"] = feats["close"].pct_change()
+    feats[f"pct_chg3_{period}"] = feats["close"].pct_change(3)
+    feats[f"pct_chg6_{period}"] = feats["close"].pct_change(6)
     assign_safe(feats, f"rsi_{period}", ta.rsi(feats["close"], length=14))
     feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
     assign_safe(feats, f"atr_pct_{period}", ta.atr(feats["high"], feats["low"], feats["close"], length=14) / feats["close"])
+    feats[f"atr_chg_{period}"] = feats[f"atr_pct_{period}"].diff()
 
     assign_safe(feats, f"adx_{period}", ta.adx(feats["high"], feats["low"], feats["close"], length=14)["ADX_14"])
     feats[f"adx_delta_{period}"] = feats[f"adx_{period}"].diff()
@@ -57,6 +62,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
 
     bb = ta.bbands(feats["close"], length=20)
     assign_safe(feats, f"bb_width_{period}", bb["BBU_20_2.0"] - bb["BBL_20_2.0"])
+    feats[f"bb_width_chg_{period}"] = feats[f"bb_width_{period}"].diff()
     assign_safe(feats, f"boll_perc_{period}", (feats["close"] - bb["BBL_20_2.0"]) / (bb["BBU_20_2.0"] - bb["BBL_20_2.0"]).replace(0, np.nan))
 
     kc = ta.kc(feats["high"], feats["low"], feats["close"], length=20)
