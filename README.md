@@ -9,3 +9,9 @@
 - **Backtester**：依据生成的信号回测策略表现。
 
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置。
+
+## 安装与测试
+
+在开始之前，请执行 `pip install -r requirements.txt` 安装依赖。
+
+完成安装后，可运行 `pytest` 执行自带的单元测试。
