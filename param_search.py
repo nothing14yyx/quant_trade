@@ -33,10 +33,19 @@ def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
 
     ic_scores = {}
     rets = returns.iloc[:-1].values
+    thresh = 1e-12
     for k, vals in scores.items():
         arr = np.asarray(vals, dtype=float)
         mask = ~np.isnan(arr) & ~np.isnan(rets)
-        ic = np.corrcoef(arr[mask], rets[mask])[0, 1] if mask.sum() > 1 else 0.0
+        if mask.sum() > 1:
+            std_arr = arr[mask].std()
+            std_rets = rets[mask].std()
+            if std_arr < thresh or std_rets < thresh:
+                ic = 0.0
+            else:
+                ic = np.corrcoef(arr[mask], rets[mask])[0, 1]
+        else:
+            ic = 0.0
         ic_scores[k] = ic
     return ic_scores
 
