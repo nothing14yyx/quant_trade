@@ -42,10 +42,14 @@ def connect_mysql(cfg):
     return create_engine(url)
 
 # =========== 融合信号回测 ===========
-def run_backtest():
+def run_backtest(*, recent_days: int | None = None):
     cfg = load_config()
     engine = connect_mysql(cfg)
     df = pd.read_sql('SELECT * FROM features', engine, parse_dates=['open_time','close_time'])
+    if recent_days:
+        end_time = df['open_time'].max()
+        start_time = end_time - pd.Timedelta(days=recent_days)
+        df = df[df['open_time'] >= start_time]
 
     # 按币种分组
     all_symbols = df['symbol'].unique().tolist()
@@ -214,5 +218,11 @@ def run_backtest():
     all_trades.to_csv('backtest_fusion_trades_all.csv', index=False)
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='回测融合信号策略')
+    parser.add_argument('--recent-days', type=int, default=None, help='只回测最近 N 天的数据')
+    args = parser.parse_args()
+
     os.makedirs('backtest_logs', exist_ok=True)
-    run_backtest()
+    run_backtest(recent_days=args.recent_days)
