@@ -54,17 +54,25 @@ for period, cols in feature_pool.items():
     print(f"\n========== {period} 周期 ==========")
     use_cols = [c for c in cols if c in df.columns]
 
-    # 3-1 去掉覆盖率过低列
-    coverage = df[use_cols].notna().mean()
+    # ----- 根据周期过滤对应的时间行 -----
+    if period == "4h":
+        df_period = df[df["open_time"].dt.hour % 4 == 0]
+    elif period == "1d":
+        df_period = df[df["open_time"].dt.hour == 0]
+    else:
+        df_period = df
+
+    # 3-1 去掉覆盖率过低列 (仅基于该周期数据)
+    coverage = df_period[use_cols].notna().mean()
     keep_cols = coverage[coverage >= MIN_COVER].index.tolist()
     if not keep_cols:
-        print("无有效特征列（全表覆盖率 < 10%），跳过该周期。")
+        print("无有效特征列（覆盖率 < 10%），跳过该周期。")
         continue
 
     # ===== 新增：剔除所有非数值列（尤其 datetime64） =====
     numeric_cols = [
         c for c in keep_cols
-        if pd.api.types.is_float_dtype(df[c]) or pd.api.types.is_integer_dtype(df[c])
+        if pd.api.types.is_float_dtype(df_period[c]) or pd.api.types.is_integer_dtype(df_period[c])
     ]
     if not numeric_cols:
         print("剔除非数值列后没有剩余特征，跳过该周期。")
@@ -72,7 +80,7 @@ for period, cols in feature_pool.items():
     keep_cols = numeric_cols
 
     # 3-2 留下目标非空行，做 TimeSeriesSplit 前要按时间排序
-    subset = df[keep_cols + [TARGET, "open_time"]].dropna(subset=[TARGET])
+    subset = df_period[keep_cols + [TARGET, "open_time"]].dropna(subset=[TARGET])
     subset = subset.sort_values("open_time").reset_index(drop=True)
 
     if len(subset) < 800:
