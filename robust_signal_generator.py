@@ -176,28 +176,20 @@ class RobustSignalGenerator:
         return max(min_thres, min(max_thres, thres))
 
     def combine_score(self, ai_score, factor_scores, weights=None):
-        # 动态排序赋权 + 中位融合（调研建议）
+        """按固定顺序加权合并各因子得分"""
         if weights is None:
             weights = self.base_weights
-        raw_scores = [
-            ai_score,
-            factor_scores['trend'],
-            factor_scores['momentum'],
-            factor_scores['volatility'],
-            factor_scores['volume'],
-            factor_scores['sentiment'],
-            factor_scores['funding']
-        ]
-        # 排序赋权（绝对值越大权重越高）
-        abs_idx = np.argsort(-np.abs(raw_scores))
-        sorted_scores = np.array(raw_scores)[abs_idx]
 
-        weight_values = np.array([weights[k] for k in weights])
-        sorted_weights = np.sort(weight_values)[::-1]
+        fused_score = (
+            ai_score * weights['ai']
+            + factor_scores['trend'] * weights['trend']
+            + factor_scores['momentum'] * weights['momentum']
+            + factor_scores['volatility'] * weights['volatility']
+            + factor_scores['volume'] * weights['volume']
+            + factor_scores['sentiment'] * weights['sentiment']
+            + factor_scores['funding'] * weights['funding']
+        )
 
-        fused_score = np.dot(sorted_scores, sorted_weights)
-        # 可选：中位融合
-        # fused_score = np.median(raw_scores)
         return float(np.clip(fused_score, -1, 1))
 
     def consensus_check(self, s1, s2, s3, min_agree=2):

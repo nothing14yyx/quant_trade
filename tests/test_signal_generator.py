@@ -175,3 +175,41 @@ def test_fused_score_not_extreme():
 
     fused = rsg.combine_score(0.8, factor_scores)
     assert abs(fused) < 1
+
+
+def test_combine_score_weight_names():
+    """确保 combine_score 使用因子名称对应权重"""
+    rsg = make_dummy_rsg()
+
+    ai = 0.1
+    factor_scores = {
+        'trend': 0.2,
+        'momentum': 0.3,
+        'volatility': 0.4,
+        'volume': 0.5,
+        'sentiment': 0.6,
+        'funding': 0.7,
+    }
+
+    weights = {
+        'funding': 0.05,
+        'sentiment': 0.05,
+        'volume': 0.1,
+        'volatility': 0.2,
+        'momentum': 0.2,
+        'trend': 0.2,
+        'ai': 0.2,
+    }
+
+    expected = (
+        ai * weights['ai']
+        + factor_scores['trend'] * weights['trend']
+        + factor_scores['momentum'] * weights['momentum']
+        + factor_scores['volatility'] * weights['volatility']
+        + factor_scores['volume'] * weights['volume']
+        + factor_scores['sentiment'] * weights['sentiment']
+        + factor_scores['funding'] * weights['funding']
+    )
+
+    fused = rsg.combine_score(ai, factor_scores, weights)
+    assert fused == pytest.approx(expected)
