@@ -43,6 +43,17 @@ def test_dynamic_threshold_upper_bound():
     assert th == pytest.approx(0.25)
 
 
+def test_dynamic_threshold_multi_period():
+    rsg = make_dummy_rsg()
+    th1 = rsg.dynamic_threshold(0.02, 25)
+    th2 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
+    th3 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
+
+    assert th1 == pytest.approx(0.18)
+    assert th2 == pytest.approx(0.205)
+    assert th3 == pytest.approx(0.2175)
+
+
 def test_consensus_check():
     rsg = make_dummy_rsg()
     assert rsg.consensus_check(0.2, 0.3, 0.1) == 1
