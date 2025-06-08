@@ -166,13 +166,45 @@ class RobustSignalGenerator:
 
         return dict(zip(self.ic_scores.keys(), w))
 
-    def dynamic_threshold(self, atr, adx, funding=0, base=0.10, min_thres=0.06, max_thres=0.25):
-        # 波动/趋势/资金费率 动态加权 + 分位阈值
-        thres = base + min(0.08, abs(atr) * 3) + min(0.08, max(adx - 20, 0) * 0.004) + min(0.05, abs(funding) * 5)
-        # 分位阈值补充防“弱信号出手”
+    def dynamic_threshold(
+        self,
+        atr,
+        adx,
+        funding=0,
+        atr_4h=None,
+        adx_4h=None,
+        atr_d1=None,
+        adx_d1=None,
+        base=0.10,
+        min_thres=0.06,
+        max_thres=0.25,
+    ):
+        """根据多周期波动与趋势强度动态计算阈值"""
+
+        thres = base
+
+        # ===== 波动性贡献 =====
+        thres += min(0.08, abs(atr) * 3)
+        if atr_4h is not None:
+            thres += 0.5 * min(0.08, abs(atr_4h) * 3)
+        if atr_d1 is not None:
+            thres += 0.25 * min(0.08, abs(atr_d1) * 3)
+
+        # ===== 趋势强度贡献 =====
+        thres += min(0.08, max(adx - 20, 0) * 0.004)
+        if adx_4h is not None:
+            thres += 0.5 * min(0.08, max(adx_4h - 20, 0) * 0.004)
+        if adx_d1 is not None:
+            thres += 0.25 * min(0.08, max(adx_d1 - 20, 0) * 0.004)
+
+        # ===== 资金费率贡献 =====
+        thres += min(0.05, abs(funding) * 5)
+
+        # ===== 历史分位阈值补充 =====
         if len(self.history_scores) > 100:
             quantile_th = np.quantile(np.abs(self.history_scores), 0.92)
             thres = max(thres, quantile_th)
+
         return max(min_thres, min(max_thres, thres))
 
     def combine_score(self, ai_score, factor_scores, weights=None):
@@ -334,10 +366,27 @@ class RobustSignalGenerator:
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
         raw_f1h = raw_features_1h or features_1h
+        raw_f4h = raw_features_4h or features_4h
+        raw_fd1 = raw_features_d1 or features_d1
+
         atr_1h = raw_f1h.get('atr_pct_1h', features_1h.get('atr_pct_1h', 0))
         adx_1h = raw_f1h.get('adx_1h', features_1h.get('adx_1h', 0))
         funding_1h = raw_f1h.get('funding_rate_1h', features_1h.get('funding_rate_1h', 0)) or 0
-        th = self.dynamic_threshold(atr_1h, adx_1h, funding_1h)
+
+        atr_4h = raw_f4h.get('atr_pct_4h', features_4h.get('atr_pct_4h', 0)) if raw_f4h else None
+        adx_4h = raw_f4h.get('adx_4h', features_4h.get('adx_4h', 0)) if raw_f4h else None
+        atr_d1 = raw_fd1.get('atr_pct_d1', features_d1.get('atr_pct_d1', 0)) if raw_fd1 else None
+        adx_d1 = raw_fd1.get('adx_d1', features_d1.get('adx_d1', 0)) if raw_fd1 else None
+
+        th = self.dynamic_threshold(
+            atr_1h,
+            adx_1h,
+            funding_1h,
+            atr_4h=atr_4h,
+            adx_4h=adx_4h,
+            atr_d1=atr_d1,
+            adx_d1=adx_d1,
+        )
 
         if abs(fused_score) < th:
             return {
