@@ -68,7 +68,7 @@ def train_ensemble(df_all: pd.DataFrame, features: list[str], tgt: str, model_pa
         y = data[tgt]
 
     base_models = []
-    base_models.append(("lgb", lgb.LGBMClassifier(objective="binary", random_state=42, n_jobs=-1)))
+    base_models.append(("lgb", lgb.LGBMClassifier(objective="binary", random_state=42, n_jobs=1)))
     base_models.append(("xgb", xgb.XGBClassifier(objective="binary:logistic", random_state=42, n_estimators=200, eval_metric="auc")))
     if CatBoostClassifier is not None:
         base_models.append(("cat", CatBoostClassifier(depth=6, learning_rate=0.1, verbose=False)))

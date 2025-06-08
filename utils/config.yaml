@@ -119,6 +119,6 @@ feature_cols:
     - pct_chg6_d1
 
 train_settings:
-  by_symbol: true
+  by_symbol: false
   min_rows: 500
   time_ranges: []
