@@ -77,16 +77,23 @@ class FeatureEngineer:
     @staticmethod
     def add_up_down_targets(
         df: pd.DataFrame,
-        threshold: float | None = 0.015,
+        threshold: float | str | None = 0.015,
         shift_n: int = 3,
         vol_window: int = 24,
     ) -> pd.DataFrame:
-        """生成涨跌与波动率标签，无未来数据泄漏"""
+        """生成涨跌与波动率等标签，无未来数据泄漏
+
+        参数 threshold 支持：
+            - float：固定阈值
+            - "auto": 使用 rolling mean 波动率 * 1.5
+            - "quantile": 使用 rolling 80% 分位波动率
+            - None：等同于 "auto"
+        """
         close = df["close"]
         fut_hi = close.shift(-1).rolling(shift_n, min_periods=1).max()
         fut_lo = close.shift(-1).rolling(shift_n, min_periods=1).min()
 
-        if threshold is None:
+        if threshold in (None, "auto"):
             vol = (
                 df.groupby("symbol")["close"]
                 .pct_change()
@@ -95,8 +102,16 @@ class FeatureEngineer:
                 .mean()
             ) * 1.5
             th = vol
+        elif threshold == "quantile":
+            th = (
+                df.groupby("symbol")["close"]
+                .pct_change()
+                .abs()
+                .rolling(vol_window, min_periods=1)
+                .quantile(0.8)
+            )
         else:
-            th = pd.Series(threshold, index=df.index)
+            th = pd.Series(float(threshold), index=df.index)
 
         df["target_up"] = ((fut_hi / close - 1) >= th).astype(float)
         df["target_down"] = ((fut_lo / close - 1) <= -th).astype(float)
@@ -106,6 +121,8 @@ class FeatureEngineer:
             .std()
             .shift(-shift_n)
         )
+        df["future_max_rise"] = fut_hi / close - 1
+        df["future_max_drawdown"] = fut_lo / close - 1
         df.loc[df.tail(shift_n).index, ["target_up", "target_down", "future_volatility"]] = np.nan
         return df
 
@@ -205,6 +222,8 @@ class FeatureEngineer:
             merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
             merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
             merged["macd_hist_4h_mul_bb_width_1h"] = merged["macd_hist_4h"] * merged["bb_width_1h"]
+            merged["rsi_1h_mul_vol_ma_ratio_4h"] = merged["rsi_1h"] * merged["vol_ma_ratio_4h"]
+            merged["macd_hist_1h_mul_bb_width_4h"] = merged["macd_hist_1h"] * merged["bb_width_4h"]
 
             # 7. 将原始 1h K 线回拼回 merged，打上 target_up/target_down
             raw = df_1h.reset_index()  # raw["open_time"] 是 datetime64[ns]

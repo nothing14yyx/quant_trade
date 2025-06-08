@@ -41,6 +41,8 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         assign_safe(feats, "fg_index", df["fg_index"].astype(float).ffill())
     if "funding_rate" in df:
         assign_safe(feats, "funding_rate", df["funding_rate"].astype(float).ffill())
+        fr_ema = ta.ema(feats["funding_rate"], length=24)
+        assign_safe(feats, f"funding_rate_anom_{period}", (feats["funding_rate"] - fr_ema))
 
     assign_safe(feats, f"ema_diff_{period}", ta.ema(feats["close"], 10) - ta.ema(feats["close"], 50))
     assign_safe(feats, f"sma_10_{period}", ta.sma(feats["close"], length=10))
@@ -81,6 +83,16 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"upper_wick_ratio_{period}", (feats["high"] - np.maximum(feats["open"], feats["close"])) / range_)
     assign_safe(feats, f"lower_wick_ratio_{period}", (np.minimum(feats["open"], feats["close"]) - feats["low"]) / range_)
     assign_safe(feats, f"body_ratio_{period}", body / range_)
+
+    # === 新增：长影线与低波动突破等结构特征 ===
+    upper_long = (feats[f"upper_wick_ratio_{period}"] > 0.6) & (feats[f"body_ratio_{period}"] < 0.3)
+    lower_long = (feats[f"lower_wick_ratio_{period}"] > 0.6) & (feats[f"body_ratio_{period}"] < 0.3)
+    assign_safe(feats, f"long_upper_shadow_{period}", upper_long.astype(float))
+    assign_safe(feats, f"long_lower_shadow_{period}", lower_long.astype(float))
+
+    sma_bbw = ta.sma(feats[f"bb_width_{period}"], length=20)
+    vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
+    assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
 
     feats[f"bull_streak_{period}"] = (
         feats["close"].gt(feats["open"]).astype(float)
