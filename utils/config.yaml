@@ -45,8 +45,8 @@ models:
     up: models/model_4h_up.pkl
     down: models/model_4h_down.pkl
   d1:
-    up: models/model_d1_up.pkl
-    down: models/model_d1_down.pkl
+    up: models/model_1d_up.pkl
+    down: models/model_1d_down.pkl
 
 database:
   uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"

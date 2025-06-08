@@ -59,7 +59,7 @@ raw_feats = {
 model_paths = config["models"]
 feature_cols_1h = config["feature_cols"]["1h"]
 feature_cols_4h = config["feature_cols"]["4h"]
-feature_cols_d1 = config["feature_cols"]["d1"]
+feature_cols_d1 = config["feature_cols"]["1d"]
 
 signal_generator = RobustSignalGenerator(
     model_paths,
