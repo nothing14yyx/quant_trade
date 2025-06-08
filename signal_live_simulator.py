@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytz
 from pathlib import Path
 import os
@@ -197,6 +197,9 @@ def main_loop(interval_sec: int = 60):
             continue
 
         last_1h_kline_time = min_last_time
+        print(
+            f"新1h K线开始计算：{to_shanghai(min_last_time).strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
         # 4. 拉特征
         sql_feat = f"""
@@ -373,7 +376,12 @@ def main_loop(interval_sec: int = 60):
 
         elapsed = time.time() - loop_start
         wait = max(0, interval_sec - elapsed)
-        print(f"本轮完成，已写入信号，时间：{now_local.strftime('%Y-%m-%d %H:%M:%S')}")
+        finished_local = datetime.now(TZ_SH)
+        next_start = finished_local + timedelta(seconds=wait)
+        print(
+            f"本轮完成，耗时 {elapsed:.2f} 秒，已写入信号，时间：{finished_local.strftime('%Y-%m-%d %H:%M:%S')}，"
+            f"新一轮开始：{next_start.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
         time.sleep(wait)
 
