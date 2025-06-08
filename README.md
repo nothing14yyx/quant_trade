@@ -10,8 +10,9 @@
 - **Backtester**：依据生成的信号回测策略表现。
 - **FeatureSelector**：综合 AUC、SHAP 与 Permutation Importance 评分，筛选去冗余的核心特征。
 
-`RobustSignalGenerator` 提供 `update_ic_scores(df)` 方法，可在启动回测或模拟时
-传入近期历史数据，自动计算因子 IC 用于调整权重。
+`RobustSignalGenerator` 提供 `update_ic_scores(df, window=None, group_by=None)`
+接口，可在启动回测或模拟时传入近期历史数据，按时间窗口或币种分组滚动计算
+因子 IC，并据此自动更新权重。
 
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置，
 其中 `api_key`、`api_secret` 与 MySQL `password` 支持通过环境变量传入。
