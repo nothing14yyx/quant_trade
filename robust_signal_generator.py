@@ -96,6 +96,16 @@ class RobustSignalGenerator:
         proba_up = lgb_model.predict_proba(X_df)[0][1]
         return self._score_from_proba(proba_up)
 
+    def get_vol_prediction(self, features, model_dict):
+        """根据回归模型预测未来波动率"""
+        lgb_model = model_dict["model"]
+        train_cols = model_dict["features"]
+
+        row_data = {col: [features.get(col, 0)] for col in train_cols}
+        X_df = pd.DataFrame(row_data)
+        X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
+        return float(lgb_model.predict(X_df)[0])
+
     # robust_signal_generator.py
 
     def get_factor_scores(self, features: dict, period: str) -> dict:
@@ -210,11 +220,14 @@ class RobustSignalGenerator:
         adx_4h=None,
         atr_d1=None,
         adx_d1=None,
+        pred_vol=None,
+        pred_vol_4h=None,
+        pred_vol_d1=None,
         base=0.10,
         min_thres=0.06,
         max_thres=0.25,
     ):
-        """根据多周期波动与趋势强度动态计算阈值"""
+        """根据历史 ATR、ADX 以及预测波动率动态计算阈值"""
 
         thres = base
 
@@ -224,6 +237,12 @@ class RobustSignalGenerator:
             thres += 0.5 * min(0.08, abs(atr_4h) * 3)
         if atr_d1 is not None:
             thres += 0.25 * min(0.08, abs(atr_d1) * 3)
+        if pred_vol is not None:
+            thres += min(0.05, abs(pred_vol) * 3)
+        if pred_vol_4h is not None:
+            thres += 0.5 * min(0.05, abs(pred_vol_4h) * 3)
+        if pred_vol_d1 is not None:
+            thres += 0.25 * min(0.05, abs(pred_vol_d1) * 3)
 
         # ===== 趋势强度贡献 =====
         thres += min(0.08, max(adx - 20, 0) * 0.004)
@@ -307,10 +326,15 @@ class RobustSignalGenerator:
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores = {}
+        vol_preds = {}
         for p, feats in [('1h', features_1h), ('4h', features_4h), ('d1', features_d1)]:
             score_up = self.get_ai_score(feats, self.models[p]['up'])
             score_down = self.get_ai_score(feats, self.models[p]['down'])
             ai_scores[p] = 0.5 * (score_up - score_down)
+            if 'vol' in self.models[p]:
+                vol_preds[p] = self.get_vol_prediction(feats, self.models[p]['vol'])
+            else:
+                vol_preds[p] = None
 
         # ===== 2. 计算多因子部分的分数 =====
         # 若提供了未标准化的原始特征，则优先用于多因子逻辑计算，
@@ -369,6 +393,9 @@ class RobustSignalGenerator:
                     'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
                     'strong_confirm': strong_confirm,
                     'consensus_14': consensus_14, 'consensus_all': consensus_all,
+                    'vol_pred_1h': vol_preds.get('1h'),
+                    'vol_pred_4h': vol_preds.get('4h'),
+                    'vol_pred_d1': vol_preds.get('d1'),
                     'note': 'fused_score was NaN'
                 }
             }
@@ -388,7 +415,10 @@ class RobustSignalGenerator:
             'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
             'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
             'strong_confirm': strong_confirm,
-            'consensus_14': consensus_14, 'consensus_all': consensus_all
+            'consensus_14': consensus_14, 'consensus_all': consensus_all,
+            'vol_pred_1h': vol_preds.get('1h'),
+            'vol_pred_4h': vol_preds.get('4h'),
+            'vol_pred_d1': vol_preds.get('d1'),
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
@@ -413,6 +443,9 @@ class RobustSignalGenerator:
             adx_4h=adx_4h,
             atr_d1=atr_d1,
             adx_d1=adx_d1,
+            pred_vol=vol_preds.get('1h'),
+            pred_vol_4h=vol_preds.get('4h'),
+            pred_vol_d1=vol_preds.get('d1'),
         )
 
         if abs(fused_score) < th:
