@@ -200,6 +200,10 @@ def main_loop(interval_sec: int = 60):
             continue
 
         last_1h_kline_time = min_last_time
+        calc_start_local = datetime.now(TZ_SH)
+        print(
+            f"新1h K线开始计算：{calc_start_local.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
         calc_start_local = datetime.now(TZ_SH)
         print(
@@ -234,19 +238,18 @@ def main_loop(interval_sec: int = 60):
         all_fused_scores: list[float] = []
         feat_dicts: Dict[str, tuple[dict, dict, dict, float, dict, dict, dict]] = {}
 
-        # 6. 先计算融合分数
-        for sym in symbols:
+        def process_symbol(sym: str):
             df_1h = feat_data[sym].get("1h")
             df_4h = feat_data[sym].get("4h")
             df_d1 = feat_data[sym].get("1d")
             if df_1h is None or df_4h is None or df_d1 is None:
-                continue
+                return None
 
             raw_1h = calc_features_raw(df_1h, "1h")
             raw_4h = calc_features_raw(df_4h, "4h")
             raw_d1 = calc_features_raw(df_d1, "d1")
             if raw_1h.empty or raw_4h.empty or raw_d1.empty:
-                continue
+                return None
 
             last_raw_1h = raw_1h.iloc[[-1]]
             last_raw_4h = raw_4h.iloc[[-1]]
@@ -288,8 +291,10 @@ def main_loop(interval_sec: int = 60):
                 raw_features_d1=raw_feat_d1,
             )
             fused_score = result["score"]
-            all_fused_scores.append(fused_score)
-            feat_dicts[sym] = (
+
+            return (
+                sym,
+                fused_score,
                 feat_1h,
                 feat_4h,
                 feat_d1,
@@ -298,6 +303,35 @@ def main_loop(interval_sec: int = 60):
                 raw_feat_4h,
                 raw_feat_d1,
             )
+
+        # 6. 先计算融合分数 (使用多线程提高速度)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(process_symbol, sym): sym for sym in symbols}
+            for future in as_completed(futures):
+                res = future.result()
+                if res is None:
+                    continue
+                (
+                    sym,
+                    fused_score,
+                    feat_1h,
+                    feat_4h,
+                    feat_d1,
+                    price_4h,
+                    raw_feat_1h,
+                    raw_feat_4h,
+                    raw_feat_d1,
+                ) = res
+                all_fused_scores.append(fused_score)
+                feat_dicts[sym] = (
+                    feat_1h,
+                    feat_4h,
+                    feat_d1,
+                    price_4h,
+                    raw_feat_1h,
+                    raw_feat_4h,
+                    raw_feat_d1,
+                )
 
         # 7. 计算最终信号
         for sym, (
