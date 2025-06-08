@@ -15,7 +15,7 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
     _cfg = yaml.safe_load(_f)
 FEATURE_COLS_1H = _cfg.get("feature_cols", {}).get("1h", [])
 FEATURE_COLS_4H = _cfg.get("feature_cols", {}).get("4h", [])
-FEATURE_COLS_D1 = _cfg.get("feature_cols", {}).get("d1", [])
+FEATURE_COLS_D1 = _cfg.get("feature_cols", {}).get("1d", [])
 
 # 预训练模型路径
 MODEL_PATHS = {
