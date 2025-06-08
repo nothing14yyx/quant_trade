@@ -178,7 +178,7 @@ def main_loop(interval_sec: int = 60):
             continue
 
         if last_1h_kline_time == min_last_time:
-            print(f"无新1h K线，等待... {min_last_time}")
+            print(f"无新1h K线，等待... ")
             time.sleep(interval_sec)
             continue
 

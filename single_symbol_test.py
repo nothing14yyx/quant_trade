@@ -1,6 +1,6 @@
 import os
 import pytest
-pytest.skip("requires database access", allow_module_level=True)
+# pytest.skip("requires database access", allow_module_level=True)
 
 import pandas as pd
 import yaml
@@ -36,7 +36,7 @@ if USE_NORMALIZED:
     SCALER_PARAMS = load_scaler_params_from_json(scaler_path)
 
 # =================== 3. 读取原始 K 线（取最新 60 条） ===================
-symbol = "BTCUSDT"
+symbol = "XRPUSDT"
 intervals = ["1h", "4h", "1d"]
 dfs_raw = {}
 
