@@ -6,7 +6,7 @@
 #   3) 交叉验证改为 TimeSeriesSplit，避免随机分层导致未来泄露
 #   4) 在训练前剔除所有非数值列（尤其 datetime64），防止 LightGBM 报错
 
-import yaml, json, lightgbm as lgb, numpy as np, pandas as pd
+import os, yaml, json, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
 from sqlalchemy import create_engine
@@ -19,7 +19,7 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 
 mysql_cfg = cfg["mysql"]
 engine = create_engine(
-    f"mysql+pymysql://{mysql_cfg['user']}:{mysql_cfg['password']}"
+    f"mysql+pymysql://{mysql_cfg['user']}:{os.getenv('MYSQL_PASSWORD', mysql_cfg['password'])}"
     f"@{mysql_cfg['host']}:{mysql_cfg.get('port',3306)}/{mysql_cfg['database']}?charset=utf8mb4"
 )
 
