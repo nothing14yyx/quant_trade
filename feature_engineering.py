@@ -51,7 +51,7 @@ class FeatureEngineer:
         # MySQL 连接配置
         mysql_cfg = self.cfg.get("mysql", {})
         self.engine = create_engine(
-            f"mysql+pymysql://{mysql_cfg.get('user', 'root')}:{mysql_cfg.get('password', '')}@"
+            f"mysql+pymysql://{mysql_cfg.get('user', 'root')}:{os.getenv('MYSQL_PASSWORD', mysql_cfg.get('password', ''))}@"
             f"{mysql_cfg.get('host', 'localhost')}:{mysql_cfg.get('port', 3306)}/"
             f"{mysql_cfg.get('database', 'quant_trading')}?charset={mysql_cfg.get('charset', 'utf8mb4')}"
         )
@@ -75,14 +75,38 @@ class FeatureEngineer:
             self.feature_cols_all = []
 
     @staticmethod
-    def add_up_down_targets(df: pd.DataFrame, threshold: float = 0.015, shift_n: int = 3) -> pd.DataFrame:
-        """向量化生成 target_up / target_down，避免 Python for-loop。（无未来泄漏）"""
+    def add_up_down_targets(
+        df: pd.DataFrame,
+        threshold: float | None = 0.015,
+        shift_n: int = 3,
+        vol_window: int = 24,
+    ) -> pd.DataFrame:
+        """生成涨跌与波动率标签，无未来数据泄漏"""
         close = df["close"]
         fut_hi = close.shift(-1).rolling(shift_n, min_periods=1).max()
         fut_lo = close.shift(-1).rolling(shift_n, min_periods=1).min()
-        df["target_up"] = ((fut_hi / close - 1) >= threshold).astype(float)
-        df["target_down"] = ((fut_lo / close - 1) <= -threshold).astype(float)
-        df.loc[df.tail(shift_n).index, ["target_up", "target_down"]] = np.nan
+
+        if threshold is None:
+            vol = (
+                df.groupby("symbol")["close"]
+                .pct_change()
+                .abs()
+                .rolling(vol_window, min_periods=1)
+                .mean()
+            ) * 1.5
+            th = vol
+        else:
+            th = pd.Series(threshold, index=df.index)
+
+        df["target_up"] = ((fut_hi / close - 1) >= th).astype(float)
+        df["target_down"] = ((fut_lo / close - 1) <= -th).astype(float)
+        df["future_volatility"] = (
+            df.groupby("symbol")["close"].pct_change()
+            .rolling(shift_n)
+            .std()
+            .shift(-shift_n)
+        )
+        df.loc[df.tail(shift_n).index, ["target_up", "target_down", "future_volatility"]] = np.nan
         return df
 
     def get_symbols(self, intervals: tuple[str, str, str] = ("1h", "4h", "1d")) -> List[str]:
@@ -176,6 +200,11 @@ class FeatureEngineer:
             merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(0, np.nan)
             merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged["atr_pct_4h"].replace(0, np.nan)
             merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged["bb_width_4h"].replace(0, np.nan)
+            merged["rsi_diff_1h_4h"] = merged["rsi_1h"] - merged["rsi_4h"]
+            merged["rsi_diff_1h_d1"] = merged["rsi_1h"] - merged["rsi_d1"]
+            merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
+            merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
+            merged["macd_hist_4h_mul_bb_width_1h"] = merged["macd_hist_4h"] * merged["bb_width_1h"]
 
             # 7. 将原始 1h K 线回拼回 merged，打上 target_up/target_down
             raw = df_1h.reset_index()  # raw["open_time"] 是 datetime64[ns]

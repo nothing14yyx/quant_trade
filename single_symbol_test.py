@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import yaml
 from pathlib import Path
@@ -24,7 +25,7 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 
 mysql_cfg = config['mysql']
 db_url = (
-    f"mysql+pymysql://{mysql_cfg['user']}:{mysql_cfg['password']}"
+    f"mysql+pymysql://{mysql_cfg['user']}:{os.getenv('MYSQL_PASSWORD', mysql_cfg['password'])}"
     f"@{mysql_cfg['host']}:{mysql_cfg['port']}/{mysql_cfg['database']}?charset={mysql_cfg['charset']}"
 )
 engine = create_engine(db_url)

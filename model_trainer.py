@@ -1,6 +1,6 @@
 # model_trainer.py  (2025-06-03, 已添加按 open_time 排序)
 # ----------------------------------------------------------------
-import yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd
+import os, yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 from sqlalchemy import create_engine
@@ -13,7 +13,7 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 
 mysql_cfg = cfg["mysql"]
 engine = create_engine(
-    f"mysql+pymysql://{mysql_cfg['user']}:{mysql_cfg['password']}"
+    f"mysql+pymysql://{mysql_cfg['user']}:{os.getenv('MYSQL_PASSWORD', mysql_cfg['password'])}"
     f"@{mysql_cfg['host']}:{mysql_cfg.get('port',3306)}/{mysql_cfg['database']}?charset=utf8mb4"
 )
 
@@ -28,7 +28,7 @@ if not feature_cols:
     raise RuntimeError("config.yaml 缺少 feature_cols 配置")
 
 # ---------- 4. 目标列 ----------
-targets = {"up": "target_up", "down": "target_down"}
+targets = {"up": "target_up", "down": "target_down", "vol": "future_volatility"}
 
 # ---------- 5. 训练函数 ----------
 def train_one(df_all: pd.DataFrame,
