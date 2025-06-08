@@ -53,7 +53,8 @@ def drop_price_outliers(df: pd.DataFrame, pct: float = 0.995) -> pd.DataFrame:
 def train_one(df_all: pd.DataFrame,
               features: list[str],
               tgt: str,
-              model_path: Path) -> None:
+              model_path: Path,
+              regression: bool = False) -> None:
 
     # 5-1  缺列补 NaN
     for col in features:
@@ -70,31 +71,46 @@ def train_one(df_all: pd.DataFrame,
     # 5-3  过滤掉标签为 NaN 的行后再取训练集
     data = df_all.dropna(subset=[tgt])
     # 此时 data 已经继承了原始 df_all 的顺序，且原始 df_all 事先已按 open_time 排序
-    pos_ratio = (data[tgt] == 1).mean()
-    if pos_ratio < 0.4 or pos_ratio > 0.6:
-        sampler = RandomOverSampler(random_state=42)
-        res_X, res_y = sampler.fit_resample(data[feat_use + ["open_time"]], data[tgt])
-        res = pd.DataFrame(res_X, columns=feat_use + ["open_time"])
-        res[tgt] = res_y
-        res = res.sort_values("open_time")
-        X = res[feat_use]
-        y = res[tgt]
-    else:
+
+    if regression:
         X = data[feat_use]
         y = data[tgt]
+    else:
+        pos_ratio = (data[tgt] == 1).mean()
+        if pos_ratio < 0.4 or pos_ratio > 0.6:
+            sampler = RandomOverSampler(random_state=42)
+            res_X, res_y = sampler.fit_resample(data[feat_use + ["open_time"]], data[tgt])
+            res = pd.DataFrame(res_X, columns=feat_use + ["open_time"])
+            res[tgt] = res_y
+            res = res.sort_values("open_time")
+            X = res[feat_use]
+            y = res[tgt]
+        else:
+            X = data[feat_use]
+            y = data[tgt]
 
     # 5-4  计算类别不平衡补偿
-    pos_weight = (y == 0).sum() / max((y == 1).sum(), 1)
+    if not regression:
+        pos_weight = (y == 0).sum() / max((y == 1).sum(), 1)
 
     # 5-5  随机搜索 + 时间序列交叉验证（此处不再传 early-stopping callbacks）
-    base = lgb.LGBMClassifier(
-        objective="binary",
-        metric="auc",
-        random_state=42,
-        n_jobs=-1,
-        scale_pos_weight=pos_weight,
-        verbosity=-1,
-    )
+    if regression:
+        base = lgb.LGBMRegressor(
+            objective="regression",
+            metric="l1",
+            random_state=42,
+            n_jobs=-1,
+            verbosity=-1,
+        )
+    else:
+        base = lgb.LGBMClassifier(
+            objective="binary",
+            metric="auc",
+            random_state=42,
+            n_jobs=-1,
+            scale_pos_weight=pos_weight,
+            verbosity=-1,
+        )
 
     param_grid = {
         "n_estimators": [300, 600, 900],
@@ -113,7 +129,7 @@ def train_one(df_all: pd.DataFrame,
         param_distributions=param_grid,
         n_iter=12,
         cv=tscv,
-        scoring="roc_auc",
+        scoring="neg_mean_absolute_error" if regression else "roc_auc",
         random_state=42,
         verbose=1,
         refit=True,
@@ -131,7 +147,7 @@ def train_one(df_all: pd.DataFrame,
         X_tr,
         y_tr,
         eval_set=[(X_val, y_val)],
-        eval_metric="auc",
+        eval_metric="l1" if regression else "auc",
         callbacks=[
             lgb.early_stopping(stopping_rounds=50, verbose=False),
             lgb.log_evaluation(period=0),
@@ -142,7 +158,8 @@ def train_one(df_all: pd.DataFrame,
     model_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump({"model": best, "features": feat_use},
                 model_path, compress=3)
-    print(f"✔ Saved: {model_path.name}  (CV-AUC {search.best_score_:.4f})")
+    score_label = "CV-MAE" if regression else "CV-AUC"
+    print(f"✔ Saved: {model_path.name}  ({score_label} {search.best_score_:.4f})")
 
     # 5-8  打印前 15 个重要特征
     imp = (pd.Series(best.feature_importances_, index=feat_use)
@@ -183,6 +200,6 @@ for sym in symbols:
                 file_name = "model_" + "_".join(parts) + ".pkl"
                 print(f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}")
                 out_file = Path("models") / file_name
-                train_one(subset.copy(), cols, tgt_col, out_file)
+                train_one(subset.copy(), cols, tgt_col, out_file, regression=(tag == "vol"))
 
 print("\n✅  All models finished.")
