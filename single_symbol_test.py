@@ -36,7 +36,7 @@ if USE_NORMALIZED:
     SCALER_PARAMS = load_scaler_params_from_json(scaler_path)
 
 # =================== 3. 读取原始 K 线（取最新 60 条） ===================
-symbol = "1000FLOKIUSDT"
+symbol = "BTCUSDT"
 intervals = ["1h", "4h", "1d"]
 dfs_raw = {}
 
