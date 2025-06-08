@@ -176,6 +176,11 @@ class FeatureEngineer:
             merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(0, np.nan)
             merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged["atr_pct_4h"].replace(0, np.nan)
             merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged["bb_width_4h"].replace(0, np.nan)
+            merged["rsi_diff_1h_4h"] = merged["rsi_1h"] - merged["rsi_4h"]
+            merged["rsi_diff_1h_d1"] = merged["rsi_1h"] - merged["rsi_d1"]
+            merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
+            merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
+            merged["macd_hist_4h_mul_bb_width_1h"] = merged["macd_hist_4h"] * merged["bb_width_1h"]
 
             # 7. 将原始 1h K 线回拼回 merged，打上 target_up/target_down
             raw = df_1h.reset_index()  # raw["open_time"] 是 datetime64[ns]
