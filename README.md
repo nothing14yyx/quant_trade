@@ -8,7 +8,7 @@
 - **标签系统**：根据历史波动动态设定阈值，并额外提供未来波动率等辅助目标。
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
 - **Backtester**：依据生成的信号回测策略表现。
-- **FeatureSelector**：根据实际周期下采样后的数据挑选最重要的特征。
+- **FeatureSelector**：综合 AUC、SHAP 与 Permutation Importance 评分，筛选去冗余的核心特征。
 
 `RobustSignalGenerator` 提供 `update_ic_scores(df)` 方法，可在启动回测或模拟时
 传入近期历史数据，自动计算因子 IC 用于调整权重。
