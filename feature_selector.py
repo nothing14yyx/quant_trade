@@ -9,6 +9,8 @@
 import os, yaml, json, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
+from sklearn.inspection import permutation_importance
+import shap
 from sqlalchemy import create_engine
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
@@ -96,6 +98,8 @@ for period, cols in feature_pool.items():
     # 3-3 TimeSeriesSplit：保证“训练集时间全在验证集时间之前”
     tscv = TimeSeriesSplit(n_splits=N_SPLIT)
     feat_imp = pd.Series(0.0, index=keep_cols)
+    shap_imp = pd.Series(0.0, index=keep_cols)
+    perm_imp = pd.Series(0.0, index=keep_cols)
 
     # 计算 pos_weight（在训练集里动态计算，避免用全量数据泄露）
     pos_weight_global = (y == 0).sum() / max((y == 1).sum(), 1)
@@ -130,16 +134,47 @@ for period, cols in feature_pool.items():
         )
         feat_imp += pd.Series(gbm.feature_importances_, index=keep_cols)
 
+        # SHAP importance
+        try:
+            explainer = shap.TreeExplainer(gbm)
+            sv = explainer.shap_values(X_val)
+            if isinstance(sv, list):
+                sv = sv[1]
+            shap_imp += np.abs(sv).mean(0)
+        except Exception as e:
+            print("SHAP failed:", e)
+
+        # Permutation importance
+        try:
+            perm = permutation_importance(
+                gbm, X_val, y_val, n_repeats=5, random_state=42, scoring="roc_auc"
+            )
+            perm_imp += perm.importances_mean
+        except Exception as e:
+            print("Permutation importance failed:", e)
+
     feat_imp /= N_SPLIT
-    feat_imp.sort_values(ascending=False, inplace=True)
+    shap_imp /= N_SPLIT
+    perm_imp /= N_SPLIT
 
-    # 3-4 选 Top-N & 打印
-    best_feats = feat_imp.head(TOP_N).index.tolist()
+    combined = (
+        feat_imp.rank(pct=True) + shap_imp.rank(pct=True) + perm_imp.rank(pct=True)
+    ) / 3
+    combined.sort_values(ascending=False, inplace=True)
+
+    cand_feats = combined.head(TOP_N * 2).index.tolist()
+
+    # 删除相关系数极高的特征，避免冗余
+    corr = subset[cand_feats].corr().abs()
+    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+    to_drop = [col for col in upper.columns if any(upper[col] > 0.95)]
+    final_feats = [f for f in cand_feats if f not in to_drop][:TOP_N]
+
     print(f"Top-{TOP_N} 特征：")
-    for f, sc in feat_imp.head(TOP_N).items():
-        print(f"  {f:<40s}  {sc:.1f}")
+    for f in final_feats:
+        print(f"  {f:<40s}  {combined[f]:.3f}")
 
-    yaml_out[period] = best_feats
+    yaml_out[period] = final_feats
 
 # ---------- 4. 保存 ----------
 out_path = Path("utils/selected_features.yaml")
