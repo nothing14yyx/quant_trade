@@ -206,10 +206,6 @@ def main_loop(interval_sec: int = 60):
         )
 
         calc_start_local = datetime.now(TZ_SH)
-        print(
-            f"新1h K线开始计算：{calc_start_local.strftime('%Y-%m-%d %H:%M:%S')}"
-
-        )
 
         # 4. 拉特征
         sql_feat = f"""
@@ -419,8 +415,7 @@ def main_loop(interval_sec: int = 60):
         finished_local = datetime.now(TZ_SH)
         next_start = finished_local + timedelta(seconds=wait)
         print(
-            f"本轮完成，耗时 {elapsed:.2f} 秒，已写入信号，时间：{finished_local.strftime('%Y-%m-%d %H:%M:%S')}，"
-            f"新一轮开始：{next_start.strftime('%Y-%m-%d %H:%M:%S')}"
+            f"本轮完成，耗时 {elapsed:.2f} 秒，已写入信号，时间：{finished_local.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
         time.sleep(wait)
