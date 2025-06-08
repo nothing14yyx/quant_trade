@@ -1,7 +1,10 @@
 import time
 from datetime import datetime, timezone
+import pytz
 from pathlib import Path
 import os
+
+TZ_SH = pytz.timezone("Asia/Shanghai")
 import pandas as pd
 import numpy as np
 import yaml
@@ -16,6 +19,14 @@ from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
 from utils.feature_health import apply_health_check_df, health_check
 
+
+def to_shanghai(dt):
+    """Convert naive or UTC datetime to Asia/Shanghai timezone."""
+    if dt is None:
+        return dt
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(TZ_SH)
 
 def np_encoder(obj):
     """json.dumps helper for NumPy data types."""
@@ -129,7 +140,8 @@ def main_loop(interval_sec: int = 60):
 
     while True:
         loop_start = time.time()
-        now = datetime.now(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        now_local = now_utc.astimezone(TZ_SH)
 
         # 1. 动态获取数据库里拥有 >=60 条1h K线的币种
         df_symbols_ok = pd.read_sql("""
@@ -155,7 +167,7 @@ def main_loop(interval_sec: int = 60):
             SELECT symbol, MAX(close_time) AS close_time
             FROM klines
             WHERE symbol IN ({placeholders}) AND `interval`='1h'
-              AND close_time < '{now.strftime('%Y-%m-%d %H:%M:%S')}'
+              AND close_time < '{now_utc.strftime('%Y-%m-%d %H:%M:%S')}'
             GROUP BY symbol
         """
         df_last_1h = pd.read_sql(sql, engine, parse_dates=["close_time"])
@@ -173,12 +185,14 @@ def main_loop(interval_sec: int = 60):
         min_last_time = df_last_1h["close_time"].min()
         max_last_time = df_last_1h["close_time"].max()
         if min_last_time != max_last_time:
-            print(f"有币种1h尚未收盘, min={min_last_time}, max={max_last_time}，等待...")
+            print(
+                f"有币种1h尚未收盘, min={to_shanghai(min_last_time)}, max={to_shanghai(max_last_time)}，等待..."
+            )
             time.sleep(interval_sec)
             continue
 
         if last_1h_kline_time == min_last_time:
-            print(f"无新1h K线，等待... ")
+            print(f"无新1h K线，等待... {to_shanghai(min_last_time)}")
             time.sleep(interval_sec)
             continue
 
@@ -359,7 +373,7 @@ def main_loop(interval_sec: int = 60):
 
         elapsed = time.time() - loop_start
         wait = max(0, interval_sec - elapsed)
-        print(f"本轮完成，已写入信号，时间：{now.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"本轮完成，已写入信号，时间：{now_local.strftime('%Y-%m-%d %H:%M:%S')}")
 
         time.sleep(wait)
 
