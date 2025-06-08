@@ -74,6 +74,13 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
 
     assign_safe(feats, f"vol_roc_{period}", ta.roc(feats["volume"], length=5))
     assign_safe(feats, f"vol_ma_ratio_{period}", feats["volume"] / ta.sma(feats["volume"], length=10).replace(0, np.nan))
+    assign_safe(feats, f"vol_ma_ratio_long_{period}", feats["volume"] / ta.sma(feats["volume"], length=30).replace(0, np.nan))
+
+    range_ = (feats["high"] - feats["low"]).replace(0, np.nan)
+    body = (feats["close"] - feats["open"]).abs()
+    assign_safe(feats, f"upper_wick_ratio_{period}", (feats["high"] - np.maximum(feats["open"], feats["close"])) / range_)
+    assign_safe(feats, f"lower_wick_ratio_{period}", (np.minimum(feats["open"], feats["close"]) - feats["low"]) / range_)
+    assign_safe(feats, f"body_ratio_{period}", body / range_)
 
     feats[f"bull_streak_{period}"] = (
         feats["close"].gt(feats["open"]).astype(float)
