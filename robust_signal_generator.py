@@ -42,6 +42,9 @@ class RobustSignalGenerator:
             'funding': 0.05
         }
 
+        # 当前权重，初始与 base_weights 相同
+        self.current_weights = self.base_weights.copy()
+
         # 初始化各因子对应的IC分数（均设为1，后续可动态更新）
         self.ic_scores = {k: 1 for k in self.base_weights.keys()}
 
@@ -146,10 +149,41 @@ class RobustSignalGenerator:
             'funding': np.tanh(safe(f'funding_rate_{period}', 0) * 100),
         }
 
-    def update_ic_scores(self, df):
-        """根据给定的历史数据计算并更新各因子的 IC 分数"""
+    def update_ic_scores(self, df, *, window=None, group_by=None, time_col="open_time"):
+        """根据历史数据计算并更新各因子的 IC 分数
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            历史特征数据。
+        window : int, optional
+            只取最近 ``window`` 条记录参与计算；默认为 ``None`` 表示使用全部数据。
+        group_by : str, optional
+            若指定，对 ``df`` 按该列分组后分别计算 IC，再取平均值。
+        time_col : str, default ``"open_time"``
+            排序所依据的时间列名。
+        """
+
         from param_search import compute_ic_scores
-        ic = compute_ic_scores(df, self)
+
+        def _compute(sub_df: pd.DataFrame) -> dict:
+            sub_df = sub_df.sort_values(time_col)
+            if window:
+                sub_df = sub_df.tail(window)
+            return compute_ic_scores(sub_df, self)
+
+        if group_by:
+            grouped = df.groupby(group_by)
+            ic_list = []
+            for _, g in grouped:
+                ic_list.append(_compute(g))
+            if ic_list:
+                ic = {k: float(np.nanmean([d[k] for d in ic_list])) for k in self.base_weights}
+            else:
+                ic = {k: 0.0 for k in self.base_weights}
+        else:
+            ic = _compute(df)
+
         self.ic_scores.update(ic)
         return self.ic_scores
 
@@ -164,7 +198,8 @@ class RobustSignalGenerator:
         else:
             w = base_arr / base_arr.sum()
 
-        return dict(zip(self.ic_scores.keys(), w))
+        self.current_weights = dict(zip(self.ic_scores.keys(), w))
+        return self.current_weights
 
     def dynamic_threshold(
         self,
