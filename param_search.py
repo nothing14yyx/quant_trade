@@ -70,9 +70,26 @@ def run_single_backtest(
     sg.base_weights = base_weights
 
     if th_params:
-        def dyn_th(self, atr, adx, funding=0):
+        def dyn_th(
+            self,
+            atr,
+            adx,
+            funding=0,
+            atr_4h=None,
+            adx_4h=None,
+            atr_d1=None,
+            adx_d1=None,
+        ):
             return RobustSignalGenerator.dynamic_threshold(
-                self, atr, adx, funding, **th_params
+                self,
+                atr,
+                adx,
+                funding,
+                atr_4h=atr_4h,
+                adx_4h=adx_4h,
+                atr_d1=atr_d1,
+                adx_d1=adx_d1,
+                **th_params,
             )
 
         sg.dynamic_threshold = dyn_th.__get__(sg, RobustSignalGenerator)
