@@ -74,3 +74,8 @@ feature_cols:
     - cci_delta_1h          # 顺势动量（Top8）
     - adx_4h                # 趋势强度（Top22）
     - bb_width_chg_d1       # 布林带宽变化（日线极端行情，Top30）
+
+train_settings:
+  by_symbol: true
+  min_rows: 500
+  time_ranges: []
