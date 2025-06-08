@@ -192,13 +192,19 @@ def main_loop(interval_sec: int = 60):
             continue
 
         if last_1h_kline_time == min_last_time:
-            print(f"无新1h K线，等待... {to_shanghai(min_last_time)}")
+            waiting_local = datetime.now(TZ_SH)
+            print(
+                f"无新1h K线，等待... {waiting_local.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             time.sleep(interval_sec)
             continue
 
         last_1h_kline_time = min_last_time
+
+        calc_start_local = datetime.now(TZ_SH)
         print(
-            f"新1h K线开始计算：{to_shanghai(min_last_time).strftime('%Y-%m-%d %H:%M:%S')}"
+            f"新1h K线开始计算：{calc_start_local.strftime('%Y-%m-%d %H:%M:%S')}"
+
         )
 
         # 4. 拉特征
