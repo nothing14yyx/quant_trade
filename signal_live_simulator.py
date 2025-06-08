@@ -207,12 +207,42 @@ def main_loop(interval_sec: int = 60):
 
         )
 
-        # 4. 拉特征
-        sql_feat = f"""
-            SELECT symbol, `interval`, open_time, close_time, open, close, high, low, volume, fg_index, funding_rate
-            FROM klines
-            WHERE symbol IN ({placeholders})
-              AND `interval` IN ('1h','4h','1d')
+        def process_symbol(sym: str):
+                return None
+                return None
+
+            return (
+                sym,
+                fused_score,
+        # 6. 先计算融合分数 (使用多线程提高速度)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(process_symbol, sym): sym for sym in symbols}
+            for future in as_completed(futures):
+                res = future.result()
+                if res is None:
+                    continue
+                (
+                    sym,
+                    fused_score,
+                    feat_1h,
+                    feat_4h,
+                    feat_d1,
+                    price_4h,
+                    raw_feat_1h,
+                    raw_feat_4h,
+                    raw_feat_d1,
+                ) = res
+                all_fused_scores.append(fused_score)
+                feat_dicts[sym] = (
+                    feat_1h,
+                    feat_4h,
+                    feat_d1,
+                    price_4h,
+                    raw_feat_1h,
+                    raw_feat_4h,
+                    raw_feat_d1,
+                )
+
             ORDER BY symbol, `interval`, open_time
         """
         df_all = pd.read_sql(sql_feat, engine, parse_dates=["open_time", "close_time"])
