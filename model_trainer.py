@@ -3,6 +3,7 @@
 import os, yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
+from imblearn.over_sampling import RandomOverSampler
 from sqlalchemy import create_engine
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
@@ -17,6 +18,12 @@ engine = create_engine(
     f"@{mysql_cfg['host']}:{mysql_cfg.get('port',3306)}/{mysql_cfg['database']}?charset=utf8mb4"
 )
 
+# ---------- 1.1 训练选项 ----------
+train_cfg = cfg.get("train_settings", {})
+train_by_symbol = bool(train_cfg.get("by_symbol", False))
+min_rows = int(train_cfg.get("min_rows", 500))
+time_ranges = train_cfg.get("time_ranges", []) or [{"name": "all", "start": None, "end": None}]
+
 # ---------- 2. 读取特征大表并按时间排序 ----------
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time"])
 # 确保整表按 open_time 升序排列，再 reset_index
@@ -29,6 +36,18 @@ if not feature_cols:
 
 # ---------- 4. 目标列 ----------
 targets = {"up": "target_up", "down": "target_down", "vol": "future_volatility"}
+
+# ---------- 辅助：剔除极端异常样本 ----------
+def drop_price_outliers(df: pd.DataFrame, pct: float = 0.995) -> pd.DataFrame:
+    if not {"close", "open"}.issubset(df.columns):
+        return df
+    chg = (df["close"] / df["open"] - 1).abs()
+    thresh = chg.quantile(pct)
+    keep = chg <= thresh
+    removed = len(df) - keep.sum()
+    if removed:
+        print(f"drop_price_outliers: removed {removed} rows")
+    return df[keep]
 
 # ---------- 5. 训练函数 ----------
 def train_one(df_all: pd.DataFrame,
@@ -51,8 +70,18 @@ def train_one(df_all: pd.DataFrame,
     # 5-3  过滤掉标签为 NaN 的行后再取训练集
     data = df_all.dropna(subset=[tgt])
     # 此时 data 已经继承了原始 df_all 的顺序，且原始 df_all 事先已按 open_time 排序
-    X = data[feat_use]
-    y = data[tgt]
+    pos_ratio = (data[tgt] == 1).mean()
+    if pos_ratio < 0.4 or pos_ratio > 0.6:
+        sampler = RandomOverSampler(random_state=42)
+        res_X, res_y = sampler.fit_resample(data[feat_use + ["open_time"]], data[tgt])
+        res = pd.DataFrame(res_X, columns=feat_use + ["open_time"])
+        res[tgt] = res_y
+        res = res.sort_values("open_time")
+        X = res[feat_use]
+        y = res[tgt]
+    else:
+        X = data[feat_use]
+        y = data[tgt]
 
     # 5-4  计算类别不平衡补偿
     pos_weight = (y == 0).sum() / max((y == 1).sum(), 1)
@@ -121,20 +150,39 @@ def train_one(df_all: pd.DataFrame,
              .head(15))
     print(imp.to_string())
 
-# ---------- 6. 周期 × 方向 训练循环 ----------
-for period, cols in feature_cols.items():
+# ---------- 6. 周期 × 方向 × 符号 训练循环 ----------
+symbols = df["symbol"].unique() if train_by_symbol else [None]
 
-    # === 根据周期过滤对应时间行 ===
-    if period == "4h":
-        subset = df[df["open_time"].dt.hour % 4 == 0]
-    elif period in {"1d", "d1"}:
-        subset = df[df["open_time"].dt.hour == 0]
-    else:
-        subset = df
+for sym in symbols:
+    df_sym = df[df["symbol"] == sym] if sym is not None else df
+    if len(df_sym) < min_rows:
+        continue
+    for rng in time_ranges:
+        df_rng = df_sym
+        if rng.get("start"):
+            df_rng = df_rng[df_rng["open_time"] >= pd.to_datetime(rng["start"])]
+        if rng.get("end"):
+            df_rng = df_rng[df_rng["open_time"] < pd.to_datetime(rng["end"])]
+        df_rng = drop_price_outliers(df_rng)
 
-    for tag, tgt_col in targets.items():
-        print(f"\n🚀  Train {period}  {tag}")
-        out_file = Path(f"models/model_{period}_{tag}.pkl")
-        train_one(subset.copy(), cols, tgt_col, out_file)
+        for period, cols in feature_cols.items():
+            if period == "4h":
+                subset = df_rng[df_rng["open_time"].dt.hour % 4 == 0]
+            elif period in {"1d", "d1"}:
+                subset = df_rng[df_rng["open_time"].dt.hour == 0]
+            else:
+                subset = df_rng
+
+            for tag, tgt_col in targets.items():
+                parts = [period]
+                if sym is not None:
+                    parts.append(sym)
+                if rng.get("name") and rng["name"] != "all":
+                    parts.append(rng["name"])
+                parts.append(tag)
+                file_name = "model_" + "_".join(parts) + ".pkl"
+                print(f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}")
+                out_file = Path("models") / file_name
+                train_one(subset.copy(), cols, tgt_col, out_file)
 
 print("\n✅  All models finished.")
