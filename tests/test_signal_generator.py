@@ -17,6 +17,7 @@ def make_dummy_rsg():
         'sentiment': 0.05, 'funding': 0.05,
     }
     rsg.ic_scores = {k: 1 for k in rsg.base_weights}
+    rsg.current_weights = rsg.base_weights.copy()
     return rsg
 
 
@@ -139,16 +140,43 @@ def test_factor_scores_use_raw_features():
     assert captured['d1'] == raw_d1
 
 
-def test_update_ic_scores(monkeypatch):
+def test_update_ic_scores_window_group(monkeypatch):
+    rsg = make_dummy_rsg()
+
+    import pandas as pd
+    df = pd.DataFrame({
+        "open_time": [0, 1, 0, 1],
+        "open": [1, 1, 1, 1],
+        "close": [1, 1, 1, 1],
+        "symbol": ["A", "A", "B", "B"],
+    })
+
+    called = []
+
+    def fake_compute_ic_scores(df_arg, rsg_arg):
+        called.append(df_arg.copy())
+        return {k: len(df_arg) for k in rsg.base_weights}
+
+    import types, sys
+    monkeypatch.setitem(sys.modules, "param_search", types.SimpleNamespace(
+        compute_ic_scores=fake_compute_ic_scores
+    ))
+
+    rsg.update_ic_scores(df, window=1, group_by="symbol")
+
+    assert len(called) == 2
+    assert all(len(c) == 1 for c in called)
+    assert rsg.ic_scores["ai"] == 1
+
+
+def test_dynamic_weight_update(monkeypatch):
     rsg = make_dummy_rsg()
 
     import pandas as pd
     df = pd.DataFrame({"open_time": [0], "open": [1], "close": [1]})
 
     def fake_compute_ic_scores(df_arg, rsg_arg):
-        assert df_arg is df
-        assert rsg_arg is rsg
-        return {k: i for i, k in enumerate(rsg.base_weights, 1)}
+        return {k: i + 1 for i, k in enumerate(rsg.base_weights)}
 
     import types, sys
     monkeypatch.setitem(sys.modules, "param_search", types.SimpleNamespace(
@@ -156,8 +184,14 @@ def test_update_ic_scores(monkeypatch):
     ))
 
     rsg.update_ic_scores(df)
-    assert rsg.ic_scores["ai"] == 1
-    assert rsg.ic_scores["trend"] == 2
+    weights = rsg.dynamic_weight_update()
+
+    ic_arr = np.array([max(0, v) for v in rsg.ic_scores.values()])
+    base_arr = np.array([rsg.base_weights[k] for k in rsg.ic_scores])
+    expected = ic_arr * base_arr / (ic_arr * base_arr).sum()
+
+    assert weights["ai"] == pytest.approx(expected[0])
+    assert rsg.current_weights == weights
 
 
 def test_fused_score_not_extreme():
