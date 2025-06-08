@@ -60,7 +60,7 @@ class DataLoader:
         # MySQL
         mysql_cfg = cfg["mysql"]
         conn_str = (
-            f"mysql+pymysql://{mysql_cfg['user']}:{mysql_cfg['password']}"
+            f"mysql+pymysql://{mysql_cfg['user']}:{os.getenv('MYSQL_PASSWORD', mysql_cfg['password'])}"
             f"@{mysql_cfg['host']}:{mysql_cfg.get('port',3306)}/{mysql_cfg['database']}"
             f"?charset={mysql_cfg.get('charset','utf8mb4')}"
         )
@@ -419,8 +419,8 @@ class DataLoader:
             for f in as_completed(futures):
                 try:
                     f.result()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.exception("[funding] worker err: %s", e)
 
         # 3. 更新 K 线（并发）
         intervals = [self.main_iv] + self.aux_ivs + ["1d"]
