@@ -41,7 +41,7 @@ def load_config(path=CONFIG_PATH):
 def connect_mysql(cfg):
     mysql = cfg['mysql']
     url = (
-        f"mysql+pymysql://{mysql['user']}:{mysql['password']}@{mysql['host']}:{mysql.get('port',3306)}/{mysql['database']}?charset=utf8mb4"
+        f"mysql+pymysql://{mysql['user']}:{os.getenv('MYSQL_PASSWORD', mysql['password'])}@{mysql['host']}:{mysql.get('port',3306)}/{mysql['database']}?charset=utf8mb4"
     )
     return create_engine(url)
 
