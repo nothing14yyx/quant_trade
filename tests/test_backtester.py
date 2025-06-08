@@ -5,7 +5,7 @@ from backtester import simulate_trades
 
 
 def test_simulate_trades_tp_hit():
-    times = pd.date_range('2020-01-01', periods=4, freq='H')
+    times = pd.date_range('2020-01-01', periods=4, freq='h')
     df_sym = pd.DataFrame({
         'symbol': ['BTC'] * 4,
         'open_time': times,
@@ -34,7 +34,7 @@ def test_simulate_trades_tp_hit():
     assert t['pnl'] == 7
 
 def test_simulate_trades_sl_hit():
-    times = pd.date_range('2020-01-01', periods=4, freq='H')
+    times = pd.date_range('2020-01-01', periods=4, freq='h')
     df_sym = pd.DataFrame({
         'symbol': ['BTC'] * 4,
         'open_time': times,
@@ -64,7 +64,7 @@ def test_simulate_trades_sl_hit():
 
 
 def test_simulate_trades_reverse_signal_exit():
-    times = pd.date_range('2020-01-01', periods=4, freq='H')
+    times = pd.date_range('2020-01-01', periods=4, freq='h')
     df_sym = pd.DataFrame({
         'symbol': ['BTC'] * 4,
         'open_time': times,

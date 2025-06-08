@@ -1,6 +1,6 @@
 binance:
-  api_key: "WCJdahGXx81TUS5p3matSAazA74LAd21U1b4jw1i3eyGsgPJg6XfYTiOiyTWMxr6"      # 建议用环境变量
-  api_secret: "3OA2FJDRrSy0HB1pizMN5pLHXgVsADKUfUWAqWnKk07G8hgdOgNFx38Av5CDwGLW"
+  api_key: "${BINANCE_API_KEY}"
+  api_secret: "${BINANCE_API_SECRET}"
   proxy:
     http:  "http://127.0.0.1:7890"
     https: "http://127.0.0.1:7890"
@@ -9,7 +9,7 @@ mysql:
   host: "localhost"
   port: 3306
   user: "root"
-  password: "123456"
+  password: "${MYSQL_PASSWORD}"
   database: "quant_trading"
   charset: "utf8mb4"
 

@@ -36,7 +36,7 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 
 mysql_cfg = cfg["mysql"]
 engine = create_engine(
-    f"mysql+pymysql://{mysql_cfg['user']}:{mysql_cfg['password']}"
+    f"mysql+pymysql://{mysql_cfg['user']}:{os.getenv('MYSQL_PASSWORD', mysql_cfg['password'])}"
     f"@{mysql_cfg['host']}:{mysql_cfg.get('port', 3306)}/{mysql_cfg['database']}?"
     f"charset={mysql_cfg.get('charset', 'utf8mb4')}"
 )
