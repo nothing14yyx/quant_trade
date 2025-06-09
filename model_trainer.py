@@ -80,12 +80,15 @@ def train_one(df_all: pd.DataFrame,
         if pos_ratio < 0.4 or pos_ratio > 0.6:
             sampler = RandomOverSampler(random_state=42)
             res_X, res_y = sampler.fit_resample(data[feat_use], data[tgt])
-            res_open_time = data["open_time"].iloc[res_X.index]
+
+            # 重采样后索引已重置，需要使用 sampler.sample_indices_ 对齐原始 open_time
+            sample_idx = sampler.sample_indices_
+            res_open_time = data["open_time"].iloc[sample_idx].reset_index(drop=True)
 
             # 构造包含 open_time 的 DataFrame，按时间重新排序
             res = res_X.copy()
             res[tgt] = res_y
-            res["open_time"] = res_open_time.values
+            res["open_time"] = res_open_time
             res = res.sort_values("open_time")
 
             X = res[feat_use]
