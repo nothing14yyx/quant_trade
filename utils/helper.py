@@ -176,7 +176,8 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     bars_per_day = {"1h": 24, "4h": 6, "d1": 1}.get(period, 1)
     log_ret = np.log(feats["close"] / feats["close"].shift(1))
     for d in (7, 14, 30):
-        hv = log_ret.rolling(d * bars_per_day).std() * np.sqrt(bars_per_day)
+        window = d * bars_per_day
+        hv = log_ret.rolling(window, min_periods=2).std() * np.sqrt(bars_per_day)
         assign_safe(feats, f"hv_{d}d_{period}", hv)
 
     # BTC / ETH 短期相关性
