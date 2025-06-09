@@ -57,6 +57,12 @@ class DataLoader:
             self.client.session.proxies.update(bin_cfg["proxy"])
         self.kl_rate_limiter = RateLimiter(max_calls=5, period=1.0)
 
+        # CoinGecko client (only requests with API key)
+        cg_cfg = cfg.get("coingecko", {})
+        self.cg_api_key = os.getenv("COINGECKO_API_KEY", cg_cfg.get("api_key", ""))
+        self.cg_rate_limiter = RateLimiter(max_calls=30, period=60)
+        self._cg_id_map: Dict[str, str] = {}
+
         # MySQL
         mysql_cfg = cfg["mysql"]
         conn_str = (
@@ -222,6 +228,102 @@ class DataLoader:
                 rows,
             )
         logger.info("[depth] %s %s", symbol, len(rows))
+
+    # ───────────────────────────── CoinGecko 辅助数据 ──────────────────────
+    CG_SEARCH_URL = "https://pro-api.coingecko.com/api/v3/search"
+    CG_MARKET_URL = "https://pro-api.coingecko.com/api/v3/coins/{id}/market_chart"
+    CG_GLOBAL_URL = "https://pro-api.coingecko.com/api/v3/global"
+
+    def _cg_headers(self) -> Dict[str, str]:
+        return {"x-cg-pro-api-key": self.cg_api_key} if self.cg_api_key else {}
+
+    def _cg_get_id(self, symbol: str) -> Optional[str]:
+        if symbol in self._cg_id_map:
+            return self._cg_id_map[symbol]
+        base = re.sub("USDT$", "", symbol).lower()
+        self.cg_rate_limiter.acquire()
+        res = _safe_retry(
+            lambda: requests.get(self.CG_SEARCH_URL, params={"query": base}, headers=self._cg_headers(), timeout=10).json(),
+            retries=self.retries, backoff=self.backoff
+        )
+        for coin in res.get("coins", []):
+            if coin.get("symbol", "").lower() == base:
+                self._cg_id_map[symbol] = coin["id"]
+                return coin["id"]
+        if res.get("coins"):
+            cid = res["coins"][0]["id"]
+            self._cg_id_map[symbol] = cid
+            return cid
+        return None
+
+    def update_cg_market_data(self, symbols: List[str]) -> None:
+        """拉取指定币种近一日市值和成交量"""
+        headers = self._cg_headers()
+        rows = []
+        for sym in symbols:
+            cid = self._cg_get_id(sym)
+            if not cid:
+                continue
+            self.cg_rate_limiter.acquire()
+            data = _safe_retry(
+                lambda: requests.get(
+                    self.CG_MARKET_URL.format(id=cid),
+                    params={"vs_currency": "usd", "days": 1},
+                    headers=headers,
+                    timeout=10,
+                ).json(),
+                retries=self.retries,
+                backoff=self.backoff,
+            )
+            prices = data.get("prices", [])
+            m_caps = data.get("market_caps", [])
+            volumes = data.get("total_volumes", [])
+            for p, m, v in zip(prices, m_caps, volumes):
+                rows.append({
+                    "symbol": sym,
+                    "timestamp": pd.to_datetime(p[0], unit="ms").to_pydatetime(),
+                    "price": float(p[1]),
+                    "market_cap": float(m[1]),
+                    "total_volume": float(v[1]),
+                })
+            time.sleep(0.1)
+        if not rows:
+            return
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "REPLACE INTO cg_market_data (symbol, timestamp, price, market_cap, total_volume) "
+                    "VALUES (:symbol, :timestamp, :price, :market_cap, :total_volume)"
+                ),
+                rows,
+            )
+        logger.info("[cg_market] %s rows", len(rows))
+
+    def update_cg_global_metrics(self) -> None:
+        headers = self._cg_headers()
+        self.cg_rate_limiter.acquire()
+        data = _safe_retry(
+            lambda: requests.get(self.CG_GLOBAL_URL, headers=headers, timeout=10).json(),
+            retries=self.retries,
+            backoff=self.backoff,
+        ).get("data", {})
+        if not data:
+            return
+        row = {
+            "timestamp": pd.Timestamp.utcnow(),
+            "total_market_cap": data.get("total_market_cap", {}).get("usd"),
+            "total_volume": data.get("total_volume", {}).get("usd"),
+            "btc_dominance": data.get("market_cap_percentage", {}).get("btc"),
+        }
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "REPLACE INTO cg_global_metrics (timestamp, total_market_cap, total_volume, btc_dominance) "
+                    "VALUES (:timestamp, :total_market_cap, :total_volume, :btc_dominance)"
+                ),
+                [row],
+            )
+        logger.info("[cg_global] updated")
 
     # ───────────────────────────── 选币逻辑 ───────────────────────────────
     def get_top_symbols(self, n: Optional[int] = None) -> List[str]:
@@ -406,9 +508,14 @@ class DataLoader:
 
         # 1. 更新 FG 指数
         self.update_sentiment()
-
-        # 2. 更新 funding rate / open interest / depth （并发）
+        # 1.5 更新 CoinGecko 数据
         symbols = self.get_top_symbols()
+        try:
+            self.update_cg_global_metrics()
+            self.update_cg_market_data(symbols)
+        except Exception as e:
+            logger.exception("[coingecko] err: %s", e)
+        # 2. 更新 funding rate / open interest / depth （并发）
         logger.info("[sync] funding/openInterest/depth … (%s)", len(symbols))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             futures = []

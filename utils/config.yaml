@@ -5,6 +5,9 @@ binance:
     http:  "http://127.0.0.1:7890"
     https: "http://127.0.0.1:7890"
 
+coingecko:
+  api_key: "${COINGECKO_API_KEY}"
+
 mysql:
   host: "localhost"
   port: 3306
