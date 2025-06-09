@@ -196,38 +196,38 @@ class DataLoader:
         logger.info("[open_interest] %s", symbol)
 
     # ───────────────────────────── Depth Snapshot ─────────────────────────
-    def update_depth(self, symbol: str, limit: int = 200) -> None:
-        """同步单个合约的深度快照"""
-        payload = _safe_retry(
-            lambda: self.client.futures_depth(symbol=symbol, limit=limit),
-            retries=self.retries,
-            backoff=self.backoff,
-        )
-        if not payload:
-            return
-        ts = pd.to_datetime(payload.get("E", int(time.time() * 1000)), unit="ms")
-        rows = []
-        for price, qty in payload.get("bids", []):
-            rows.append({
-                "symbol": symbol, "timestamp": ts, "side": "bid",
-                "price": float(price), "quantity": float(qty)
-            })
-        for price, qty in payload.get("asks", []):
-            rows.append({
-                "symbol": symbol, "timestamp": ts, "side": "ask",
-                "price": float(price), "quantity": float(qty)
-            })
-        if not rows:
-            return
-        with self.engine.begin() as conn:
-            conn.execute(
-                text(
-                    "REPLACE INTO depth_snapshot (symbol, timestamp, side, price, quantity) "
-                    "VALUES (:symbol,:timestamp,:side,:price,:quantity)"
-                ),
-                rows,
-            )
-        logger.info("[depth] %s %s", symbol, len(rows))
+    # def update_depth(self, symbol: str, limit: int = 200) -> None:
+    #     """同步单个合约的深度快照"""
+    #     payload = _safe_retry(
+    #         lambda: self.client.futures_depth(symbol=symbol, limit=limit),
+    #         retries=self.retries,
+    #         backoff=self.backoff,
+    #     )
+    #     if not payload:
+    #         return
+    #     ts = pd.to_datetime(payload.get("E", int(time.time() * 1000)), unit="ms")
+    #     rows = []
+    #     for price, qty in payload.get("bids", []):
+    #         rows.append({
+    #             "symbol": symbol, "timestamp": ts, "side": "bid",
+    #             "price": float(price), "quantity": float(qty)
+    #         })
+    #     for price, qty in payload.get("asks", []):
+    #         rows.append({
+    #             "symbol": symbol, "timestamp": ts, "side": "ask",
+    #             "price": float(price), "quantity": float(qty)
+    #         })
+    #     if not rows:
+    #         return
+    #     with self.engine.begin() as conn:
+    #         conn.execute(
+    #             text(
+    #                 "REPLACE INTO depth_snapshot (symbol, timestamp, side, price, quantity) "
+    #                 "VALUES (:symbol,:timestamp,:side,:price,:quantity)"
+    #             ),
+    #             rows,
+    #         )
+    #     logger.info("[depth] %s %s", symbol, len(rows))
 
     # ───────────────────────────── CoinGecko 辅助数据 ──────────────────────
     CG_SEARCH_URL = "https://pro-api.coingecko.com/api/v3/search"
