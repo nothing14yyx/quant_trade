@@ -71,3 +71,38 @@ def test_update_cg_market_data(monkeypatch):
     assert df.iloc[0]['price'] == 1
     assert df.iloc[0]['market_cap'] == 10
     assert df.iloc[0]['total_volume'] == 5
+
+
+def test_update_cg_global_metrics(monkeypatch):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE cg_global_metrics (timestamp TEXT PRIMARY KEY, total_market_cap REAL, total_volume REAL, btc_dominance REAL)"
+        )
+    dl = make_dl(engine)
+
+    def fake_get(url, headers=None, timeout=10):
+        class R:
+            def json(self):
+                return {
+                    "data": {
+                        "total_market_cap": {"usd": 100},
+                        "total_volume": {"usd": 10},
+                        "market_cap_percentage": {"btc": 50},
+                    }
+                }
+
+        return R()
+
+    monkeypatch.setattr(requests, 'get', fake_get)
+
+    dl.update_cg_global_metrics()
+
+    df = pd.read_sql('cg_global_metrics', engine, parse_dates=['timestamp'])
+    assert len(df) == 1
+    assert df.iloc[0]['total_market_cap'] == 100
+    assert df.iloc[0]['total_volume'] == 10
+    assert df.iloc[0]['btc_dominance'] == 50
+    ts = df.iloc[0]['timestamp']
+    assert ts.tzinfo is None
+    assert ts.microsecond % 1000 == 0

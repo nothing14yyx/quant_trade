@@ -278,7 +278,10 @@ class DataLoader:
         if not data:
             return
         row = {
-            "timestamp": pd.Timestamp.utcnow(),
+            "timestamp": pd.Timestamp.utcnow()
+                .floor("ms")
+                .to_pydatetime()
+                .replace(tzinfo=None),
             "total_market_cap": data.get("total_market_cap", {}).get("usd"),
             "total_volume": data.get("total_volume", {}).get("usd"),
             "btc_dominance": data.get("market_cap_percentage", {}).get("btc"),
