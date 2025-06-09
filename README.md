@@ -65,6 +65,8 @@ JSON 字符串，包含：
 这两个表分别由 `update_cg_market_data` 和 `update_cg_global_metrics` 写入
 CoinGecko 的行情与全球指标数据，完整表结构见仓库根目录的 `schema.sql`。
 
+自 v2.6 起，`cg_global_metrics` 额外保存 `eth_dominance`（ETH 市占率）字段。
+
 
 
 

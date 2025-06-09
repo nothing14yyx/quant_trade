@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS cg_global_metrics (
     timestamp DATETIME PRIMARY KEY,
     total_market_cap DOUBLE,
     total_volume DOUBLE,
-    btc_dominance DOUBLE
+    btc_dominance DOUBLE,
+    eth_dominance DOUBLE
 );
 
 CREATE TABLE IF NOT EXISTS klines (
