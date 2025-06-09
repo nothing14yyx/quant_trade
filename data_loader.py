@@ -250,7 +250,9 @@ class DataLoader:
         """增量拉取 CoinGecko 市值和成交量"""
         headers = self._cg_headers()
         rows = []
-        now = pd.Timestamp.utcnow()
+
+        now = pd.Timestamp.utcnow().tz_localize(None)
+
         for sym in symbols:
             last = pd.read_sql(
                 text("SELECT MAX(timestamp) ts FROM cg_market_data WHERE symbol=:sym"),
