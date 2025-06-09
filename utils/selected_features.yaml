@@ -99,6 +99,11 @@
 - obv_4h
 - boll_perc_4h
 - adx_1h
+ - hv_7d_d1
+ - kc_width_pct_chg_d1
+ - ichimoku_base_d1
+ - buy_sell_ratio_d1
+ - money_flow_ratio_d1
 1h:
 - atr_pct_1h
 - pct_chg1_1h
@@ -200,6 +205,11 @@
 - obv_delta_4h
 - ema_diff_1h
 - bb_width_1h
+ - hv_7d_1h
+ - kc_width_pct_chg_1h
+ - ichimoku_base_1h
+ - buy_sell_ratio_1h
+ - money_flow_ratio_1h
 4h:
 - atr_pct_1h
 - pct_chg1_1h
@@ -299,5 +309,10 @@
 - cci_4h
 - macd_1h
 - bb_width_4h
-- bull_streak_1h
+ - hv_7d_4h
+ - kc_width_pct_chg_4h
+ - ichimoku_base_4h
+ - buy_sell_ratio_4h
+ - money_flow_ratio_4h
+ - bull_streak_1h
 - macd_signal_d1
