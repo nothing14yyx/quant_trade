@@ -6,7 +6,7 @@
 #   3) 交叉验证改为 TimeSeriesSplit，避免随机分层导致未来泄露
 #   4) 在训练前剔除所有非数值列（尤其 datetime64），防止 LightGBM 报错
 
-import os, yaml, json, lightgbm as lgb, numpy as np, pandas as pd
+import os, yaml, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.inspection import permutation_importance
@@ -93,7 +93,6 @@ for period, cols in feature_pool.items():
 
     X = subset[keep_cols]
     y = subset[TARGET].astype(int)
-    times = subset["open_time"]
 
     # 3-3 TimeSeriesSplit：保证“训练集时间全在验证集时间之前”
     tscv = TimeSeriesSplit(n_splits=N_SPLIT)
