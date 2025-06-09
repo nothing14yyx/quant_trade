@@ -20,7 +20,7 @@ data_loader:
   topn: 100             # 获取成交额排名前N的合约
   interval: "1h"       # 主周期K线
   aux_interval: ["4h", "1d"]   # 辅助周期K线
-  start: "2024-06-01" # 起始日期
+  start:  # 起始日期 例如"2024-06-01" 默认获取一年
   end:     # 结束日期
   cache_dir: "data/klines"
   sentiment_cache: "data/sentiment"
