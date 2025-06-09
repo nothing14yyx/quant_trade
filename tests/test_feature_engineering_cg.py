@@ -1,3 +1,5 @@
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pandas as pd
 import pytest
 from utils.helper import calc_features_raw
