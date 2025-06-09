@@ -38,6 +38,7 @@ class DataLoader:
 
     _sentiment_cache: Optional[pd.DataFrame] = None
     _funding_cache: Dict[str, pd.DataFrame] = {}
+    _cg_market_cache: Dict[str, pd.DataFrame] = {}
     _cache_lock = threading.Lock()
 
 
@@ -180,6 +181,20 @@ class DataLoader:
                                                           parse_dates=["open_time"])
             return self._funding_cache[symbol]
 
+    def _cg_market_df(self, symbol: str) -> pd.DataFrame:
+        """读取 CoinGecko 市值数据并缓存"""
+        with self._cache_lock:
+            if symbol not in self._cg_market_cache:
+                q = (
+                    "SELECT timestamp AS open_time, price AS cg_price, "
+                    "market_cap AS cg_market_cap, total_volume AS cg_total_volume "
+                    "FROM cg_market_data WHERE symbol=:sym ORDER BY timestamp"
+                )
+                self._cg_market_cache[symbol] = pd.read_sql(
+                    text(q), self.engine, params={"sym": symbol}, parse_dates=["open_time"]
+                )
+            return self._cg_market_cache[symbol]
+
     # ───────────────────────────── Open Interest ─────────────────────────
     def update_open_interest(self, symbol: str) -> None:
         """同步单个合约的当前持仓量"""
@@ -247,65 +262,54 @@ class DataLoader:
         return None
 
     def update_cg_market_data(self, symbols: List[str]) -> None:
-        """增量拉取 CoinGecko 市值和成交量"""
+        """仅在缺少当日数据时拉取 CoinGecko 市值信息"""
         headers = self._cg_headers()
         rows = []
 
-        now = pd.Timestamp.utcnow().tz_localize(None)
+        today = pd.Timestamp.utcnow().floor("D").tz_localize(None)
+        tomorrow = today + dt.timedelta(days=1)
 
         for sym in symbols:
-            last = pd.read_sql(
-                text("SELECT MAX(timestamp) ts FROM cg_market_data WHERE symbol=:sym"),
+            exists = pd.read_sql(
+                text(
+                    "SELECT 1 FROM cg_market_data WHERE symbol=:sym AND timestamp >= :ts LIMIT 1"
+                ),
                 self.engine,
-                params={"sym": sym},
-                parse_dates=["ts"],
+                params={"sym": sym, "ts": today},
             )
-            last_ts = last["ts"].iloc[0] if not last.empty else None
-            if pd.isna(last_ts):
-                last_ts = None
-            if last_ts is not None and (now - last_ts).total_seconds() < 86400:
+            if not exists.empty:
                 continue
             cid = self._cg_get_id(sym)
             if not cid:
                 continue
             self.cg_rate_limiter.acquire()
-            if last_ts is None:
-                data = _safe_retry(
-                    lambda: requests.get(
-                        self.CG_MARKET_URL.format(id=cid),
-                        params={"vs_currency": "usd", "days": 365},
-                        headers=headers,
-                        timeout=10,
-                    ).json(),
-                    retries=self.retries,
-                    backoff=self.backoff,
-                )
-            else:
-                data = _safe_retry(
-                    lambda: requests.get(
-                        self.CG_MARKET_RANGE_URL.format(id=cid),
-                        params={
-                            "vs_currency": "usd",
-                            "from": int(last_ts.timestamp()),
-                            "to": int(now.timestamp()),
-                        },
-                        headers=headers,
-                        timeout=10,
-                    ).json(),
-                    retries=self.retries,
-                    backoff=self.backoff,
-                )
+            data = _safe_retry(
+                lambda: requests.get(
+                    self.CG_MARKET_RANGE_URL.format(id=cid),
+                    params={
+                        "vs_currency": "usd",
+                        "from": int(today.timestamp()),
+                        "to": int(tomorrow.timestamp()),
+                    },
+                    headers=headers,
+                    timeout=10,
+                ).json(),
+                retries=self.retries,
+                backoff=self.backoff,
+            )
             prices = data.get("prices", [])
             m_caps = data.get("market_caps", [])
             volumes = data.get("total_volumes", [])
-            for p, m, v in zip(prices, m_caps, volumes):
-                rows.append({
-                    "symbol": sym,
-                    "timestamp": pd.to_datetime(p[0], unit="ms").to_pydatetime(),
-                    "price": float(p[1]),
-                    "market_cap": float(m[1]),
-                    "total_volume": float(v[1]),
-                })
+            if not prices:
+                continue
+            p, m, v = prices[0], m_caps[0], volumes[0]
+            rows.append({
+                "symbol": sym,
+                "timestamp": today.to_pydatetime(),
+                "price": float(p[1]),
+                "market_cap": float(m[1]),
+                "total_volume": float(v[1]),
+            })
             time.sleep(0.1)
         if not rows:
             return
@@ -477,12 +481,26 @@ class DataLoader:
         else:
             df["funding_rate"] = None
 
+        # Merge CoinGecko market data
+        cg_df = self._cg_market_df(symbol)
+        if not cg_df.empty:
+            df = pd.merge_asof(
+                df.sort_values("open_time"),
+                cg_df.sort_values("open_time"),
+                on="open_time",
+                direction="backward",
+            )
+        else:
+            df["cg_price"] = None
+            df["cg_market_cap"] = None
+            df["cg_total_volume"] = None
+
         # 构建待写入列列表
         cols_final = [
             "symbol", "interval", "open_time", "close_time",
             "open", "high", "low", "close", "volume",
             "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
-            "fg_index", "funding_rate",
+            "fg_index", "funding_rate", "cg_price", "cg_market_cap", "cg_total_volume",
         ]
 
         # NaN → None

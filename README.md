@@ -20,9 +20,11 @@
 默认情况下，项目会使用 CoinGecko 提供的公共 API，额度为每月 1 万次，
 并限制每分钟最多 30 次调用。如有需要可在 `coingecko.api_key` 中配置你的公开密钥。
 
-为减少搜索次数，`DataLoader` 会在初始化时读取 `coingecko_ids.json` 缓存，并在获得新的币种
-id 后写回该文件。`update_cg_market_data` 会先检查数据库中该币种的最新记录，如距当前不足
-24 小时则跳过；否则从该时间起通过 `market_chart/range` 接口增量抓取。
+为减少搜索次数，`DataLoader` 会在初始化时读取 `coingecko_ids.json` 缓存，并在获得新的币种 id 后写回该文件。
+`update_cg_market_data` 每日仅拉取当天 0 点的数据，若数据库已有当日记录便跳过 API 调用，
+否则使用 `market_chart/range` 接口抓取并写入。
+从 v2.5 起，`incremental_update_klines` 会在写入 K 线时同步并合并这些 CoinGecko 指标，
+生成字段 `cg_price`、`cg_market_cap` 与 `cg_total_volume`，供后续特征工程使用。
 
 ## 安装与测试
 
