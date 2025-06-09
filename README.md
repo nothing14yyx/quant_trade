@@ -23,6 +23,11 @@
 
 完成安装后，可运行 `pytest -q tests` 执行自带的单元测试。
 
+## 数据库初始化
+
+执行 `mysql < scripts/init_db.sql` 即可创建所需表格。
+自 v2.4 起已移除 `depth_snapshot` 表，旧用户可直接删除该表后再运行脚本。
+
 通过 `python param_search.py --rows 10000`(可选) 调整信号权重。
 
 回测脚本 `backtester.py` 支持 `--recent-days N` 参数，可只回测最近 N 天的数据，例如：
