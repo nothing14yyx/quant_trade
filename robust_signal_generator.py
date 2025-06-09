@@ -117,9 +117,13 @@ class RobustSignalGenerator:
         """
 
         def safe(key: str, default=0):
-            """如果指定 key 不存在或 value 为 None，就返回 default，否则返回实际值。"""
+            """如果值缺失或为 NaN，返回 default。"""
             v = features.get(key, default)
-            return default if v is None else v
+            if v is None:
+                return default
+            if isinstance(v, (float, int)) and pd.isna(v):
+                return default
+            return v
 
         trend_raw = (
             np.tanh(safe(f'ema_diff_{period}', 0) * 5)
