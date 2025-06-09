@@ -275,7 +275,7 @@ class DataLoader:
                     "SELECT 1 FROM cg_market_data WHERE symbol=:sym AND timestamp >= :ts LIMIT 1"
                 ),
                 self.engine,
-                params={"sym": sym, "ts": today},
+                params={"sym": sym, "ts": today.to_pydatetime()},
             )
             if not exists.empty:
                 continue
@@ -341,12 +341,13 @@ class DataLoader:
             "total_market_cap": data.get("total_market_cap", {}).get("usd"),
             "total_volume": data.get("total_volume", {}).get("usd"),
             "btc_dominance": data.get("market_cap_percentage", {}).get("btc"),
+            "eth_dominance": data.get("market_cap_percentage", {}).get("eth"),
         }
         with self.engine.begin() as conn:
             conn.execute(
                 text(
-                    "REPLACE INTO cg_global_metrics (timestamp, total_market_cap, total_volume, btc_dominance) "
-                    "VALUES (:timestamp, :total_market_cap, :total_volume, :btc_dominance)"
+                    "REPLACE INTO cg_global_metrics (timestamp, total_market_cap, total_volume, btc_dominance, eth_dominance) "
+                    "VALUES (:timestamp, :total_market_cap, :total_volume, :btc_dominance, :eth_dominance)"
                 ),
                 [row],
             )
