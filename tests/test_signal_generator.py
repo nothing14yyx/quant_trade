@@ -258,3 +258,51 @@ def test_combine_score_weight_names():
 
     fused = rsg.combine_score(ai, factor_scores, weights)
     assert fused == pytest.approx(expected)
+
+
+def test_generate_signal_with_external_metrics():
+    base = make_dummy_rsg()
+    for r in (base,):
+        r.get_ai_score = lambda f, m: 0
+        r.get_factor_scores = lambda f, p: {
+            'trend': 0,
+            'momentum': 0,
+            'volatility': 0,
+            'volume': 0,
+            'sentiment': 0,
+            'funding': 0,
+        }
+        r.combine_score = lambda ai, fs, weights=None: 0.5
+        r.dynamic_weight_update = lambda: r.base_weights
+        r.dynamic_threshold = lambda *a, **k: 0.0
+        r.compute_tp_sl = lambda *a, **k: (0, 0)
+        r.models = {'1h': {'up': None, 'down': None},
+                    '4h': {'up': None, 'down': None},
+                    'd1': {'up': None, 'down': None}}
+
+    feats_1h = {'close': 100, 'atr_pct_1h': 0, 'adx_1h': 0, 'funding_rate_1h': 0}
+    feats_4h = {'atr_pct_4h': 0}
+    feats_d1 = {}
+
+    baseline = base.generate_signal(feats_1h, feats_4h, feats_d1)
+    assert baseline['score'] == pytest.approx(0.5)
+
+    rsg = make_dummy_rsg()
+    rsg.get_ai_score = base.get_ai_score
+    rsg.get_factor_scores = base.get_factor_scores
+    rsg.combine_score = base.combine_score
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.dynamic_threshold = base.dynamic_threshold
+    rsg.compute_tp_sl = base.compute_tp_sl
+    rsg.models = base.models
+
+    gm = {'btc_dom_chg': 0.1, 'mcap_growth': 0.1, 'vol_chg': 0.1}
+    oi = {'oi_chg': 0.1}
+    result = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
+                                 global_metrics=gm, open_interest=oi)
+    expected = 0.5
+    expected *= 1 + 0.1 * 0.1
+    expected *= 1 + 0.1 * 0.1
+    expected *= 1 + 0.05 * 0.1
+    expected *= 1 + 0.1 * 0.1
+    assert result['score'] == pytest.approx(expected)
