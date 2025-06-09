@@ -10,6 +10,7 @@ from __future__ import annotations
 import os, time, re, logging, threading, datetime as dt
 from typing import Dict, List, Optional
 
+import json
 import yaml, requests, pandas as pd, numpy as np
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
@@ -61,7 +62,16 @@ class DataLoader:
         cg_cfg = cfg.get("coingecko", {})
         self.cg_api_key = os.getenv("COINGECKO_API_KEY", cg_cfg.get("api_key", ""))
         self.cg_rate_limiter = RateLimiter(max_calls=30, period=60)
-        self._cg_id_map: Dict[str, str] = {}
+        self.cg_id_file = os.path.join(os.path.dirname(__file__), "coingecko_ids.json")
+        if os.path.exists(self.cg_id_file):
+            try:
+                with open(self.cg_id_file, "r", encoding="utf-8") as f:
+                    self._cg_id_map = json.load(f)
+            except Exception as e:
+                logger.warning("[coingecko] load id map fail: %s", e)
+                self._cg_id_map = {}
+        else:
+            self._cg_id_map: Dict[str, str] = {}
 
         # MySQL
         mysql_cfg = cfg["mysql"]
@@ -199,6 +209,7 @@ class DataLoader:
     # ───────────────────────────── CoinGecko 辅助数据 ──────────────────────
     CG_SEARCH_URL = "https://api.coingecko.com/api/v3/search"
     CG_MARKET_URL = "https://api.coingecko.com/api/v3/coins/{id}/market_chart"
+    CG_MARKET_RANGE_URL = "https://api.coingecko.com/api/v3/coins/{id}/market_chart/range"
     CG_GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
 
     def _cg_headers(self) -> Dict[str, str]:
@@ -216,33 +227,72 @@ class DataLoader:
         )
         for coin in res.get("coins", []):
             if coin.get("symbol", "").lower() == base:
-                self._cg_id_map[symbol] = coin["id"]
-                return coin["id"]
+                cid = coin["id"]
+                self._cg_id_map[symbol] = cid
+                try:
+                    with open(self.cg_id_file, "w", encoding="utf-8") as f:
+                        json.dump(self._cg_id_map, f, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    logger.warning("[coingecko] save id map fail: %s", e)
+                return cid
         if res.get("coins"):
             cid = res["coins"][0]["id"]
             self._cg_id_map[symbol] = cid
+            try:
+                with open(self.cg_id_file, "w", encoding="utf-8") as f:
+                    json.dump(self._cg_id_map, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logger.warning("[coingecko] save id map fail: %s", e)
             return cid
         return None
 
     def update_cg_market_data(self, symbols: List[str]) -> None:
-        """拉取指定币种近一日市值和成交量"""
+        """增量拉取 CoinGecko 市值和成交量"""
         headers = self._cg_headers()
         rows = []
+        now = pd.Timestamp.utcnow().tz_localize(None)
         for sym in symbols:
+            last = pd.read_sql(
+                text("SELECT MAX(timestamp) ts FROM cg_market_data WHERE symbol=:sym"),
+                self.engine,
+                params={"sym": sym},
+                parse_dates=["ts"],
+            )
+            last_ts = last["ts"].iloc[0] if not last.empty else None
+            if pd.isna(last_ts):
+                last_ts = None
+            if last_ts is not None and (now - last_ts).total_seconds() < 86400:
+                continue
             cid = self._cg_get_id(sym)
             if not cid:
                 continue
             self.cg_rate_limiter.acquire()
-            data = _safe_retry(
-                lambda: requests.get(
-                    self.CG_MARKET_URL.format(id=cid),
-                    params={"vs_currency": "usd", "days": 1},
-                    headers=headers,
-                    timeout=10,
-                ).json(),
-                retries=self.retries,
-                backoff=self.backoff,
-            )
+            if last_ts is None:
+                data = _safe_retry(
+                    lambda: requests.get(
+                        self.CG_MARKET_URL.format(id=cid),
+                        params={"vs_currency": "usd", "days": 1},
+                        headers=headers,
+                        timeout=10,
+                    ).json(),
+                    retries=self.retries,
+                    backoff=self.backoff,
+                )
+            else:
+                data = _safe_retry(
+                    lambda: requests.get(
+                        self.CG_MARKET_RANGE_URL.format(id=cid),
+                        params={
+                            "vs_currency": "usd",
+                            "from": int(last_ts.timestamp()),
+                            "to": int(now.timestamp()),
+                        },
+                        headers=headers,
+                        timeout=10,
+                    ).json(),
+                    retries=self.retries,
+                    backoff=self.backoff,
+                )
             prices = data.get("prices", [])
             m_caps = data.get("market_caps", [])
             volumes = data.get("total_volumes", [])
