@@ -195,39 +195,6 @@ class DataLoader:
             )
         logger.info("[open_interest] %s", symbol)
 
-    # ───────────────────────────── Depth Snapshot ─────────────────────────
-    def update_depth(self, symbol: str, limit: int = 200) -> None:
-        """同步单个合约的深度快照"""
-        payload = _safe_retry(
-            lambda: self.client.futures_depth(symbol=symbol, limit=limit),
-            retries=self.retries,
-            backoff=self.backoff,
-        )
-        if not payload:
-            return
-        ts = pd.to_datetime(payload.get("E", int(time.time() * 1000)), unit="ms")
-        rows = []
-        for price, qty in payload.get("bids", []):
-            rows.append({
-                "symbol": symbol, "timestamp": ts, "side": "bid",
-                "price": float(price), "quantity": float(qty)
-            })
-        for price, qty in payload.get("asks", []):
-            rows.append({
-                "symbol": symbol, "timestamp": ts, "side": "ask",
-                "price": float(price), "quantity": float(qty)
-            })
-        if not rows:
-            return
-        with self.engine.begin() as conn:
-            conn.execute(
-                text(
-                    "REPLACE INTO depth_snapshot (symbol, timestamp, side, price, quantity) "
-                    "VALUES (:symbol,:timestamp,:side,:price,:quantity)"
-                ),
-                rows,
-            )
-        logger.info("[depth] %s %s", symbol, len(rows))
 
     # ───────────────────────────── CoinGecko 辅助数据 ──────────────────────
     CG_SEARCH_URL = "https://api.coingecko.com/api/v3/search"
@@ -516,14 +483,13 @@ class DataLoader:
             self.update_cg_market_data(symbols)
         except Exception as e:
             logger.exception("[coingecko] err: %s", e)
-        # 2. 更新 funding rate / open interest / depth （并发）
-        logger.info("[sync] funding/openInterest/depth … (%s)", len(symbols))
+        # 2. 更新 funding rate / open interest（并发）
+        logger.info("[sync] funding/openInterest … (%s)", len(symbols))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             futures = []
             for sym in symbols:
                 futures.append(ex.submit(self.update_funding_rate, sym))
                 futures.append(ex.submit(self.update_open_interest, sym))
-                futures.append(ex.submit(self.update_depth, sym))
             for f in as_completed(futures):
                 try:
                     f.result()
