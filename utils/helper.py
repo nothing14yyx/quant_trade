@@ -22,22 +22,18 @@ def assign_safe(feats: pd.DataFrame, name: str, series):
     # print(f"{name}: {feats[name].dtype}")
 
 def calc_mfi_np(high, low, close, volume, window=14):
-    # 1. 典型价格
+    """Return Money Flow Ratio and Money Flow Index"""
     tp = (high + low + close) / 3
-    # 2. 原始 Money Flow
     mf = tp * volume
-    # 3. 区分正/负流入
     pmf = np.where(tp > np.roll(tp, 1), mf, 0)
     nmf = np.where(tp < np.roll(tp, 1), mf, 0)
-    # 第一行没有前一行，补0
     pmf[0] = 0
     nmf[0] = 0
-    # 4. 滚动窗口求和
     sum_pmf = pd.Series(pmf).rolling(window).sum().to_numpy()
     sum_nmf = pd.Series(nmf).rolling(window).sum().to_numpy()
-    # 5. MFI公式
+    ratio = sum_pmf / (sum_nmf + 1e-12)
     mfi = 100 * sum_pmf / (sum_pmf + sum_nmf)
-    return mfi
+    return ratio, mfi
 
 def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats = pd.DataFrame(index=df.index)
@@ -62,9 +58,9 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         ema_long = feats["close"].ewm(span=50, adjust=False).mean()
     assign_safe(feats, f"ema_diff_{period}", ema_short - ema_long)
     assign_safe(feats, f"sma_10_{period}", _safe_ta(ta.sma, feats["close"], length=10, index=df.index))
-    feats[f"pct_chg1_{period}"] = feats["close"].pct_change()
-    feats[f"pct_chg3_{period}"] = feats["close"].pct_change(3)
-    feats[f"pct_chg6_{period}"] = feats["close"].pct_change(6)
+    feats[f"pct_chg1_{period}"] = feats["close"].pct_change(fill_method=None)
+    feats[f"pct_chg3_{period}"] = feats["close"].pct_change(3, fill_method=None)
+    feats[f"pct_chg6_{period}"] = feats["close"].pct_change(6, fill_method=None)
     assign_safe(feats, f"rsi_{period}", _safe_ta(ta.rsi, feats["close"], length=14, index=df.index))
     feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
     atr = _safe_ta(ta.atr, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
@@ -84,17 +80,15 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats[f"adx_delta_{period}"] = feats[f"adx_{period}"].diff()
     assign_safe(feats, f"cci_{period}", _safe_ta(ta.cci, feats["high"], feats["low"], feats["close"], length=14, index=df.index))
     feats[f"cci_delta_{period}"] = feats[f"cci_{period}"].diff()
-    assign_safe(
-        feats,
-        f"mfi_{period}",
-        calc_mfi_np(
-            feats["high"].values,
-            feats["low"].values,
-            feats["close"].values,
-            feats["volume"].values,
-            window=14,
-        ),
+    mfr, mfi = calc_mfi_np(
+        feats["high"].values,
+        feats["low"].values,
+        feats["close"].values,
+        feats["volume"].values,
+        window=14,
     )
+    assign_safe(feats, f"mfi_{period}", mfi)
+    assign_safe(feats, f"money_flow_ratio_{period}", mfr)
 
     bb = _safe_ta(
         ta.bbands,
@@ -125,6 +119,26 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         f"kc_perc_{period}",
         (feats["close"] - kc.get("KCLe_20_2")) / (kc.get("KCUe_20_2") - kc.get("KCLe_20_2")).replace(0, np.nan),
     )
+    kc_width = kc.get("KCUe_20_2") - kc.get("KCLe_20_2")
+    assign_safe(feats, f"kc_width_pct_chg_{period}", kc_width.pct_change(fill_method=None))
+
+    ichi_raw = ta.ichimoku(feats["high"], feats["low"], feats["close"])
+    if isinstance(ichi_raw, tuple):
+        ichi_vis = ichi_raw[0]
+    else:
+        ichi_vis = ichi_raw
+    if isinstance(ichi_vis, pd.DataFrame):
+        assign_safe(feats, f"ichimoku_base_{period}", ichi_vis.get("IKS_26"))
+        assign_safe(feats, f"ichimoku_conversion_{period}", ichi_vis.get("ITS_9"))
+        assign_safe(
+            feats,
+            f"ichimoku_cloud_thickness_{period}",
+            (ichi_vis.get("ISA_9") - ichi_vis.get("ISB_26")).abs(),
+        )
+    else:
+        assign_safe(feats, f"ichimoku_base_{period}", pd.Series(index=df.index, dtype="float64"))
+        assign_safe(feats, f"ichimoku_conversion_{period}", pd.Series(index=df.index, dtype="float64"))
+        assign_safe(feats, f"ichimoku_cloud_thickness_{period}", pd.Series(index=df.index, dtype="float64"))
 
     dc = _safe_ta(
         ta.donchian,
@@ -154,6 +168,38 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         feats["volume"] / _safe_ta(ta.sma, feats["volume"], length=30, index=df.index).replace(0, np.nan),
     )
 
+    if "taker_buy_base" in df:
+        buy_vol = pd.to_numeric(df["taker_buy_base"], errors="coerce")
+        sell_vol = feats["volume"] - buy_vol
+        assign_safe(feats, f"buy_sell_ratio_{period}", buy_vol / sell_vol.replace(0, np.nan))
+
+    bars_per_day = {"1h": 24, "4h": 6, "d1": 1}.get(period, 1)
+    log_ret = np.log(feats["close"] / feats["close"].shift(1))
+    for d in (7, 14, 30):
+        hv = log_ret.rolling(d * bars_per_day).std() * np.sqrt(bars_per_day)
+        assign_safe(feats, f"hv_{d}d_{period}", hv)
+
+    # BTC / ETH 短期相关性
+    def _find_price(col_candidates):
+        for c in df.columns:
+            lc = c.lower()
+            for cand in col_candidates:
+                if cand in lc:
+                    return pd.to_numeric(df[c], errors="coerce")
+        return None
+
+    btc_price = _find_price(["btc_close", "close_btc", "btcusdt_close", "btc_price"])
+    eth_price = _find_price(["eth_close", "close_eth", "ethusdt_close", "eth_price"])
+    asset_ret = feats["close"].pct_change(fill_method=None)
+    if btc_price is not None:
+        btc_ret = btc_price.pct_change(fill_method=None)
+        corr = asset_ret.rolling(bars_per_day).corr(btc_ret)
+        assign_safe(feats, f"btc_correlation_1h_{period}", corr)
+    if eth_price is not None:
+        eth_ret = eth_price.pct_change(fill_method=None)
+        corr = asset_ret.rolling(bars_per_day).corr(eth_ret)
+        assign_safe(feats, f"eth_correlation_1h_{period}", corr)
+
     range_ = (feats["high"] - feats["low"]).replace(0, np.nan)
     body = (feats["close"] - feats["open"]).abs()
     assign_safe(feats, f"upper_wick_ratio_{period}", (feats["high"] - np.maximum(feats["open"], feats["close"])) / range_)
@@ -169,6 +215,13 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     sma_bbw = _safe_ta(ta.sma, feats[f"bb_width_{period}"], length=20, index=df.index)
     vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
+
+    assign_safe(feats, f"vol_profile_density_{period}", feats["volume"] / range_)
+    assign_safe(feats, f"bid_ask_spread_pct_{period}", (feats["high"] - feats["low"]) / feats["close"].replace(0, np.nan))
+
+    returns = feats["close"].pct_change(fill_method=None)
+    assign_safe(feats, f"skewness_{period}", returns.rolling(20).skew())
+    assign_safe(feats, f"kurtosis_{period}", returns.rolling(20).kurt())
 
     feats[f"bull_streak_{period}"] = (
         feats["close"].gt(feats["open"]).astype(float)
@@ -219,11 +272,11 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
 
     if "cg_market_cap" in df:
         cg_mc = pd.to_numeric(df["cg_market_cap"], errors="coerce")
-        assign_safe(feats, f"cg_market_cap_roc_{period}", cg_mc.pct_change())
+        assign_safe(feats, f"cg_market_cap_roc_{period}", cg_mc.pct_change(fill_method=None))
 
     if "cg_total_volume" in df:
         cg_tv = pd.to_numeric(df["cg_total_volume"], errors="coerce")
-        assign_safe(feats, f"cg_total_volume_roc_{period}", cg_tv.pct_change())
+        assign_safe(feats, f"cg_total_volume_roc_{period}", cg_tv.pct_change(fill_method=None))
         assign_safe(
             feats,
             f"volume_cg_ratio_{period}",
