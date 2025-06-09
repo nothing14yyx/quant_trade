@@ -7,6 +7,16 @@ if not hasattr(np, "NaN"):
 import pandas as pd
 import pandas_ta as ta
 
+
+def _safe_ta(func, *args, index=None, cols=None, **kwargs):
+    """Call pandas_ta function and return NaNs when input length is insufficient."""
+    res = func(*args, **kwargs)
+    if res is None:
+        if cols is None:
+            return pd.Series(index=index, dtype="float64")
+        return pd.DataFrame(index=index, columns=cols, dtype="float64")
+    return res
+
 def assign_safe(feats: pd.DataFrame, name: str, series):
     feats[name] = np.asarray(series, dtype="float64")
     # print(f"{name}: {feats[name].dtype}")
@@ -41,42 +51,108 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         assign_safe(feats, "fg_index", df["fg_index"].astype(float).ffill())
     if "funding_rate" in df:
         assign_safe(feats, "funding_rate", df["funding_rate"].astype(float).ffill())
-        fr_ema = ta.ema(feats["funding_rate"], length=24)
+        fr_ema = _safe_ta(ta.ema, feats["funding_rate"], length=24, index=df.index)
         assign_safe(feats, f"funding_rate_anom_{period}", (feats["funding_rate"] - fr_ema))
 
-    assign_safe(feats, f"ema_diff_{period}", ta.ema(feats["close"], 10) - ta.ema(feats["close"], 50))
-    assign_safe(feats, f"sma_10_{period}", ta.sma(feats["close"], length=10))
+    ema_short = _safe_ta(ta.ema, feats["close"], length=10, index=df.index)
+    if ema_short.isna().all():
+        ema_short = feats["close"].ewm(span=10, adjust=False).mean()
+    ema_long = _safe_ta(ta.ema, feats["close"], length=50, index=df.index)
+    if ema_long.isna().all():
+        ema_long = feats["close"].ewm(span=50, adjust=False).mean()
+    assign_safe(feats, f"ema_diff_{period}", ema_short - ema_long)
+    assign_safe(feats, f"sma_10_{period}", _safe_ta(ta.sma, feats["close"], length=10, index=df.index))
     feats[f"pct_chg1_{period}"] = feats["close"].pct_change()
     feats[f"pct_chg3_{period}"] = feats["close"].pct_change(3)
     feats[f"pct_chg6_{period}"] = feats["close"].pct_change(6)
-    assign_safe(feats, f"rsi_{period}", ta.rsi(feats["close"], length=14))
+    assign_safe(feats, f"rsi_{period}", _safe_ta(ta.rsi, feats["close"], length=14, index=df.index))
     feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
-    assign_safe(feats, f"atr_pct_{period}", ta.atr(feats["high"], feats["low"], feats["close"], length=14) / feats["close"])
+    atr = _safe_ta(ta.atr, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
+    assign_safe(feats, f"atr_pct_{period}", atr / feats["close"]) 
     feats[f"atr_chg_{period}"] = feats[f"atr_pct_{period}"].diff()
 
-    assign_safe(feats, f"adx_{period}", ta.adx(feats["high"], feats["low"], feats["close"], length=14)["ADX_14"])
+    adx_df = _safe_ta(
+        ta.adx,
+        feats["high"],
+        feats["low"],
+        feats["close"],
+        length=14,
+        index=df.index,
+        cols=["ADX_14", "DMP_14", "DMN_14"],
+    )
+    assign_safe(feats, f"adx_{period}", adx_df.get("ADX_14"))
     feats[f"adx_delta_{period}"] = feats[f"adx_{period}"].diff()
-    assign_safe(feats, f"cci_{period}", ta.cci(feats["high"], feats["low"], feats["close"], length=14))
+    assign_safe(feats, f"cci_{period}", _safe_ta(ta.cci, feats["high"], feats["low"], feats["close"], length=14, index=df.index))
     feats[f"cci_delta_{period}"] = feats[f"cci_{period}"].diff()
-    assign_safe(feats, f"mfi_{period}",
-                calc_mfi_np(feats["high"].values, feats["low"].values, feats["close"].values, feats["volume"].values,
-                            window=14))
+    assign_safe(
+        feats,
+        f"mfi_{period}",
+        calc_mfi_np(
+            feats["high"].values,
+            feats["low"].values,
+            feats["close"].values,
+            feats["volume"].values,
+            window=14,
+        ),
+    )
 
-    bb = ta.bbands(feats["close"], length=20)
-    assign_safe(feats, f"bb_width_{period}", bb["BBU_20_2.0"] - bb["BBL_20_2.0"])
+    bb = _safe_ta(
+        ta.bbands,
+        feats["close"],
+        length=20,
+        index=df.index,
+        cols=["BBL_20_2.0", "BBM_20_2.0", "BBU_20_2.0", "BBB_20_2.0", "BBP_20_2.0"],
+    )
+    assign_safe(feats, f"bb_width_{period}", bb.get("BBU_20_2.0") - bb.get("BBL_20_2.0"))
     feats[f"bb_width_chg_{period}"] = feats[f"bb_width_{period}"].diff()
-    assign_safe(feats, f"boll_perc_{period}", (feats["close"] - bb["BBL_20_2.0"]) / (bb["BBU_20_2.0"] - bb["BBL_20_2.0"]).replace(0, np.nan))
+    assign_safe(
+        feats,
+        f"boll_perc_{period}",
+        (feats["close"] - bb.get("BBL_20_2.0")) / (bb.get("BBU_20_2.0") - bb.get("BBL_20_2.0")).replace(0, np.nan),
+    )
 
-    kc = ta.kc(feats["high"], feats["low"], feats["close"], length=20)
-    assign_safe(feats, f"kc_perc_{period}", (feats["close"] - kc["KCLe_20_2"]) / (kc["KCUe_20_2"] - kc["KCLe_20_2"]).replace(0, np.nan))
+    kc = _safe_ta(
+        ta.kc,
+        feats["high"],
+        feats["low"],
+        feats["close"],
+        length=20,
+        index=df.index,
+        cols=["KCLe_20_2", "KCBe_20_2", "KCUe_20_2"],
+    )
+    assign_safe(
+        feats,
+        f"kc_perc_{period}",
+        (feats["close"] - kc.get("KCLe_20_2")) / (kc.get("KCUe_20_2") - kc.get("KCLe_20_2")).replace(0, np.nan),
+    )
 
-    dc = ta.donchian(feats["high"], feats["low"], lower_length=20, upper_length=20)
-    assign_safe(feats, f"donchian_perc_{period}", (feats["close"] - dc["DCL_20_20"]) / (dc["DCU_20_20"] - dc["DCL_20_20"]).replace(0, np.nan))
-    assign_safe(feats, f"donchian_delta_{period}", dc["DCU_20_20"] - dc["DCL_20_20"])
+    dc = _safe_ta(
+        ta.donchian,
+        feats["high"],
+        feats["low"],
+        lower_length=20,
+        upper_length=20,
+        index=df.index,
+        cols=["DCL_20_20", "DCM_20_20", "DCU_20_20"],
+    )
+    assign_safe(
+        feats,
+        f"donchian_perc_{period}",
+        (feats["close"] - dc.get("DCL_20_20")) / (dc.get("DCU_20_20") - dc.get("DCL_20_20")).replace(0, np.nan),
+    )
+    assign_safe(feats, f"donchian_delta_{period}", dc.get("DCU_20_20") - dc.get("DCL_20_20"))
 
-    assign_safe(feats, f"vol_roc_{period}", ta.roc(feats["volume"], length=5))
-    assign_safe(feats, f"vol_ma_ratio_{period}", feats["volume"] / ta.sma(feats["volume"], length=10).replace(0, np.nan))
-    assign_safe(feats, f"vol_ma_ratio_long_{period}", feats["volume"] / ta.sma(feats["volume"], length=30).replace(0, np.nan))
+    assign_safe(feats, f"vol_roc_{period}", _safe_ta(ta.roc, feats["volume"], length=5, index=df.index))
+    assign_safe(
+        feats,
+        f"vol_ma_ratio_{period}",
+        feats["volume"] / _safe_ta(ta.sma, feats["volume"], length=10, index=df.index).replace(0, np.nan),
+    )
+    assign_safe(
+        feats,
+        f"vol_ma_ratio_long_{period}",
+        feats["volume"] / _safe_ta(ta.sma, feats["volume"], length=30, index=df.index).replace(0, np.nan),
+    )
 
     range_ = (feats["high"] - feats["low"]).replace(0, np.nan)
     body = (feats["close"] - feats["open"]).abs()
@@ -90,7 +166,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"long_upper_shadow_{period}", upper_long.astype(float))
     assign_safe(feats, f"long_lower_shadow_{period}", lower_long.astype(float))
 
-    sma_bbw = ta.sma(feats[f"bb_width_{period}"], length=20)
+    sma_bbw = _safe_ta(ta.sma, feats[f"bb_width_{period}"], length=20, index=df.index)
     vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
 
@@ -106,18 +182,53 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     )
 
     assign_safe(feats, f"rsi_mul_vol_ma_ratio_{period}", feats[f"rsi_{period}"] * feats[f"vol_ma_ratio_{period}"])
-    assign_safe(feats, f"willr_{period}", ta.willr(feats["high"], feats["low"], feats["close"], length=14))
+    assign_safe(feats, f"willr_{period}", _safe_ta(ta.willr, feats["high"], feats["low"], feats["close"], length=14, index=df.index))
 
-    macd = ta.macd(feats["close"])
+    macd = _safe_ta(
+        ta.macd,
+        feats["close"],
+        index=df.index,
+        cols=["MACD_12_26_9", "MACDh_12_26_9", "MACDs_12_26_9"],
+    )
     assign_safe(feats, f"macd_{period}", macd["MACD_12_26_9"])
     assign_safe(feats, f"macd_signal_{period}", macd["MACDs_12_26_9"])
     assign_safe(feats, f"macd_hist_{period}", macd["MACDh_12_26_9"])
 
-    assign_safe(feats, f"obv_{period}", ta.obv(feats["close"], feats["volume"]))
+    assign_safe(feats, f"obv_{period}", _safe_ta(ta.obv, feats["close"], feats["volume"], index=df.index))
     feats[f"obv_delta_{period}"] = feats[f"obv_{period}"].diff()
 
-    st = ta.supertrend(feats["high"], feats["low"], feats["close"])
+    st = _safe_ta(
+        ta.supertrend,
+        feats["high"],
+        feats["low"],
+        feats["close"],
+        index=df.index,
+        cols=["SUPERT_7_3.0", "SUPERTd_7_3.0", "SUPERTl_7_3.0", "SUPERTs_7_3.0"],
+    )
     assign_safe(feats, f"supertrend_dir_{period}", st.get("SUPERTd_7_3.0", pd.Series(index=df.index, data=np.nan)))
+
+    # ======== CoinGecko 衍生特征 ========
+    if "cg_price" in df:
+        cg_price = pd.to_numeric(df["cg_price"], errors="coerce")
+        assign_safe(feats, f"price_diff_cg_{period}", feats["close"] - cg_price)
+        assign_safe(
+            feats,
+            f"price_ratio_cg_{period}",
+            feats["close"] / cg_price.replace(0, np.nan),
+        )
+
+    if "cg_market_cap" in df:
+        cg_mc = pd.to_numeric(df["cg_market_cap"], errors="coerce")
+        assign_safe(feats, f"cg_market_cap_roc_{period}", cg_mc.pct_change())
+
+    if "cg_total_volume" in df:
+        cg_tv = pd.to_numeric(df["cg_total_volume"], errors="coerce")
+        assign_safe(feats, f"cg_total_volume_roc_{period}", cg_tv.pct_change())
+        assign_safe(
+            feats,
+            f"volume_cg_ratio_{period}",
+            feats["volume"] / cg_tv.replace(0, np.nan),
+        )
 
     return feats
 
