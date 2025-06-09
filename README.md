@@ -3,7 +3,7 @@
 该仓库包含一个量化交易的数据处理与信号生成框架，主要组件包括：
 
 - **DataLoader**：从币安接口同步行情、资金费率及情绪指数，并可按日拉取 CoinGecko 的市值数据。
-- **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。
+- **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子。
 - **ModelTrainer**：使用 LightGBM 训练多周期预测模型。
 - **标签系统**：根据历史波动动态设定阈值，并额外提供未来波动率等辅助目标。
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
@@ -25,7 +25,7 @@
 若表为空则自动回补过去一年的记录，否则从最后时间的次日开始拉取缺失区间，
 每天使用 `market_chart/range` 接口更新。
 从 v2.5 起，`incremental_update_klines` 会在写入 K 线时同步并合并这些 CoinGecko 指标，
-生成字段 `cg_price`、`cg_market_cap` 与 `cg_total_volume`，供后续特征工程使用。
+生成字段 `cg_price`、`cg_market_cap` 与 `cg_total_volume`，供后续特征工程使用。`FeatureEngineer` 会进一步基于这些列计算币安价格与 CoinGecko 价格差、市值和成交量的日涨跌率等因子。
 
 ## 安装与测试
 
