@@ -77,7 +77,7 @@ def test_update_cg_global_metrics(monkeypatch):
     engine = sqlalchemy.create_engine('sqlite:///:memory:')
     with engine.begin() as conn:
         conn.exec_driver_sql(
-            "CREATE TABLE cg_global_metrics (timestamp TEXT PRIMARY KEY, total_market_cap REAL, total_volume REAL, btc_dominance REAL)"
+            "CREATE TABLE cg_global_metrics (timestamp TEXT PRIMARY KEY, total_market_cap REAL, total_volume REAL, btc_dominance REAL, eth_dominance REAL)"
         )
     dl = make_dl(engine)
 
@@ -88,7 +88,7 @@ def test_update_cg_global_metrics(monkeypatch):
                     "data": {
                         "total_market_cap": {"usd": 100},
                         "total_volume": {"usd": 10},
-                        "market_cap_percentage": {"btc": 50},
+                        "market_cap_percentage": {"btc": 50, "eth": 30},
                     }
                 }
 
@@ -103,6 +103,7 @@ def test_update_cg_global_metrics(monkeypatch):
     assert df.iloc[0]['total_market_cap'] == 100
     assert df.iloc[0]['total_volume'] == 10
     assert df.iloc[0]['btc_dominance'] == 50
+    assert df.iloc[0]['eth_dominance'] == 30
     ts = df.iloc[0]['timestamp']
     assert ts.tzinfo is None
     assert ts.microsecond % 1000 == 0
