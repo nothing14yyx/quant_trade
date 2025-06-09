@@ -79,10 +79,15 @@ def train_one(df_all: pd.DataFrame,
         pos_ratio = (data[tgt] == 1).mean()
         if pos_ratio < 0.4 or pos_ratio > 0.6:
             sampler = RandomOverSampler(random_state=42)
-            res_X, res_y = sampler.fit_resample(data[feat_use + ["open_time"]], data[tgt])
-            res = pd.DataFrame(res_X, columns=feat_use + ["open_time"])
+            res_X, res_y = sampler.fit_resample(data[feat_use], data[tgt])
+            res_open_time = data["open_time"].iloc[res_X.index]
+
+            # 构造包含 open_time 的 DataFrame，按时间重新排序
+            res = res_X.copy()
             res[tgt] = res_y
+            res["open_time"] = res_open_time.values
             res = res.sort_values("open_time")
+
             X = res[feat_use]
             y = res[tgt]
         else:
