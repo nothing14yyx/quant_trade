@@ -46,6 +46,11 @@ JSON 字符串，包含：
 - `raw_feat_1h`、`raw_feat_4h`、`raw_feat_d1`：原始特征
 - `details`：信号生成时返回的调试信息
 
+## cg_market_data 与 cg_global_metrics 表
+
+这两个表分别由 `update_cg_market_data` 和 `update_cg_global_metrics` 写入
+CoinGecko 的行情与全球指标数据，完整表结构见仓库根目录的 `schema.sql`。
+
 
 
 
