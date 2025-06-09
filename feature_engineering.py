@@ -155,11 +155,79 @@ class FeatureEngineer:
         df_out = pd.concat([df_filled, flags_df], axis=1)
         return df_out
 
-    def merge_features(self, topn: int | None = None, save_to_db: bool = False) -> None:
+    def _finalize_batch(self, dfs: list[pd.DataFrame]) -> tuple[pd.DataFrame, list[str]]:
+        df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
+
+        base_cols = [
+            "open_time", "open", "high", "low", "close", "volume", "close_time",
+            "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
+            "symbol", "target_up", "target_down",
+        ]
+        other_cols = [c for c in df_all.columns if c not in base_cols]
+        df_all = df_all[base_cols + other_cols]
+
+        if not self.feature_cols_all:
+            numeric_cols = [
+                c for c in other_cols
+                if pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c])
+            ]
+            self.feature_cols_all = numeric_cols.copy()
+
+        feat_cols_all = [
+            c for c in self.feature_cols_all
+            if c in df_all.columns and (
+                pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c])
+            )
+        ]
+
+        for col in feat_cols_all:
+            arr = df_all[col].dropna().values
+            low, high = np.nanpercentile(arr, [1, 99])
+            df_all[col] = df_all[col].clip(low, high)
+
+        if self.mode == "train":
+            scaler_params = compute_robust_z_params(df_all, feat_cols_all)
+            self.scaler_path.parent.mkdir(parents=True, exist_ok=True)
+            save_scaler_params_to_json(scaler_params, str(self.scaler_path))
+            df_scaled = apply_robust_z_with_params(df_all, scaler_params)
+        else:
+            if not self.scaler_path.is_file():
+                raise FileNotFoundError(f"找不到 scaler 参数文件：{self.scaler_path}")
+            scaler_params = load_scaler_params_from_json(str(self.scaler_path))
+            df_scaled = apply_robust_z_with_params(df_all, scaler_params)
+
+        df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-10, 10)
+        df_final = self._add_missing_flags(df_scaled, feat_cols_all)
+
+        final_other_cols = [c for c in df_final.columns if c not in base_cols]
+        return df_final, final_other_cols
+
+    def _write_output(self, df: pd.DataFrame, save_to_db: bool, append: bool) -> None:
+        self.merged_table_path.parent.mkdir(parents=True, exist_ok=True)
+        if save_to_db:
+            if_exists = "append" if append else "replace"
+            df.to_sql("features", self.engine, if_exists=if_exists, index=False)
+            msg = "追加写入" if append else "写入"
+            print(f"✅ 已{msg} MySQL 表 `features`")
+        else:
+            mode = "a" if append else "w"
+            header = not append
+            df.to_csv(self.merged_table_path, mode=mode, index=False, header=header)
+            msg = "追加写入" if append else "导出"
+            print(f"✅ CSV 已{msg} → {self.merged_table_path}")
+
+    def merge_features(
+        self,
+        topn: int | None = None,
+        save_to_db: bool = False,
+        batch_size: int | None = None,
+    ) -> None:
         symbols = self.get_symbols()
         symbols = symbols[: (topn or self.topn)]
 
         all_dfs: list[pd.DataFrame] = []
+        final_cols: set[str] = set()
+        append = False
         for sym in tqdm(symbols, desc="Calc features"):
             # 1. 先拉取 1h/4h/1d 数据
             df_1h = self.load_klines_db(sym, "1h")
@@ -248,74 +316,32 @@ class FeatureEngineer:
             if out.shape[1] > 0:
                 all_dfs.append(out)
 
-        if not all_dfs:
+            if batch_size and batch_size > 0 and len(all_dfs) >= batch_size:
+                df_final, other_cols = self._finalize_batch(all_dfs)
+                self._write_output(df_final, save_to_db, append)
+                final_cols.update(other_cols)
+                all_dfs = []
+                append = True
+
+        if not all_dfs and not append:
             raise RuntimeError("合并结果为空——请确认数据库中三周期数据完整！")
 
-        # 9. 拼成一张总表
-        df_all = pd.concat(all_dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
+        if batch_size and batch_size > 0 and all_dfs:
+            df_final, other_cols = self._finalize_batch(all_dfs)
+            self._write_output(df_final, save_to_db, append)
+            final_cols.update(other_cols)
+            all_dfs = []
+            append = True
+        elif not (batch_size and batch_size > 0):
+            df_all = pd.concat(all_dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
+            df_final, other_cols = self._finalize_batch([df_all])
+            self._write_output(df_final, save_to_db, append=False)
+            final_cols.update(other_cols)
+            all_dfs = []
+            append = True
 
-        # 10. 基础列顺序固定，其他特征列放后面
-        base_cols = [
-            "open_time", "open", "high", "low", "close", "volume", "close_time",
-            "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
-            "symbol", "target_up", "target_down",
-        ]
-        other_cols = [c for c in df_all.columns if c not in base_cols]
-        df_all = df_all[base_cols + other_cols]
-
-        # 11. 如果第一次没有 feature_cols_all，就把 other_cols 中的数值列设为初始待归一化列表
-        if not self.feature_cols_all:
-            numeric_cols = [
-                c for c in other_cols
-                if pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c])
-            ]
-            self.feature_cols_all = numeric_cols.copy()
-
-        # 12. 过滤 feature_cols_all，确保只保留在 df_all 中存在且为数值列的字段
-        feat_cols_all = [
-            c for c in self.feature_cols_all
-            if c in df_all.columns and (
-                pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c])
-            )
-        ]
-
-        # ===== 第一步：对 df_all 中每个特征按 1%/99% 分位数裁剪 =====
-        for col in feat_cols_all:
-            arr = df_all[col].dropna().values
-            low, high = np.nanpercentile(arr, [1, 99])
-            df_all[col] = df_all[col].clip(low, high)
-
-        # ===== 第二步：Robust-z 缩放（训练 vs 推理模式） =====
-        if self.mode == "train":
-            scaler_params = compute_robust_z_params(df_all, feat_cols_all)
-            self.scaler_path.parent.mkdir(parents=True, exist_ok=True)
-            save_scaler_params_to_json(scaler_params, str(self.scaler_path))
-            df_scaled = apply_robust_z_with_params(df_all, scaler_params)
-        else:
-            if not self.scaler_path.is_file():
-                raise FileNotFoundError(f"找不到 scaler 参数文件：{self.scaler_path}")
-            scaler_params = load_scaler_params_from_json(str(self.scaler_path))
-            df_scaled = apply_robust_z_with_params(df_all, scaler_params)
-
-        # ===== 第三步：对归一化后的结果统一 Clip 到 [-10, 10] =====
-        df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-10, 10)
-
-        # 13. 添加 _isnan 标志并把 NaN 填为 0
-        df_final = self._add_missing_flags(df_scaled, feat_cols_all)
-
-        # 14. 最终输出：写入 MySQL 或导出 CSV
-        self.merged_table_path.parent.mkdir(parents=True, exist_ok=True)
-        if save_to_db:
-            df_final.to_sql("features", self.engine, if_exists="replace", index=False)
-            print("✅ 已写入 MySQL 表 `features`")
-        else:
-            df_final.to_csv(self.merged_table_path, index=False)
-            print(f"✅ CSV 已导出 → {self.merged_table_path}")
-
-        # 15. 更新 feature_cols.txt（除去 base_cols）
-        final_other_cols = [c for c in df_final.columns if c not in base_cols]
         self.feature_cols_path.parent.mkdir(parents=True, exist_ok=True)
-        self.feature_cols_path.write_text("\n".join(final_other_cols), encoding="utf-8")
+        self.feature_cols_path.write_text("\n".join(sorted(final_cols)), encoding="utf-8")
         print(f"✅ feature_cols 保存至 {self.feature_cols_path}")
 
 
