@@ -20,6 +20,10 @@
 默认情况下，项目会使用 CoinGecko 提供的公共 API，额度为每月 1 万次，
 并限制每分钟最多 30 次调用。如有需要可在 `coingecko.api_key` 中配置你的公开密钥。
 
+为减少搜索次数，`DataLoader` 会在初始化时读取 `coingecko_ids.json` 缓存，并在获得新的币种
+id 后写回该文件。`update_cg_market_data` 会先检查数据库中该币种的最新记录，如距当前不足
+24 小时则跳过；否则从该时间起通过 `market_chart/range` 接口增量抓取。
+
 ## 安装与测试
 
 在开始之前，请执行 `pip install -r requirements.txt` 安装依赖。
