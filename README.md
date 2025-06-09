@@ -33,6 +33,11 @@
 
 完成安装后，可运行 `pytest -q tests` 执行自带的单元测试。
 
+内存不足或特征过多时，可以先在 `utils/config.yaml` 将 `feature_engineering.topn`
+调小（如 20），或在执行 `feature_engineering.py` 时传入
+`merge_features(topn=20)`。此外，`data_loader` 区段的 `start` 与 `end`
+参数也可限定日期范围，以减少同步的历史数据行数。
+
 ## 数据库初始化
 
 执行 `mysql < scripts/init_db.sql` 即可创建所需表格。
