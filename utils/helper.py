@@ -119,6 +119,29 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     st = ta.supertrend(feats["high"], feats["low"], feats["close"])
     assign_safe(feats, f"supertrend_dir_{period}", st.get("SUPERTd_7_3.0", pd.Series(index=df.index, data=np.nan)))
 
+    # ======== CoinGecko 衍生特征 ========
+    if "cg_price" in df:
+        cg_price = pd.to_numeric(df["cg_price"], errors="coerce")
+        assign_safe(feats, f"price_diff_cg_{period}", feats["close"] - cg_price)
+        assign_safe(
+            feats,
+            f"price_ratio_cg_{period}",
+            feats["close"] / cg_price.replace(0, np.nan),
+        )
+
+    if "cg_market_cap" in df:
+        cg_mc = pd.to_numeric(df["cg_market_cap"], errors="coerce")
+        assign_safe(feats, f"cg_market_cap_roc_{period}", cg_mc.pct_change())
+
+    if "cg_total_volume" in df:
+        cg_tv = pd.to_numeric(df["cg_total_volume"], errors="coerce")
+        assign_safe(feats, f"cg_total_volume_roc_{period}", cg_tv.pct_change())
+        assign_safe(
+            feats,
+            f"volume_cg_ratio_{period}",
+            feats["volume"] / cg_tv.replace(0, np.nan),
+        )
+
     return feats
 
 def calc_features_full(df: pd.DataFrame, period: str) -> pd.DataFrame:
