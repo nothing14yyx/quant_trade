@@ -6,7 +6,7 @@ binance:
     https: "http://127.0.0.1:7890"
 
 coingecko:
-  api_key: "${COINGECKO_API_KEY}"
+  api_key: "${COINGECKO_API_KEY}"  # 可为空或填写公共 API 密钥
 
 mysql:
   host: "localhost"
