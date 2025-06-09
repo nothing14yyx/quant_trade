@@ -20,6 +20,9 @@ CREATE TABLE klines (
     -- 情绪 & 资金费率
     fg_index           DOUBLE  NULL,
     funding_rate       DOUBLE  NULL,
+    cg_price           DOUBLE,
+    cg_market_cap      DOUBLE,
+    cg_total_volume    DOUBLE,
 
     -- 索引
     PRIMARY KEY (symbol, `interval`, open_time),

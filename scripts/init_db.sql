@@ -54,5 +54,8 @@ CREATE TABLE IF NOT EXISTS klines (
     taker_buy_quote DOUBLE,
     fg_index DOUBLE,
     funding_rate DOUBLE,
+    cg_price DOUBLE,
+    cg_market_cap DOUBLE,
+    cg_total_volume DOUBLE,
     PRIMARY KEY(symbol, `interval`, open_time)
 );
