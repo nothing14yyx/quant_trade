@@ -4,6 +4,11 @@
 
 - **DataLoader**：从币安接口同步行情、资金费率及情绪指数，并可按日拉取 CoinGecko 的市值数据。
 - **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子。
+-   `merge_features` 新增 `batch_size` 参数，可在内存有限时按币种分批写入：
+
+    ```python
+    fe.merge_features(save_to_db=True, batch_size=1)
+    ```
 - **ModelTrainer**：使用 LightGBM 训练多周期预测模型。
 - **标签系统**：根据历史波动动态设定阈值，并额外提供未来波动率等辅助目标。
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
