@@ -506,6 +506,9 @@ class DataLoader:
         # NaN → None
         df = df[cols_final].replace({np.nan: None})
 
+        # Drop rows lacking CoinGecko market info
+        df = df.dropna(subset=["cg_price"])
+
         # ==== 加在此处！====
         df = df.dropna(subset=["symbol"])
         df["symbol"] = df["symbol"].astype(str).str.strip()
