@@ -273,7 +273,7 @@ class DataLoader:
                 data = _safe_retry(
                     lambda: requests.get(
                         self.CG_MARKET_URL.format(id=cid),
-                        params={"vs_currency": "usd", "days": 1},
+                        params={"vs_currency": "usd", "days": 365},
                         headers=headers,
                         timeout=10,
                     ).json(),
