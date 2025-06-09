@@ -307,6 +307,9 @@ class RobustSignalGenerator:
         raw_features_1h=None,
         raw_features_4h=None,
         raw_features_d1=None,
+        *,
+        global_metrics=None,
+        open_interest=None,
     ):
         """
         输入：
@@ -378,6 +381,22 @@ class RobustSignalGenerator:
                 fused_score *= 1.10
         else:
             fused_score = score_1h
+
+        # 根据外部指标微调 fused_score
+        if global_metrics is not None:
+            dom = global_metrics.get('btc_dom_chg')
+            if dom is not None:
+                fused_score *= 1 + 0.1 * dom
+            mcap_g = global_metrics.get('mcap_growth')
+            if mcap_g is not None:
+                fused_score *= 1 + 0.1 * mcap_g
+            vol_c = global_metrics.get('vol_chg')
+            if vol_c is not None:
+                fused_score *= 1 + 0.05 * vol_c
+        if open_interest is not None:
+            oi_chg = open_interest.get('oi_chg')
+            if oi_chg is not None:
+                fused_score *= 1 + 0.1 * oi_chg
 
         # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
