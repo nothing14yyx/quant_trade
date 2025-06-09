@@ -17,6 +17,9 @@
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置，
 其中 `api_key`、`api_secret`、`COINGECKO_API_KEY` 与 MySQL `password` 均支持通过环境变量传入。
 
+默认情况下，项目会使用 CoinGecko 提供的公共 API，额度为每月 1 万次，
+并限制每分钟最多 30 次调用。如有需要可在 `coingecko.api_key` 中配置你的公开密钥。
+
 ## 安装与测试
 
 在开始之前，请执行 `pip install -r requirements.txt` 安装依赖。
