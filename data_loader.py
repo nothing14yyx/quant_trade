@@ -267,7 +267,7 @@ class DataLoader:
         rows = []
 
         today = pd.Timestamp.utcnow().floor("D").tz_localize(None)
-        tomorrow = today + dt.timedelta(days=1)
+        tomorrow = today + dt.timedelta(days=365)
 
         for sym in symbols:
             exists = pd.read_sql(
@@ -370,6 +370,7 @@ class DataLoader:
             for t in tickers
             if t["symbol"] in trading_perp_usdt
                and t["symbol"] not in self.excluded
+               and not t["symbol"].startswith("1000")
                and float(t["quoteVolume"]) > 0
         ]
         cands.sort(key=lambda x: x[1], reverse=True)

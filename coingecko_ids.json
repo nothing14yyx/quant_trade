@@ -94,5 +94,9 @@
   "ATOMUSDT": "cosmos",
   "THEUSDT": "ethereum",
   "CHILLGUYUSDT": "chill-guy",
-  "B2USDT": "bsquared-network"
+  "B2USDT": "bsquared-network",
+  "VVVUSDT": "venice-token",
+  "BUSDT": "bitcoin",
+  "GOATUSDT": "goatseus-maximus",
+  "PAXGUSDT": "pax-gold"
 }
