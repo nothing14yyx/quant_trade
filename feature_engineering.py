@@ -350,4 +350,4 @@ class FeatureEngineer:
 # ────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     fe = FeatureEngineer("utils/config.yaml")
-    fe.merge_features(save_to_db=True)
+    fe.merge_features(save_to_db=True, batch_size=1)
