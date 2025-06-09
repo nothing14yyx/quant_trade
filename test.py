@@ -1,2 +1,2 @@
 import os
-print("MYSQL_PASSWORD in python:", os.environ.get("MYSQL_PASSWORD"))
+print("COINGECKO_API_KEY in python:", os.environ.get("COINGECKO_API_KEY"))
