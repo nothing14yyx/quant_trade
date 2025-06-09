@@ -278,6 +278,9 @@ def main_loop(interval_sec: int = 60):
             feat_4h["price"] = price_4h
             feat_d1["close"] = df_d1["close"].iloc[-1]
 
+            gm = loader.get_latest_cg_global_metrics()
+            oi = loader.get_latest_open_interest(sym)
+
             result = signal_generator.generate_signal(
                 feat_1h,
                 feat_4h,
@@ -285,6 +288,8 @@ def main_loop(interval_sec: int = 60):
                 raw_features_1h=raw_feat_1h,
                 raw_features_4h=raw_feat_4h,
                 raw_features_d1=raw_feat_d1,
+                global_metrics=gm,
+                open_interest=oi,
             )
             fused_score = result["score"]
 
@@ -342,6 +347,9 @@ def main_loop(interval_sec: int = 60):
             df_1h = feat_data[sym]["1h"]
             kline_close_time = df_1h["close_time"].iloc[-1] if "close_time" in df_1h.columns else None
 
+            gm = loader.get_latest_cg_global_metrics()
+            oi = loader.get_latest_open_interest(sym)
+
             result = signal_generator.generate_signal(
                 feat_1h,
                 feat_4h,
@@ -350,6 +358,8 @@ def main_loop(interval_sec: int = 60):
                 raw_features_1h=raw_feat_1h,
                 raw_features_4h=raw_feat_4h,
                 raw_features_d1=raw_feat_d1,
+                global_metrics=gm,
+                open_interest=oi,
             )
             record = {
                 "symbol": sym,
