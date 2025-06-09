@@ -95,5 +95,10 @@
   "B2USDT": "bsquared-network",
   "ATOMUSDT": "cosmos",
   "CHILLGUYUSDT": "chill-guy",
-  "SOONUSDT": "soon-2"
+  "SOONUSDT": "soon-2",
+  "BIDUSDT": "creatorbid",
+  "SKATEUSDT": "skate",
+  "ZEREBROUSDT": "zerebro",
+  "MOVEUSDT": "movement",
+  "GOATUSDT": "goatseus-maximus"
 }
