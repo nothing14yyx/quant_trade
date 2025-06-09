@@ -230,12 +230,13 @@ class DataLoader:
     #     logger.info("[depth] %s %s", symbol, len(rows))
 
     # ───────────────────────────── CoinGecko 辅助数据 ──────────────────────
-    CG_SEARCH_URL = "https://pro-api.coingecko.com/api/v3/search"
-    CG_MARKET_URL = "https://pro-api.coingecko.com/api/v3/coins/{id}/market_chart"
-    CG_GLOBAL_URL = "https://pro-api.coingecko.com/api/v3/global"
+    CG_SEARCH_URL = "https://api.coingecko.com/api/v3/search"
+    CG_MARKET_URL = "https://api.coingecko.com/api/v3/coins/{id}/market_chart"
+    CG_GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
 
     def _cg_headers(self) -> Dict[str, str]:
-        return {"x-cg-pro-api-key": self.cg_api_key} if self.cg_api_key else {}
+        """返回访问 CoinGecko API 所需的请求头"""
+        return {"x-cg-demo-api-key": self.cg_api_key} if self.cg_api_key else {}
 
     def _cg_get_id(self, symbol: str) -> Optional[str]:
         if symbol in self._cg_id_map:
