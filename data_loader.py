@@ -220,6 +220,31 @@ class DataLoader:
             )
         logger.info("[open_interest] %s", symbol)
 
+    def get_latest_open_interest(self, symbol: str) -> Optional[dict]:
+        """返回指定合约最近两条持仓量及变化率"""
+        q = (
+            "SELECT timestamp, open_interest FROM open_interest "
+            "WHERE symbol=:s ORDER BY timestamp DESC LIMIT 2"
+        )
+        df = pd.read_sql(text(q), self.engine, params={"s": symbol}, parse_dates=["timestamp"])
+        if df.empty:
+            return None
+        latest = df.iloc[0]
+        if len(df) > 1 and df.iloc[1]["open_interest"]:
+            prev = df.iloc[1]
+            prev_val = prev["open_interest"]
+            if prev_val:
+                oi_chg = (latest["open_interest"] - prev_val) / prev_val
+            else:
+                oi_chg = None
+        else:
+            oi_chg = None
+        return {
+            "timestamp": latest["timestamp"],
+            "open_interest": float(latest["open_interest"]),
+            "oi_chg": float(oi_chg) if oi_chg is not None else None,
+        }
+
 
     # ───────────────────────────── CoinGecko 辅助数据 ──────────────────────
     CG_SEARCH_URL = "https://api.coingecko.com/api/v3/search"
@@ -356,6 +381,36 @@ class DataLoader:
                 [row],
             )
         logger.info("[cg_global] updated")
+
+    def get_latest_cg_global_metrics(self) -> Optional[dict]:
+        """返回最近两条 CoinGecko 全球指标并附带变化率"""
+        q = (
+            "SELECT timestamp, total_market_cap, total_volume, btc_dominance, eth_dominance "
+            "FROM cg_global_metrics ORDER BY timestamp DESC LIMIT 2"
+        )
+        df = pd.read_sql(q, self.engine, parse_dates=["timestamp"])
+        if df.empty:
+            return None
+        latest = df.iloc[0]
+        if len(df) > 1:
+            prev = df.iloc[1]
+            def pct(cur, prev_val):
+                return (cur - prev_val) / prev_val if prev_val else None
+            btc_dom_chg = pct(latest["btc_dominance"], prev["btc_dominance"])
+            mcap_growth = pct(latest["total_market_cap"], prev["total_market_cap"])
+            vol_chg = pct(latest["total_volume"], prev["total_volume"])
+        else:
+            btc_dom_chg = mcap_growth = vol_chg = None
+        return {
+            "timestamp": latest["timestamp"],
+            "btc_dom_chg": float(btc_dom_chg) if btc_dom_chg is not None else None,
+            "mcap_growth": float(mcap_growth) if mcap_growth is not None else None,
+            "vol_chg": float(vol_chg) if vol_chg is not None else None,
+            "btc_dominance": float(latest["btc_dominance"]),
+            "total_market_cap": float(latest["total_market_cap"]),
+            "total_volume": float(latest["total_volume"]),
+            "eth_dominance": float(latest["eth_dominance"]),
+        }
 
     # ───────────────────────────── 选币逻辑 ───────────────────────────────
     def get_top_symbols(self, n: Optional[int] = None) -> List[str]:
