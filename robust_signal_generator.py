@@ -117,9 +117,13 @@ class RobustSignalGenerator:
         """
 
         def safe(key: str, default=0):
-            """如果指定 key 不存在或 value 为 None，就返回 default，否则返回实际值。"""
+            """如果值缺失或为 NaN，返回 default。"""
             v = features.get(key, default)
-            return default if v is None else v
+            if v is None:
+                return default
+            if isinstance(v, (float, int)) and pd.isna(v):
+                return default
+            return v
 
         trend_raw = (
             np.tanh(safe(f'ema_diff_{period}', 0) * 5)
@@ -127,6 +131,9 @@ class RobustSignalGenerator:
             + safe(f'supertrend_dir_{period}', 0)
             + np.tanh(safe(f'adx_delta_{period}', 0) / 10)
             + np.tanh((safe(f'bull_streak_{period}', 0) - safe(f'bear_streak_{period}', 0)) / 3)
+            + 0.5 * safe(f'long_lower_shadow_{period}', 0)
+            - 0.5 * safe(f'long_upper_shadow_{period}', 0)
+            + 0.5 * safe(f'vol_breakout_{period}', 0)
         )
 
         momentum_raw = (
@@ -141,6 +148,9 @@ class RobustSignalGenerator:
             np.tanh(safe(f'atr_pct_{period}', 0) * 8)
             + np.tanh(safe(f'bb_width_{period}', 0) * 2)
             + np.tanh(safe(f'donchian_delta_{period}', 0) * 5)
+            + np.tanh(safe(f'hv_7d_{period}', 0) * 5)
+            + 0.5 * np.tanh(safe(f'hv_14d_{period}', 0) * 5)
+            + 0.5 * np.tanh(safe(f'hv_30d_{period}', 0) * 5)
         )
 
         volume_raw = (
@@ -148,6 +158,22 @@ class RobustSignalGenerator:
             + np.tanh(safe(f'obv_delta_{period}', 0) / 1e5)
             + np.tanh(safe(f'vol_roc_{period}', 0) / 5)
             + np.tanh(safe(f'rsi_mul_vol_ma_ratio_{period}', 0) / 100)
+            + np.tanh((safe(f'buy_sell_ratio_{period}', 1) - 1) * 2)
+            + np.tanh(safe(f'vol_profile_density_{period}', 0) / 10)
+        )
+
+        sentiment_raw = (
+            (safe('fg_index_d1', 50) - 50) / 50
+            + np.tanh(safe(f'btc_correlation_1h_{period}', 0))
+            + np.tanh(safe(f'eth_correlation_1h_{period}', 0))
+            + np.tanh(safe(f'price_diff_cg_{period}', 0) * 5)
+            + np.tanh(safe(f'cg_market_cap_roc_{period}', 0) * 5)
+            + np.tanh((safe(f'volume_cg_ratio_{period}', 1) - 1) * 2)
+        )
+
+        funding_raw = (
+            np.tanh(safe(f'funding_rate_{period}', 0) * 100)
+            + np.tanh(safe(f'funding_rate_anom_{period}', 0) * 50)
         )
 
         return {
@@ -155,8 +181,8 @@ class RobustSignalGenerator:
             'momentum': np.tanh(momentum_raw),
             'volatility': np.tanh(volatility_raw),
             'volume': np.tanh(volume_raw),
-            'sentiment': (safe('fg_index_d1', 50) - 50) / 50,
-            'funding': np.tanh(safe(f'funding_rate_{period}', 0) * 100),
+            'sentiment': np.tanh(sentiment_raw),
+            'funding': np.tanh(funding_raw),
         }
 
     def update_ic_scores(self, df, *, window=None, group_by=None, time_col="open_time"):
