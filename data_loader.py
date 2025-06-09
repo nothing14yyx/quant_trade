@@ -14,7 +14,7 @@ import json
 import yaml, requests, pandas as pd, numpy as np
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, bindparam
 from sqlalchemy.exc import IntegrityError
 from utils.ratelimiter import RateLimiter  # 你的限速器
 
@@ -262,22 +262,27 @@ class DataLoader:
         return None
 
     def update_cg_market_data(self, symbols: List[str]) -> None:
-        """仅在缺少当日数据时拉取 CoinGecko 市值信息"""
+        """拉取 CoinGecko 市值信息，自动回补缺失区间"""
         headers = self._cg_headers()
         rows = []
 
         today = pd.Timestamp.utcnow().floor("D").tz_localize(None)
         tomorrow = today + dt.timedelta(days=1)
 
+        stmt = text(
+            "SELECT symbol, MAX(timestamp) AS ts FROM cg_market_data "
+            "WHERE symbol IN :symbols GROUP BY symbol"
+        ).bindparams(bindparam("symbols", expanding=True))
+        last_df = pd.read_sql(stmt, self.engine, params={"symbols": symbols}, parse_dates=["ts"])
+        last_map = {r["symbol"]: r["ts"] for _, r in last_df.iterrows()}
+
         for sym in symbols:
-            exists = pd.read_sql(
-                text(
-                    "SELECT 1 FROM cg_market_data WHERE symbol=:sym AND timestamp >= :ts LIMIT 1"
-                ),
-                self.engine,
-                params={"sym": sym, "ts": today.to_pydatetime()},
-            )
-            if not exists.empty:
+            last_ts = last_map.get(sym)
+            if last_ts is None or pd.isna(last_ts):
+                start = today - dt.timedelta(days=365)
+            else:
+                start = last_ts + dt.timedelta(days=1)
+            if start >= today:
                 continue
             cid = self._cg_get_id(sym)
             if not cid:
@@ -288,7 +293,7 @@ class DataLoader:
                     self.CG_MARKET_RANGE_URL.format(id=cid),
                     params={
                         "vs_currency": "usd",
-                        "from": int(today.timestamp()),
+                        "from": int(start.timestamp()),
                         "to": int(tomorrow.timestamp()),
                     },
                     headers=headers,
@@ -300,16 +305,15 @@ class DataLoader:
             prices = data.get("prices", [])
             m_caps = data.get("market_caps", [])
             volumes = data.get("total_volumes", [])
-            if not prices:
-                continue
-            p, m, v = prices[0], m_caps[0], volumes[0]
-            rows.append({
-                "symbol": sym,
-                "timestamp": today.to_pydatetime(),
-                "price": float(p[1]),
-                "market_cap": float(m[1]),
-                "total_volume": float(v[1]),
-            })
+            for p, m, v in zip(prices, m_caps, volumes):
+                ts = pd.to_datetime(p[0], unit="ms").to_pydatetime().replace(tzinfo=None)
+                rows.append({
+                    "symbol": sym,
+                    "timestamp": ts,
+                    "price": float(p[1]),
+                    "market_cap": float(m[1]),
+                    "total_volume": float(v[1]),
+                })
             time.sleep(0.1)
         if not rows:
             return
