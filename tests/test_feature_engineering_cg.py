@@ -13,6 +13,9 @@ def test_calc_features_raw_with_cg():
         'low': [0.5, 1.5, 2.5],
         'close': [1.5, 2.5, 3.5],
         'volume': [100, 100, 100],
+        'taker_buy_base': [60, 50, 40],
+        'btc_close': [1.4, 1.5, 1.6],
+        'eth_close': [0.9, 1.0, 1.1],
         'cg_price': [1.4, 1.6, 1.8],
         'cg_market_cap': [1000, 1100, 1200],
         'cg_total_volume': [2000, 2200, 2400],
@@ -34,4 +37,20 @@ def test_calc_features_raw_with_cg():
 
     assert 'volume_cg_ratio_1h' in feats
     assert feats['volume_cg_ratio_1h'].iloc[0] == pytest.approx(100 / 2000)
+
+    new_cols = [
+        'hv_7d_1h',
+        'kc_width_pct_chg_1h',
+        'ichimoku_base_1h',
+        'buy_sell_ratio_1h',
+        'vol_profile_density_1h',
+        'money_flow_ratio_1h',
+        'skewness_1h',
+        'kurtosis_1h',
+        'btc_correlation_1h_1h',
+        'eth_correlation_1h_1h',
+        'bid_ask_spread_pct_1h',
+    ]
+    for col in new_cols:
+        assert col in feats
 
