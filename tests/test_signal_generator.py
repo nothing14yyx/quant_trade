@@ -10,6 +10,8 @@ from robust_signal_generator import RobustSignalGenerator
 def make_dummy_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
     rsg.history_scores = deque(maxlen=500)
+    rsg.oi_change_history = deque(maxlen=500)
+    rsg.symbol_categories = {}
     rsg.max_same_direction_rate = 0.6
     rsg.base_weights = {
         'ai': 0.2, 'trend': 0.2, 'momentum': 0.2,
@@ -36,6 +38,15 @@ def test_dynamic_threshold_basic():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0, 0, 0)
     assert th == pytest.approx(0.10)
+
+
+def test_get_dynamic_oi_threshold():
+    rsg = make_dummy_rsg()
+    rsg.oi_change_history.extend([0.1]*80 + [0.6]*20)
+    th = rsg.get_dynamic_oi_threshold()
+    assert th == pytest.approx(0.6)
+    th2 = rsg.get_dynamic_oi_threshold(pred_vol=0.2)
+    assert th2 > th
 
 
 def test_dynamic_threshold_upper_bound():
@@ -305,4 +316,37 @@ def test_generate_signal_with_external_metrics():
     expected *= 1 + 0.1 * 0.1
     expected *= 1 + 0.05 * 0.1
     expected *= 1 + 0.1 * 0.1
+    assert result['score'] == pytest.approx(expected)
+
+
+def test_hot_sector_influence():
+    rsg = make_dummy_rsg()
+    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_factor_scores = lambda f, p: {
+        'trend': 0,
+        'momentum': 0,
+        'volatility': 0,
+        'volume': 0,
+        'sentiment': 0,
+        'funding': 0,
+    }
+    rsg.combine_score = lambda ai, fs, weights=None: 0.5
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+
+    rsg.symbol_categories = {'ABC': ['Gaming', 'DeFi']}
+
+    feats_1h = {'close': 100, 'atr_pct_1h': 0, 'adx_1h': 0, 'funding_rate_1h': 0}
+    feats_4h = {'atr_pct_4h': 0}
+    feats_d1 = {}
+
+    gm = {'hot_sector_strength': 0.2, 'hot_sector': 'Gaming'}
+
+    result = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
+                                 global_metrics=gm, symbol='ABC')
+    expected = 0.5 * (1 + 0.05 * 0.2)
     assert result['score'] == pytest.approx(expected)
