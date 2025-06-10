@@ -97,7 +97,7 @@ SCALER_PARAMS = load_scaler_params_from_json(str(SCALER_PATH))
 symbols = loader.get_top_symbols()
 
 
-def sync_all_symbols_threaded(loader: DataLoader, symbols: list[str], intervals: list[str], max_workers: int = 8):
+def sync_all_symbols_threaded(loader: DataLoader, symbols: list[str], intervals: list[str], max_workers: int = 4):
     """
     并发增量更新 K 线：对每个 symbol 和 interval 同时调用 incremental_update_klines。
     """

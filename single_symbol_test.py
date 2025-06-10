@@ -37,7 +37,7 @@ if USE_NORMALIZED:
 
 # =================== 3. 读取原始 K 线（取最新 N 条） ===================
 HISTORY_LEN = 200  # 加大窗口起点，确保所有技术指标都有足够历史
-symbol = "ETHUSDT"
+symbol = "ETCUSDT"
 
 intervals = ["1h", "4h", "1d"]
 dfs_raw = {}
