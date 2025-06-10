@@ -69,6 +69,12 @@ CREATE TABLE cg_global_metrics (
     eth_dominance DOUBLE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE cg_coin_categories (
+    symbol VARCHAR(20) NOT NULL PRIMARY KEY,
+    categories TEXT,
+    last_updated DATE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `features` (
     `symbol` VARCHAR(24) NOT NULL,
     `open_time` DATETIME,
@@ -338,6 +344,7 @@ TRUNCATE TABLE funding_rate;
 TRUNCATE TABLE open_interest;
 TRUNCATE TABLE cg_market_data;
 TRUNCATE TABLE cg_global_metrics;
+TRUNCATE TABLE cg_coin_categories;
 TRUNCATE TABLE features;
 TRUNCATE TABLE live_full_data;
 TRUNCATE TABLE live_top10_signals;
