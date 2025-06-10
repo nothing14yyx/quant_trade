@@ -100,5 +100,10 @@
   "SKATEUSDT": "skate",
   "ZEREBROUSDT": "zerebro",
   "MOVEUSDT": "movement",
-  "GOATUSDT": "goatseus-maximus"
+  "GOATUSDT": "goatseus-maximus",
+  "PENDLEUSDT": "pendle",
+  "TURBOUSDT": "turbo",
+  "LQTYUSDT": "liquity",
+  "SUSDT": "tether",
+  "ENSUSDT": "ethereum-name-service"
 }
