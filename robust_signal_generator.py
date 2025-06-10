@@ -12,7 +12,7 @@ class RobustSignalGenerator:
       用于动态调整权重
     """
 
-    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=300):
+    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=300, symbol_categories=None):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         for period, path_dict in model_paths.items():
@@ -47,9 +47,19 @@ class RobustSignalGenerator:
 
         # 初始化各因子对应的IC分数（均设为1，后续可动态更新）
         self.ic_scores = {k: 1 for k in self.base_weights.keys()}
+        # 保存各因子IC的滑窗历史，便于做滚动平均
+        self.ic_history = {k: deque(maxlen=history_window) for k in self.base_weights.keys()}
 
         # 用于存储历史融合得分，方便计算动态阈值（最大长度由 history_window 指定）
         self.history_scores = deque(maxlen=history_window)
+
+        # 保存近期 OI 变化率，便于自适应过热阈值
+        self.oi_change_history = deque(maxlen=history_window)
+        # 记录BTC Dominance历史，计算短期与长期差异
+        self.btc_dom_history = deque(maxlen=history_window)
+
+        # 币种与板块的映射，用于板块热度修正
+        self.symbol_categories = {k.upper(): v for k, v in (symbol_categories or {}).items()}
 
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         self.max_same_direction_rate = 0.85
@@ -58,6 +68,32 @@ class RobustSignalGenerator:
     def _score_from_proba(p):
         # 概率[0,1]映射到[-1,1]
         return 2 * p - 1
+
+    def get_dynamic_oi_threshold(self, pred_vol=None, base=0.5, quantile=0.9):
+        """根据历史 OI 变化率及预测波动率自适应阈值"""
+        th = base
+        if len(self.oi_change_history) > 30:
+            th = float(np.quantile(np.abs(self.oi_change_history), quantile))
+        if pred_vol is not None:
+            th += min(0.1, abs(pred_vol) * 0.5)
+        return th
+
+    def detect_market_regime(self, adx1, adx4, adxd):
+        """简易市场状态判别：根据平均ADX判断震荡或趋势"""
+        avg_adx = np.mean([adx1, adx4, adxd])
+        return "trend" if avg_adx >= 25 else "range"
+
+    def calc_period_weights(self, adx1, adx4, adxd):
+        """根据各周期ADX分配权重"""
+        w1 = 0.6 + 0.4 * min(adx1, 50) / 50
+        w4 = 0.3 + 0.4 * min(adx4, 50) / 50
+        wd = 0.1 + 0.4 * min(adxd, 50) / 50
+        total = w1 + w4 + wd
+        return w1 / total, w4 / total, wd / total
+
+    def set_symbol_categories(self, mapping):
+        """更新币种与板块的映射"""
+        self.symbol_categories = {k.upper(): v for k, v in mapping.items()}
 
     def compute_tp_sl(self, price, atr, direction, tp_mult=1.5, sl_mult=1.0):
         """
@@ -224,11 +260,20 @@ class RobustSignalGenerator:
             ic = _compute(df)
 
         self.ic_scores.update(ic)
+        for k, v in ic.items():
+            self.ic_history[k].append(v)
         return self.ic_scores
 
     def dynamic_weight_update(self):
-        # IC驱动动态权重分配（可扩展为每因子滑窗IC）
-        ic_arr = np.array([max(0, v) for v in self.ic_scores.values()])
+        # IC驱动动态权重分配（基于IC滑窗均值）
+        ic_avg = []
+        for k in self.ic_scores.keys():
+            hist = self.ic_history.get(k)
+            if hist:
+                ic_avg.append(np.nanmean(hist))
+            else:
+                ic_avg.append(self.ic_scores[k])
+        ic_arr = np.array([max(0, v) for v in ic_avg])
         base_arr = np.array([self.base_weights[k] for k in self.ic_scores.keys()])
 
         combined = ic_arr * base_arr
@@ -255,6 +300,7 @@ class RobustSignalGenerator:
         base=0.10,
         min_thres=0.06,
         max_thres=0.25,
+        regime=None,
     ):
         """根据历史 ATR、ADX 以及预测波动率动态计算阈值"""
 
@@ -287,6 +333,11 @@ class RobustSignalGenerator:
         if len(self.history_scores) > 100:
             quantile_th = np.quantile(np.abs(self.history_scores), 0.92)
             thres = max(thres, quantile_th)
+
+        if regime == "trend":
+            thres += 0.02
+        elif regime == "range":
+            thres -= 0.02
 
         return max(min_thres, min(max_thres, thres))
 
@@ -405,11 +456,7 @@ class RobustSignalGenerator:
         adx1 = (raw_features_1h or features_1h).get('adx_1h', 0)
         adx4 = (raw_features_4h or features_4h).get('adx_4h', 0)
         adxd = (raw_features_d1 or features_d1).get('adx_d1', 0)
-        trend_strength = np.mean([adx1, adx4, adxd])
-        t = max(0.0, min(50.0, trend_strength)) / 50.0
-        w4 = 0.2 + 0.1 * t
-        w_d1 = 0.1 + 0.1 * t
-        w1 = 1 - w4 - w_d1
+        w1, w4, w_d1 = self.calc_period_weights(adx1, adx4, adxd)
 
         if consensus_all:
             fused_score = w1 * score_1h + w4 * score_4h + w_d1 * score_d1
@@ -426,6 +473,16 @@ class RobustSignalGenerator:
         # 根据外部指标微调 fused_score
         if global_metrics is not None:
             dom = global_metrics.get('btc_dom_chg')
+            if 'btc_dominance' in global_metrics:
+                self.btc_dom_history.append(global_metrics['btc_dominance'])
+                if len(self.btc_dom_history) >= 5:
+                    short = np.mean(list(self.btc_dom_history)[-5:])
+                    long = np.mean(self.btc_dom_history)
+                    dom_diff = (short - long) / long if long else 0
+                    if dom is None:
+                        dom = dom_diff
+                    else:
+                        dom += dom_diff
             if dom is not None:
                 if symbol and str(symbol).upper().startswith('BTC'):
                     fused_score *= 1 + 0.1 * dom
@@ -445,13 +502,26 @@ class RobustSignalGenerator:
                 fused_score *= 1 + 0.05 * vol_c
             hot = global_metrics.get('hot_sector_strength')
             if hot is not None:
-                fused_score *= 1 + 0.05 * hot
+                corr = global_metrics.get('sector_corr')
+                if corr is None:
+                    hot_name = global_metrics.get('hot_sector')
+                    if hot_name and symbol:
+                        cats = self.symbol_categories.get(str(symbol).upper())
+                        if cats:
+                            if isinstance(cats, str):
+                                cats = [c.strip() for c in cats.split(',') if c.strip()]
+                            corr = 1.0 if hot_name in cats else 0.0
+                if corr is None:
+                    corr = 1.0
+                fused_score *= 1 + 0.05 * hot * corr
         oi_overheat = False
         if open_interest is not None:
             oi_chg = open_interest.get('oi_chg')
             if oi_chg is not None:
                 fused_score *= 1 + 0.1 * oi_chg
-                if oi_chg > 0.5:
+                self.oi_change_history.append(oi_chg)
+                th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_preds.get('1h'))
+                if oi_chg > th_oi:
                     fused_score *= 0.8
                     oi_overheat = True
 
@@ -496,6 +566,7 @@ class RobustSignalGenerator:
             'vol_pred_4h': vol_preds.get('4h'),
             'vol_pred_d1': vol_preds.get('d1'),
             'oi_overheat': oi_overheat,
+            'oi_threshold': locals().get('th_oi'),
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
@@ -512,6 +583,7 @@ class RobustSignalGenerator:
         atr_d1 = raw_fd1.get('atr_pct_d1', features_d1.get('atr_pct_d1', 0)) if raw_fd1 else None
         adx_d1 = raw_fd1.get('adx_d1', features_d1.get('adx_d1', 0)) if raw_fd1 else None
 
+        regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
         th = self.dynamic_threshold(
             atr_1h,
             adx_1h,
@@ -523,6 +595,7 @@ class RobustSignalGenerator:
             pred_vol=vol_preds.get('1h'),
             pred_vol_4h=vol_preds.get('4h'),
             pred_vol_d1=vol_preds.get('d1'),
+            regime=regime,
         )
 
         if abs(fused_score) < th:
@@ -548,6 +621,17 @@ class RobustSignalGenerator:
 
         if oi_overheat:
             pos_size *= 0.7
+
+        vol_p = vol_preds.get('1h')
+        if vol_p is not None:
+            pos_size *= max(0.4, 1 - min(0.6, vol_p))
+
+        if self.history_scores:
+            cum = np.cumsum(self.history_scores)
+            running_max = np.maximum.accumulate(cum)
+            drawdowns = running_max - cum
+            max_dd = drawdowns.max() if len(drawdowns) else 0
+            pos_size *= max(0.5, 1 - min(0.5, max_dd))
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
