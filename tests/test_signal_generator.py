@@ -103,11 +103,11 @@ def test_generate_signal_raw_atr():
     features_d1 = {}
     raw_4h = {'atr_pct_4h': 0.05}
 
-    res = rsg.generate_signal(features_1h, features_4h, features_d1, raw_features_4h=raw_4h)
+    res = rsg.generate_signal(features_1h, features_4h, features_d1, raw_features_4h=raw_4h, symbol="BTCUSDT")
     assert res['take_profit'] == pytest.approx(107.5)
     assert res['stop_loss'] == pytest.approx(95)
 
-    res2 = rsg.generate_signal(features_1h, features_4h, features_d1)
+    res2 = rsg.generate_signal(features_1h, features_4h, features_d1, symbol="BTCUSDT")
     assert res2['take_profit'] == pytest.approx(115)
     assert res2['stop_loss'] == pytest.approx(90)
 
@@ -284,7 +284,7 @@ def test_generate_signal_with_external_metrics():
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
 
-    baseline = base.generate_signal(feats_1h, feats_4h, feats_d1)
+    baseline = base.generate_signal(feats_1h, feats_4h, feats_d1, symbol="BTCUSDT")
     assert baseline['score'] == pytest.approx(0.5)
 
     rsg = make_dummy_rsg()
@@ -299,7 +299,7 @@ def test_generate_signal_with_external_metrics():
     gm = {'btc_dom_chg': 0.1, 'mcap_growth': 0.1, 'vol_chg': 0.1}
     oi = {'oi_chg': 0.1}
     result = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
-                                 global_metrics=gm, open_interest=oi)
+                                 global_metrics=gm, open_interest=oi, symbol="BTCUSDT")
     expected = 0.5
     expected *= 1 + 0.1 * 0.1
     expected *= 1 + 0.1 * 0.1
