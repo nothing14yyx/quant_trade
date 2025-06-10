@@ -12,7 +12,7 @@ class RobustSignalGenerator:
       用于动态调整权重
     """
 
-    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=300):
+    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=300, symbol_categories=None):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         for period, path_dict in model_paths.items():
@@ -58,6 +58,9 @@ class RobustSignalGenerator:
         # 记录BTC Dominance历史，计算短期与长期差异
         self.btc_dom_history = deque(maxlen=history_window)
 
+        # 币种与板块的映射，用于板块热度修正
+        self.symbol_categories = {k.upper(): v for k, v in (symbol_categories or {}).items()}
+
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         self.max_same_direction_rate = 0.85
 
@@ -87,6 +90,10 @@ class RobustSignalGenerator:
         wd = 0.1 + 0.4 * min(adxd, 50) / 50
         total = w1 + w4 + wd
         return w1 / total, w4 / total, wd / total
+
+    def set_symbol_categories(self, mapping):
+        """更新币种与板块的映射"""
+        self.symbol_categories = {k.upper(): v for k, v in mapping.items()}
 
     def compute_tp_sl(self, price, atr, direction, tp_mult=1.5, sl_mult=1.0):
         """
@@ -495,7 +502,17 @@ class RobustSignalGenerator:
                 fused_score *= 1 + 0.05 * vol_c
             hot = global_metrics.get('hot_sector_strength')
             if hot is not None:
-                corr = global_metrics.get('sector_corr', 1.0)
+                corr = global_metrics.get('sector_corr')
+                if corr is None:
+                    hot_name = global_metrics.get('hot_sector')
+                    if hot_name and symbol:
+                        cats = self.symbol_categories.get(str(symbol).upper())
+                        if cats:
+                            if isinstance(cats, str):
+                                cats = [c.strip() for c in cats.split(',') if c.strip()]
+                            corr = 1.0 if hot_name in cats else 0.0
+                if corr is None:
+                    corr = 1.0
                 fused_score *= 1 + 0.05 * hot * corr
         oi_overheat = False
         if open_interest is not None:
