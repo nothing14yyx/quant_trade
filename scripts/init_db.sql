@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS cg_coin_categories (
     last_updated DATE
 );
 
+CREATE TABLE IF NOT EXISTS cg_category_stats (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(64),
+    market_cap DOUBLE,
+    market_cap_change_24h DOUBLE,
+    volume_24h DOUBLE,
+    top_3_coins TEXT,
+    updated_at DATETIME
+);
+
 CREATE TABLE IF NOT EXISTS klines (
     symbol VARCHAR(20),
     `interval` VARCHAR(10),

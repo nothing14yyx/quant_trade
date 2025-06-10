@@ -82,6 +82,9 @@ CoinGecko 的行情与全球指标数据，完整表结构见仓库根目录的 
 `cg_coin_categories` 表。方法会检查 `last_updated` 日期，仅在距离上次更新超过
 一天时才重新调用 CoinGecko API，以避免过度请求。
 
+自 v2.8 起，`update_cg_category_stats` 可一次性获取 `/coins/categories` 接口
+返回的各板块市值、24 小时成交量等数据，并写入 `cg_category_stats` 表。
+
 
 
 
