@@ -118,7 +118,7 @@ feature_cols:
     - kc_width_pct_chg_4h
     - supertrend_dir_4h
 
-  d1:
+  1d:
     # 价格/动量
     - pct_chg1_d1
     - pct_chg6_d1

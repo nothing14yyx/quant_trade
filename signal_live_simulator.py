@@ -219,7 +219,7 @@ def main_loop(interval_sec: int = 60):
         update_aux_data(loader, symbols)
 
         # 3. 多线程同步K线
-        sync_all_symbols_threaded(loader, symbols, ["1h", "4h", "1d"], max_workers=8)
+        sync_all_symbols_threaded(loader, symbols, ["1h", "4h", "1d"], max_workers=4)
 
         placeholders = ",".join(f"'{s}'" for s in symbols)
 

@@ -105,5 +105,13 @@
   "TURBOUSDT": "turbo",
   "LQTYUSDT": "liquity",
   "SUSDT": "tether",
-  "ENSUSDT": "ethereum-name-service"
+  "ENSUSDT": "ethereum-name-service",
+  "AXLUSDT": "axelar",
+  "PAXGUSDT": "pax-gold",
+  "CAKEUSDT": "pancakeswap-token",
+  "RESOLVUSDT": "resolv",
+  "HOMEUSDT": "home",
+  "EPTUSDT": "balance",
+  "SEIUSDT": "sei-network",
+  "RENDERUSDT": "render-token"
 }
