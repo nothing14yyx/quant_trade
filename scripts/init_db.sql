@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS cg_global_metrics (
     eth_dominance DOUBLE
 );
 
+CREATE TABLE IF NOT EXISTS cg_coin_categories (
+    symbol VARCHAR(20) PRIMARY KEY,
+    categories TEXT,
+    last_updated DATE
+);
+
 CREATE TABLE IF NOT EXISTS klines (
     symbol VARCHAR(20),
     `interval` VARCHAR(10),
