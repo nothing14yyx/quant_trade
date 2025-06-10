@@ -260,6 +260,7 @@ class DataLoader:
     CG_MARKET_URL = "https://api.coingecko.com/api/v3/coins/{id}/market_chart"
     CG_MARKET_RANGE_URL = "https://api.coingecko.com/api/v3/coins/{id}/market_chart/range"
     CG_GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
+    CG_COIN_INFO_URL = "https://api.coingecko.com/api/v3/coins/{id}"
 
     def _cg_headers(self) -> Dict[str, str]:
         """返回访问 CoinGecko API 所需的请求头"""
@@ -390,6 +391,61 @@ class DataLoader:
                 [row],
             )
         logger.info("[cg_global] updated")
+
+    def update_cg_coin_categories(self, symbols: List[str]) -> None:
+        """按日更新币种所属的板块信息，避免过度调用"""
+        headers = self._cg_headers()
+        today = dt.date.today()
+
+        stmt = text(
+            "SELECT symbol, last_updated FROM cg_coin_categories WHERE symbol IN :syms"
+        ).bindparams(bindparam("syms", expanding=True))
+        last_df = pd.read_sql(stmt, self.engine, params={"syms": symbols}, parse_dates=["last_updated"])
+        last_map = {r["symbol"]: r["last_updated"].date() if r["last_updated"] is not None else None for _, r in last_df.iterrows()}
+
+        rows = []
+        for sym in symbols:
+            if last_map.get(sym) == today:
+                continue
+            cid = self._cg_get_id(sym)
+            if not cid:
+                continue
+            self.cg_rate_limiter.acquire()
+            data = _safe_retry(
+                lambda: requests.get(
+                    self.CG_COIN_INFO_URL.format(id=cid),
+                    params={
+                        "localization": "false",
+                        "tickers": "false",
+                        "market_data": "false",
+                        "community_data": "false",
+                        "developer_data": "false",
+                        "sparkline": "false",
+                    },
+                    headers=headers,
+                    timeout=10,
+                ).json(),
+                retries=self.retries,
+                backoff=self.backoff,
+            )
+            cats = data.get("categories", [])
+            rows.append({
+                "symbol": sym,
+                "categories": ",".join(cats),
+                "last_updated": today.isoformat(),
+            })
+            time.sleep(0.1)
+
+        if rows:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "REPLACE INTO cg_coin_categories (symbol, categories, last_updated) "
+                        "VALUES (:symbol, :categories, :last_updated)"
+                    ),
+                    rows,
+                )
+            logger.info("[cg_categories] %s rows", len(rows))
 
     def get_latest_cg_global_metrics(self) -> Optional[dict]:
         """返回最近两条 CoinGecko 全球指标并附带变化率"""
@@ -627,6 +683,7 @@ class DataLoader:
         try:
             self.update_cg_global_metrics()
             self.update_cg_market_data(symbols)
+            self.update_cg_coin_categories(symbols)
         except Exception as e:
             logger.exception("[coingecko] err: %s", e)
         # 2. 更新 funding rate / open interest（并发）

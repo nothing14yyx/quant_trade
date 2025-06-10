@@ -2,7 +2,7 @@
 
 该仓库包含一个量化交易的数据处理与信号生成框架，主要组件包括：
 
-- **DataLoader**：从币安接口同步行情、资金费率及情绪指数，并可按日拉取 CoinGecko 的市值数据。
+- **DataLoader**：从币安接口同步行情、资金费率及情绪指数，并可按日拉取 CoinGecko 的市值与板块数据。
 - **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子；同时加入 HV_7d/14d/30d、KC 宽度变化率、Ichimoku 基准线等新指标，并支持买卖比、资金流量比、成交量密度、价差百分比及 BTC/ETH 短期相关性。
 -   `merge_features` 新增 `batch_size` 参数，可在内存有限时按币种分批写入：
 
@@ -77,6 +77,10 @@ JSON 字符串，包含：
 CoinGecko 的行情与全球指标数据，完整表结构见仓库根目录的 `schema.sql`。
 
 自 v2.6 起，`cg_global_metrics` 额外保存 `eth_dominance`（ETH 市占率）字段。
+
+自 v2.7 起，新增 `update_cg_coin_categories`，按日获取币种所属板块并写入
+`cg_coin_categories` 表。方法会检查 `last_updated` 日期，仅在距离上次更新超过
+一天时才重新调用 CoinGecko API，以避免过度请求。
 
 
 
