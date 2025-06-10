@@ -23,7 +23,7 @@ from utils.feature_health import apply_health_check_df, health_check
 HISTORY_LEN = 200
 
 # CoinGecko /global 指标最小刷新间隔（小时）
-CG_GLOBAL_INTERVAL_HOURS = 1
+CG_GLOBAL_INTERVAL_HOURS = 24
 
 
 def to_shanghai(dt):
