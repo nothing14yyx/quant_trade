@@ -176,3 +176,36 @@ def test_update_cg_category_stats(monkeypatch):
     assert row['market_cap_change_24h'] == 5.0
     assert row['volume_24h'] == 200
     assert row['top_3_coins'] == 'a,b,c'
+
+
+def test_update_cg_category_stats_skip(monkeypatch):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE cg_category_stats (id TEXT PRIMARY KEY, name TEXT, market_cap REAL, market_cap_change_24h REAL, volume_24h REAL, top_3_coins TEXT, updated_at TEXT)"
+        )
+    dl = make_dl(engine)
+
+    today = pd.Timestamp.utcnow().strftime('%Y-%m-%dT00:00:00Z')
+
+    def fake_get(url, headers=None, timeout=10):
+        class R:
+            def json(self):
+                return [{
+                    "id": "gamefi",
+                    "name": "GameFi",
+                    "market_cap": 1000,
+                    "market_cap_change_24h": 5.0,
+                    "volume_24h": 200,
+                    "top_3_coins": ["a", "b", "c"],
+                    "updated_at": today,
+                }]
+        return R()
+
+    monkeypatch.setattr(requests, 'get', fake_get)
+
+    dl.update_cg_category_stats()
+    dl.update_cg_category_stats()  # should skip
+
+    df = pd.read_sql('cg_category_stats', engine)
+    assert len(df) == 1
