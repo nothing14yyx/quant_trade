@@ -10,6 +10,7 @@ from robust_signal_generator import RobustSignalGenerator
 def make_dummy_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
     rsg.history_scores = deque(maxlen=500)
+    rsg.oi_change_history = deque(maxlen=500)
     rsg.max_same_direction_rate = 0.6
     rsg.base_weights = {
         'ai': 0.2, 'trend': 0.2, 'momentum': 0.2,
@@ -36,6 +37,15 @@ def test_dynamic_threshold_basic():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0, 0, 0)
     assert th == pytest.approx(0.10)
+
+
+def test_get_dynamic_oi_threshold():
+    rsg = make_dummy_rsg()
+    rsg.oi_change_history.extend([0.1]*80 + [0.6]*20)
+    th = rsg.get_dynamic_oi_threshold()
+    assert th == pytest.approx(0.6)
+    th2 = rsg.get_dynamic_oi_threshold(pred_vol=0.2)
+    assert th2 > th
 
 
 def test_dynamic_threshold_upper_bound():
