@@ -169,6 +169,24 @@ def test_update_cg_category_stats(monkeypatch):
 
     df = pd.read_sql('cg_category_stats', engine)
     assert len(df) == 1
+
+
+def test_get_hot_sector():
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE cg_category_stats (id TEXT PRIMARY KEY, name TEXT, market_cap REAL, market_cap_change_24h REAL, volume_24h REAL, top_3_coins TEXT, updated_at TEXT)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO cg_category_stats VALUES ('gamefi','GameFi',1000,5.0,200,'a,b,c','2024-06-12 00:00:00')"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO cg_category_stats VALUES ('defi','DeFi',500,2.0,100,'d,e,f','2024-06-12 00:00:00')"
+        )
+    dl = make_dl(engine)
+
+    hot = dl.get_hot_sector()
+    assert hot == {'hot_sector': 'GameFi', 'hot_sector_strength': 200 / 300}
     row = df.iloc[0]
     assert row['id'] == 'gamefi'
     assert row['name'] == 'GameFi'
