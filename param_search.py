@@ -82,6 +82,7 @@ def run_single_backtest(
             pred_vol=None,
             pred_vol_4h=None,
             pred_vol_d1=None,
+            regime=None,
         ):
             return RobustSignalGenerator.dynamic_threshold(
                 self,
@@ -95,6 +96,7 @@ def run_single_backtest(
                 pred_vol=pred_vol,
                 pred_vol_4h=pred_vol_4h,
                 pred_vol_d1=pred_vol_d1,
+                regime=regime,
                 **th_params,
             )
 
