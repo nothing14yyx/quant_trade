@@ -57,6 +57,8 @@ class RobustSignalGenerator:
         self.oi_change_history = deque(maxlen=history_window)
         # 记录BTC Dominance历史，计算短期与长期差异
         self.btc_dom_history = deque(maxlen=history_window)
+        # 记录ETH Dominance历史，供市场偏好判断
+        self.eth_dom_history = deque(maxlen=history_window)
 
         # 币种与板块的映射，用于板块热度修正
         self.symbol_categories = {k.upper(): v for k, v in (symbol_categories or {}).items()}
@@ -490,6 +492,23 @@ class RobustSignalGenerator:
                     fused_score *= 1 + 0.1 * dom
                 else:
                     fused_score *= 1 - 0.1 * dom
+
+            eth_dom = global_metrics.get('eth_dom_chg')
+            if 'eth_dominance' in global_metrics:
+                self.eth_dom_history.append(global_metrics['eth_dominance'])
+                if len(self.eth_dom_history) >= 5:
+                    short_e = np.mean(list(self.eth_dom_history)[-5:])
+                    long_e = np.mean(self.eth_dom_history)
+                    dom_diff_e = (short_e - long_e) / long_e if long_e else 0
+                    if eth_dom is None:
+                        eth_dom = dom_diff_e
+                    else:
+                        eth_dom += dom_diff_e
+            if eth_dom is not None:
+                if symbol and str(symbol).upper().startswith('ETH'):
+                    fused_score *= 1 + 0.1 * eth_dom
+                else:
+                    fused_score *= 1 + 0.05 * eth_dom
             btc_mcap = global_metrics.get('btc_mcap_growth')
             alt_mcap = global_metrics.get('alt_mcap_growth')
             mcap_g = global_metrics.get('mcap_growth')
