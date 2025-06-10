@@ -261,6 +261,7 @@ class DataLoader:
     CG_MARKET_RANGE_URL = "https://api.coingecko.com/api/v3/coins/{id}/market_chart/range"
     CG_GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
     CG_COIN_INFO_URL = "https://api.coingecko.com/api/v3/coins/{id}"
+    CG_CATEGORIES_URL = "https://api.coingecko.com/api/v3/coins/categories"
 
     def _cg_headers(self) -> Dict[str, str]:
         """返回访问 CoinGecko API 所需的请求头"""
@@ -469,6 +470,42 @@ class DataLoader:
                     rows,
                 )
             logger.info("[cg_categories] %s rows", len(rows))
+
+    def update_cg_category_stats(self) -> None:
+        """获取 CoinGecko 各板块市值等信息并保存"""
+        headers = self._cg_headers()
+        self.cg_rate_limiter.acquire()
+        data = _safe_retry(
+            lambda: requests.get(self.CG_CATEGORIES_URL, headers=headers, timeout=10).json(),
+            retries=self.retries,
+            backoff=self.backoff,
+        )
+        if not isinstance(data, list):
+            return
+        rows = []
+        for r in data:
+            ts = r.get("updated_at")
+            if ts:
+                ts = pd.to_datetime(ts).to_pydatetime().replace(tzinfo=None)
+            rows.append({
+                "id": r.get("id"),
+                "name": r.get("name"),
+                "market_cap": r.get("market_cap"),
+                "market_cap_change_24h": r.get("market_cap_change_24h"),
+                "volume_24h": r.get("volume_24h"),
+                "top_3_coins": ",".join(r.get("top_3_coins", [])),
+                "updated_at": ts,
+            })
+        if rows:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "REPLACE INTO cg_category_stats (id, name, market_cap, market_cap_change_24h, volume_24h, top_3_coins, updated_at) "
+                        "VALUES (:id, :name, :market_cap, :market_cap_change_24h, :volume_24h, :top_3_coins, :updated_at)"
+                    ),
+                    rows,
+                )
+            logger.info("[cg_category_stats] %s rows", len(rows))
 
     def get_latest_cg_global_metrics(self) -> Optional[dict]:
         """返回最近两条 CoinGecko 全球指标并附带变化率"""
@@ -707,6 +744,7 @@ class DataLoader:
             self.update_cg_global_metrics()
             self.update_cg_market_data(symbols)
             self.update_cg_coin_categories(symbols)
+            self.update_cg_category_stats()
         except Exception as e:
             logger.exception("[coingecko] err: %s", e)
         # 2. 更新 funding rate / open interest（并发）

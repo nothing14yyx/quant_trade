@@ -75,6 +75,16 @@ CREATE TABLE cg_coin_categories (
     last_updated DATE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE cg_category_stats (
+    id VARCHAR(50) NOT NULL PRIMARY KEY,
+    name VARCHAR(64),
+    market_cap DOUBLE,
+    market_cap_change_24h DOUBLE,
+    volume_24h DOUBLE,
+    top_3_coins TEXT,
+    updated_at DATETIME
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `features` (
     `symbol` VARCHAR(24) NOT NULL,
     `open_time` DATETIME,
