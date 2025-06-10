@@ -472,7 +472,18 @@ class DataLoader:
             logger.info("[cg_categories] %s rows", len(rows))
 
     def update_cg_category_stats(self) -> None:
-        """获取 CoinGecko 各板块市值等信息并保存"""
+        """获取 CoinGecko 各板块市值等信息并保存，按日刷新"""
+        today = dt.date.today()
+        df_last = pd.read_sql(
+            "SELECT MAX(updated_at) AS ts FROM cg_category_stats",
+            self.engine,
+            parse_dates=["ts"],
+        )
+        if not df_last.empty and df_last.iloc[0]["ts"] is not None:
+            if df_last.iloc[0]["ts"].date() == today:
+                logger.info("[cg_category_stats] skip update (already today)")
+                return
+
         headers = self._cg_headers()
         self.cg_rate_limiter.acquire()
         data = _safe_retry(

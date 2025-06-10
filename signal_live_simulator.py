@@ -133,6 +133,16 @@ def update_aux_data(loader: DataLoader, symbols: list[str]) -> None:
     except Exception as e:
         print(f"[cg_market_data 更新失败] {e}")
 
+    try:
+        loader.update_cg_coin_categories(symbols)
+    except Exception as e:
+        print(f"[cg_coin_categories 更新失败] {e}")
+
+    try:
+        loader.update_cg_category_stats()
+    except Exception as e:
+        print(f"[cg_category_stats 更新失败] {e}")
+
     with ThreadPoolExecutor(max_workers=4) as executor:
         fut_map = {
             executor.submit(loader.update_open_interest, sym): sym for sym in symbols
