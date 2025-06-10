@@ -363,10 +363,11 @@ class DataLoader:
             )
         logger.info("[cg_market] %s rows", len(rows))
 
-    def update_cg_global_metrics(self, min_interval_hours: float = 0.0) -> None:
+    def update_cg_global_metrics(self, min_interval_hours: float = 24.0) -> None:
         """更新 CoinGecko 全局指标
+
         :param min_interval_hours: 与上次更新时间的整点间隔(小时)。小于
-                                   该值时跳过更新。默认 0 表示总是刷新。
+                                   该值时跳过更新。默认 24 表示按日刷新。
         """
         now_hour = pd.Timestamp.utcnow().floor("h").tz_localize(None)
 
