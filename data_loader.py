@@ -23,14 +23,23 @@ logger.setLevel(logging.INFO)
 
 
 def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
-                retry_on: tuple = (requests.exceptions.RequestException,)):
-    """简单指数退避重试包装"""
+                retry_on: tuple = (requests.exceptions.RequestException, BinanceAPIException)):
+    """简单指数退避重试包装
+
+    若捕获到 BinanceAPIException 且 code 为 -1003，则额外延长等待时间，
+    以避免持续触发限速错误。
+    """
     for i in range(retries):
         try:
             return fn()
         except retry_on as exc:
-            logger.warning("Retry %s/%s for %s: %s", i + 1, retries, fn.__qualname__, exc)
-            time.sleep(backoff * (2 ** i))
+            delay = backoff * (2 ** i)
+            if isinstance(exc, BinanceAPIException) and getattr(exc, "code", None) == -1003:
+                delay *= 5
+                logger.warning("Hit Binance rate limit (-1003), sleep %.1fs", delay)
+            else:
+                logger.warning("Retry %s/%s for %s: %s", i + 1, retries, fn.__qualname__, exc)
+            time.sleep(delay)
     raise RuntimeError(f"Failed after {retries} retries for {fn.__qualname__}")
 
 
@@ -307,7 +316,7 @@ class DataLoader:
                 start = today - dt.timedelta(days=365)
             else:
                 start = last_ts + dt.timedelta(days=1)
-            if start >= today:
+            if start > today:
                 continue
             cid = self._cg_get_id(sym)
             if not cid:
