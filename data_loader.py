@@ -518,6 +518,26 @@ class DataLoader:
                 )
             logger.info("[cg_category_stats] %s rows", len(rows))
 
+    def get_hot_sector(self) -> Optional[dict]:
+        """根据最新的 volume_24h 判断热门板块"""
+        q = (
+            "SELECT name, volume_24h FROM cg_category_stats "
+            "WHERE updated_at = (SELECT MAX(updated_at) FROM cg_category_stats)"
+        )
+        df = pd.read_sql(q, self.engine)
+        df = df.dropna(subset=["name", "volume_24h"])
+        if df.empty:
+            return None
+        df["volume_24h"] = pd.to_numeric(df["volume_24h"], errors="coerce")
+        df = df.dropna(subset=["volume_24h"])
+        if df.empty:
+            return None
+        total = df["volume_24h"].sum()
+        df = df.sort_values("volume_24h", ascending=False)
+        top = df.iloc[0]
+        strength = float(top["volume_24h"]) / total if total else None
+        return {"hot_sector": top["name"], "hot_sector_strength": strength}
+
     def get_latest_cg_global_metrics(self) -> Optional[dict]:
         """返回最近两条 CoinGecko 全球指标并附带变化率"""
         q = (
@@ -537,7 +557,7 @@ class DataLoader:
             vol_chg = pct(latest["total_volume"], prev["total_volume"])
         else:
             btc_dom_chg = mcap_growth = vol_chg = None
-        return {
+        metrics = {
             "timestamp": latest["timestamp"],
             "btc_dom_chg": float(btc_dom_chg) if btc_dom_chg is not None else None,
             "mcap_growth": float(mcap_growth) if mcap_growth is not None else None,
@@ -547,6 +567,10 @@ class DataLoader:
             "total_volume": float(latest["total_volume"]),
             "eth_dominance": float(latest["eth_dominance"]),
         }
+        hot = self.get_hot_sector()
+        if hot:
+            metrics.update(hot)
+        return metrics
 
     # ───────────────────────────── 选币逻辑 ───────────────────────────────
     def get_top_symbols(self, n: Optional[int] = None) -> List[str]:

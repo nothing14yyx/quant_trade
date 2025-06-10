@@ -85,6 +85,9 @@ CoinGecko 的行情与全球指标数据，完整表结构见仓库根目录的 
 自 v2.8 起，`update_cg_category_stats` 可一次性获取 `/coins/categories` 接口
 返回的各板块市值、24 小时成交量等数据，并写入 `cg_category_stats` 表。
 
+自 v2.9 起，`get_latest_cg_global_metrics` 将同时返回基于 `cg_category_stats`
+ 计算的热门板块信息，字段为 `hot_sector` 与 `hot_sector_strength`。
+
 
 
 
