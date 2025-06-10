@@ -171,10 +171,13 @@ class RobustSignalGenerator:
             + np.tanh((safe(f'volume_cg_ratio_{period}', 1) - 1) * 2)
         )
 
-        funding_raw = (
-            np.tanh(safe(f'funding_rate_{period}', 0) * 100)
-            + np.tanh(safe(f'funding_rate_anom_{period}', 0) * 50)
-        )
+        f_rate = safe(f'funding_rate_{period}', 0)
+        f_anom = safe(f'funding_rate_anom_{period}', 0)
+        if abs(f_rate) > 0.05:
+            funding_raw = -np.tanh(f_rate * 100)
+        else:
+            funding_raw = np.tanh(f_rate * 100)
+        funding_raw += np.tanh(f_anom * 50)
 
         return {
             'trend': np.tanh(trend_raw),
@@ -336,6 +339,7 @@ class RobustSignalGenerator:
         *,
         global_metrics=None,
         open_interest=None,
+        symbol=None,
     ):
         """
         输入：
@@ -347,6 +351,7 @@ class RobustSignalGenerator:
             - raw_features_4h: dict，可选，未标准化的 4h 特征；其中 atr_pct_4h 为实际
               比例（如 0.05 表示 5%），在计算止盈止损和指标计算时会优先使用
             - raw_features_d1: dict，可选，未标准化的 1d 特征
+            - symbol: str，可选，当前币种，如 'BTCUSDT'
         输出：
             一个 dict，包含 'signal'、'score'、'position_size'、'take_profit'、'stop_loss' 和 'details'
         说明：若传入 raw_features_*，则多因子计算与动态阈值、止盈止损均使用原始数据，
@@ -397,12 +402,22 @@ class RobustSignalGenerator:
             consensus_dir != 0 and np.sign(score_1h) == np.sign(score_4h) and not consensus_all
         )
 
+        adx1 = (raw_features_1h or features_1h).get('adx_1h', 0)
+        adx4 = (raw_features_4h or features_4h).get('adx_4h', 0)
+        adxd = (raw_features_d1 or features_d1).get('adx_d1', 0)
+        trend_strength = np.mean([adx1, adx4, adxd])
+        t = max(0.0, min(50.0, trend_strength)) / 50.0
+        w4 = 0.2 + 0.1 * t
+        w_d1 = 0.1 + 0.1 * t
+        w1 = 1 - w4 - w_d1
+
         if consensus_all:
-            fused_score = 0.7 * score_1h + 0.2 * score_4h + 0.1 * score_d1
+            fused_score = w1 * score_1h + w4 * score_4h + w_d1 * score_d1
             if strong_confirm:
                 fused_score *= 1.15
         elif consensus_14:
-            fused_score = 0.75 * score_1h + 0.25 * score_4h
+            total = w1 + w4
+            fused_score = (w1 / total) * score_1h + (w4 / total) * score_4h
             if strong_confirm:
                 fused_score *= 1.10
         else:
@@ -412,17 +427,33 @@ class RobustSignalGenerator:
         if global_metrics is not None:
             dom = global_metrics.get('btc_dom_chg')
             if dom is not None:
-                fused_score *= 1 + 0.1 * dom
+                if symbol and str(symbol).upper().startswith('BTC'):
+                    fused_score *= 1 + 0.1 * dom
+                else:
+                    fused_score *= 1 - 0.1 * dom
+            btc_mcap = global_metrics.get('btc_mcap_growth')
+            alt_mcap = global_metrics.get('alt_mcap_growth')
             mcap_g = global_metrics.get('mcap_growth')
-            if mcap_g is not None:
-                fused_score *= 1 + 0.1 * mcap_g
+            if symbol and str(symbol).upper().startswith('BTC'):
+                base_mcap = btc_mcap if btc_mcap is not None else mcap_g
+            else:
+                base_mcap = alt_mcap if alt_mcap is not None else mcap_g
+            if base_mcap is not None:
+                fused_score *= 1 + 0.1 * base_mcap
             vol_c = global_metrics.get('vol_chg')
             if vol_c is not None:
                 fused_score *= 1 + 0.05 * vol_c
+            hot = global_metrics.get('hot_sector_strength')
+            if hot is not None:
+                fused_score *= 1 + 0.05 * hot
+        oi_overheat = False
         if open_interest is not None:
             oi_chg = open_interest.get('oi_chg')
             if oi_chg is not None:
                 fused_score *= 1 + 0.1 * oi_chg
+                if oi_chg > 0.5:
+                    fused_score *= 0.8
+                    oi_overheat = True
 
         # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
@@ -464,6 +495,7 @@ class RobustSignalGenerator:
             'vol_pred_1h': vol_preds.get('1h'),
             'vol_pred_4h': vol_preds.get('4h'),
             'vol_pred_d1': vol_preds.get('d1'),
+            'oi_overheat': oi_overheat,
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
@@ -513,6 +545,9 @@ class RobustSignalGenerator:
             pos_size = 0.3
         else:
             pos_size = 0.1
+
+        if oi_overheat:
+            pos_size *= 0.7
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
