@@ -362,7 +362,30 @@ class DataLoader:
             )
         logger.info("[cg_market] %s rows", len(rows))
 
-    def update_cg_global_metrics(self) -> None:
+    def update_cg_global_metrics(self, min_interval_hours: float = 0.0) -> None:
+        """更新 CoinGecko 全局指标
+
+        :param min_interval_hours: 若最近一次更新时间距现在不足该小时数，则跳过
+                                   更新。默认 0 表示每次都强制刷新。
+        """
+        if min_interval_hours > 0:
+            df_last = pd.read_sql(
+                "SELECT timestamp FROM cg_global_metrics ORDER BY timestamp DESC LIMIT 1",
+                self.engine,
+                parse_dates=["timestamp"],
+            )
+            if not df_last.empty:
+                last_ts = df_last.iloc[0]["timestamp"]
+                if last_ts is not None and (
+                    pd.Timestamp.utcnow() - last_ts
+                ) < pd.Timedelta(hours=min_interval_hours):
+                    logger.info(
+                        "[cg_global] skip update (<%sh since %s)",
+                        min_interval_hours,
+                        last_ts,
+                    )
+                    return
+
         headers = self._cg_headers()
         self.cg_rate_limiter.acquire()
         data = _safe_retry(
