@@ -365,9 +365,8 @@ class DataLoader:
 
     def update_cg_global_metrics(self, min_interval_hours: float = 24.0) -> None:
         """更新 CoinGecko 全局指标
-
-        :param min_interval_hours: 与上次更新时间的整点间隔(小时)。小于
-                                   该值时跳过更新。默认 24 表示按日刷新。
+        :param min_interval_hours: 与上次更新时间相隔的日度间隔(小时)。默认按日刷新，
+                                   即仅在 UTC 零点后才会重新获取数据。
         """
         now_hour = pd.Timestamp.utcnow().floor("h").tz_localize(None)
 
@@ -382,8 +381,8 @@ class DataLoader:
                 if last_ts is not None:
                     if last_ts.tzinfo is not None:
                         last_ts = last_ts.tz_convert("UTC").tz_localize(None)
-                    last_hour = last_ts.floor("h")
-                    next_allowed = last_hour + pd.Timedelta(hours=min_interval_hours)
+                    last_day = last_ts.floor("D")
+                    next_allowed = last_day + pd.Timedelta(hours=min_interval_hours)
                     if now_hour < next_allowed:
                         logger.info(
                             "[cg_global] skip update (<%sh since %s)",
