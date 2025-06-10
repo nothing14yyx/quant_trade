@@ -22,6 +22,9 @@ from utils.feature_health import apply_health_check_df, health_check
 # 历史窗口长度，确保长周期指标计算不产生 NaN
 HISTORY_LEN = 200
 
+# CoinGecko /global 指标最小刷新间隔（小时）
+CG_GLOBAL_INTERVAL_HOURS = 1
+
 
 def to_shanghai(dt):
     """Convert naive or UTC datetime to Asia/Shanghai timezone."""
@@ -121,7 +124,7 @@ def update_aux_data(loader: DataLoader, symbols: list[str]) -> None:
         print(f"[sentiment 更新失败] {e}")
 
     try:
-        loader.update_cg_global_metrics()
+        loader.update_cg_global_metrics(min_interval_hours=CG_GLOBAL_INTERVAL_HOURS)
     except Exception as e:
         print(f"[cg_global_metrics 更新失败] {e}")
 

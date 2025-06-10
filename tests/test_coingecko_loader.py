@@ -107,3 +107,35 @@ def test_update_cg_global_metrics(monkeypatch):
     ts = df.iloc[0]['timestamp']
     assert ts.tzinfo is None
     assert ts.microsecond % 1000 == 0
+    assert ts.minute == 0
+    assert ts.second == 0
+
+
+def test_update_cg_global_metrics_skip(monkeypatch):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE cg_global_metrics (timestamp TEXT PRIMARY KEY, total_market_cap REAL, total_volume REAL, btc_dominance REAL, eth_dominance REAL)"
+        )
+    dl = make_dl(engine)
+
+    def fake_get(url, headers=None, timeout=10):
+        class R:
+            def json(self):
+                return {
+                    "data": {
+                        "total_market_cap": {"usd": 100},
+                        "total_volume": {"usd": 10},
+                        "market_cap_percentage": {"btc": 50, "eth": 30},
+                    }
+                }
+
+        return R()
+
+    monkeypatch.setattr(requests, 'get', fake_get)
+
+    dl.update_cg_global_metrics()
+    dl.update_cg_global_metrics(min_interval_hours=1)
+
+    df = pd.read_sql('cg_global_metrics', engine)
+    assert len(df) == 1
