@@ -135,7 +135,7 @@ def test_update_cg_global_metrics_skip(monkeypatch):
     monkeypatch.setattr(requests, 'get', fake_get)
 
     dl.update_cg_global_metrics()
-    dl.update_cg_global_metrics(min_interval_hours=1)
+    dl.update_cg_global_metrics(min_interval_hours=24)
 
     df = pd.read_sql('cg_global_metrics', engine)
     assert len(df) == 1
