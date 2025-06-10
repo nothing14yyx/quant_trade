@@ -364,10 +364,11 @@ class DataLoader:
 
     def update_cg_global_metrics(self, min_interval_hours: float = 0.0) -> None:
         """更新 CoinGecko 全局指标
-
-        :param min_interval_hours: 若最近一次更新时间距现在不足该小时数，则跳过
-                                   更新。默认 0 表示每次都强制刷新。
+        :param min_interval_hours: 与上次更新时间的整点间隔(小时)。小于
+                                   该值时跳过更新。默认 0 表示总是刷新。
         """
+        now_hour = pd.Timestamp.utcnow().floor("H").tz_localize(None)
+
         if min_interval_hours > 0:
             df_last = pd.read_sql(
                 "SELECT timestamp FROM cg_global_metrics ORDER BY timestamp DESC LIMIT 1",
@@ -376,16 +377,18 @@ class DataLoader:
             )
             if not df_last.empty:
                 last_ts = df_last.iloc[0]["timestamp"]
-                if last_ts is not None and (
-                    pd.Timestamp.utcnow() - last_ts
-                ) < pd.Timedelta(hours=min_interval_hours):
-                    logger.info(
-                        "[cg_global] skip update (<%sh since %s)",
-                        min_interval_hours,
-                        last_ts,
-                    )
-                    return
-
+                if last_ts is not None:
+                    if last_ts.tzinfo is not None:
+                        last_ts = last_ts.tz_convert("UTC").tz_localize(None)
+                    last_hour = last_ts.floor("H")
+                    next_allowed = last_hour + pd.Timedelta(hours=min_interval_hours)
+                    if now_hour < next_allowed:
+                        logger.info(
+                            "[cg_global] skip update (<%sh since %s)",
+                            min_interval_hours,
+                            last_ts,
+                        )
+                        return
         headers = self._cg_headers()
         self.cg_rate_limiter.acquire()
         data = _safe_retry(
@@ -396,10 +399,7 @@ class DataLoader:
         if not data:
             return
         row = {
-            "timestamp": pd.Timestamp.utcnow()
-                .floor("ms")
-                .to_pydatetime()
-                .replace(tzinfo=None),
+            "timestamp": now_hour.to_pydatetime().replace(tzinfo=None),
             "total_market_cap": data.get("total_market_cap", {}).get("usd"),
             "total_volume": data.get("total_volume", {}).get("usd"),
             "btc_dominance": data.get("market_cap_percentage", {}).get("btc"),
