@@ -61,6 +61,7 @@ class RobustSignalGenerator:
         # 币种与板块的映射，用于板块热度修正
         self.symbol_categories = {k.upper(): v for k, v in (symbol_categories or {}).items()}
 
+
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         self.max_same_direction_rate = 0.85
 
@@ -94,6 +95,7 @@ class RobustSignalGenerator:
     def set_symbol_categories(self, mapping):
         """更新币种与板块的映射"""
         self.symbol_categories = {k.upper(): v for k, v in mapping.items()}
+
 
     def compute_tp_sl(self, price, atr, direction, tp_mult=1.5, sl_mult=1.0):
         """
@@ -502,6 +504,7 @@ class RobustSignalGenerator:
                 fused_score *= 1 + 0.05 * vol_c
             hot = global_metrics.get('hot_sector_strength')
             if hot is not None:
+
                 corr = global_metrics.get('sector_corr')
                 if corr is None:
                     hot_name = global_metrics.get('hot_sector')
@@ -513,6 +516,7 @@ class RobustSignalGenerator:
                             corr = 1.0 if hot_name in cats else 0.0
                 if corr is None:
                     corr = 1.0
+
                 fused_score *= 1 + 0.05 * hot * corr
         oi_overheat = False
         if open_interest is not None:

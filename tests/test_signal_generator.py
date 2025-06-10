@@ -11,7 +11,9 @@ def make_dummy_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)
+
     rsg.symbol_categories = {}
+
     rsg.max_same_direction_rate = 0.6
     rsg.base_weights = {
         'ai': 0.2, 'trend': 0.2, 'momentum': 0.2,
