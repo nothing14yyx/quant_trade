@@ -20,7 +20,7 @@ from robust_signal_generator import RobustSignalGenerator
 from utils.feature_health import apply_health_check_df, health_check
 
 # 历史窗口长度，确保长周期指标计算不产生 NaN
-HISTORY_LEN = 1000
+HISTORY_LEN = 200
 
 
 def to_shanghai(dt):
