@@ -364,11 +364,11 @@ class DataLoader:
 
     def update_cg_global_metrics(self, min_interval_hours: float = 0.0) -> None:
         """更新 CoinGecko 全局指标
-
         :param min_interval_hours: 与上次更新时间的整点间隔(小时)。小于
                                    该值时跳过更新。默认 0 表示总是刷新。
         """
         now_hour = pd.Timestamp.utcnow().floor("H").tz_localize(None)
+
         if min_interval_hours > 0:
             df_last = pd.read_sql(
                 "SELECT timestamp FROM cg_global_metrics ORDER BY timestamp DESC LIMIT 1",
@@ -389,7 +389,6 @@ class DataLoader:
                             last_ts,
                         )
                         return
-
         headers = self._cg_headers()
         self.cg_rate_limiter.acquire()
         data = _safe_retry(
