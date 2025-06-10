@@ -6,9 +6,9 @@
 - **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子；同时加入 HV_7d/14d/30d、KC 宽度变化率、Ichimoku 基准线等新指标，并支持买卖比、资金流量比、成交量密度、价差百分比及 BTC/ETH 短期相关性。
 -   `merge_features` 新增 `batch_size` 参数，可在内存有限时按币种分批写入：
 
-    ```python
-    fe.merge_features(save_to_db=True, batch_size=1)
-    ```
+-```python
+-fe.merge_features(save_to_db=True, batch_size=1)
+-```
 - **ModelTrainer**：使用 LightGBM 训练多周期预测模型。
 - **标签系统**：根据历史波动动态设定阈值，并额外提供未来波动率等辅助目标。
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
