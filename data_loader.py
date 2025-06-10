@@ -367,7 +367,7 @@ class DataLoader:
         :param min_interval_hours: 与上次更新时间的整点间隔(小时)。小于
                                    该值时跳过更新。默认 0 表示总是刷新。
         """
-        now_hour = pd.Timestamp.utcnow().floor("H").tz_localize(None)
+        now_hour = pd.Timestamp.utcnow().floor("h").tz_localize(None)
 
         if min_interval_hours > 0:
             df_last = pd.read_sql(
@@ -380,7 +380,7 @@ class DataLoader:
                 if last_ts is not None:
                     if last_ts.tzinfo is not None:
                         last_ts = last_ts.tz_convert("UTC").tz_localize(None)
-                    last_hour = last_ts.floor("H")
+                    last_hour = last_ts.floor("h")
                     next_allowed = last_hour + pd.Timedelta(hours=min_interval_hours)
                     if now_hour < next_allowed:
                         logger.info(
