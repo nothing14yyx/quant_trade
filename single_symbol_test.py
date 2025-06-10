@@ -1,6 +1,6 @@
 import os
 import pytest
-pytest.skip("requires database access", allow_module_level=True)
+# pytest.skip("requires database access", allow_module_level=True)
 
 import pandas as pd
 import yaml
@@ -35,8 +35,9 @@ if USE_NORMALIZED:
     scaler_path = config["feature_engineering"]["scaler_path"]
     SCALER_PARAMS = load_scaler_params_from_json(scaler_path)
 
-# =================== 3. 读取原始 K 线（取最新 60 条） ===================
-symbol = "XRPUSDT"
+# =================== 3. 读取原始 K 线（取最新 N 条） ===================
+HISTORY_LEN = 200  # 加大窗口起点，确保所有技术指标都有足够历史
+symbol = "ETHUSDT"
 intervals = ["1h", "4h", "1d"]
 dfs_raw = {}
 
@@ -45,7 +46,7 @@ for itv in intervals:
         f"SELECT * FROM klines WHERE symbol='{symbol}' AND `interval`='{itv}' ORDER BY open_time",
         engine,
         parse_dates=["open_time", "close_time"]
-    ).tail(60).reset_index(drop=True)
+    ).tail(HISTORY_LEN).reset_index(drop=True)
 
 # =================== 4. 计算原始 raw 特征 DataFrame ===================
 # calc_features_raw 会返回完整的指标，包括 'atr_pct_1h'、'rsi_slope_1h' 等 raw 值
