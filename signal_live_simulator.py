@@ -22,6 +22,7 @@ from utils.feature_health import apply_health_check_df, health_check
 # 历史窗口长度，确保长周期指标计算不产生 NaN
 HISTORY_LEN = 200
 
+
 # CoinGecko /global 指标最小刷新间隔（小时），按 UTC 0 点每日更新
 CG_GLOBAL_INTERVAL_HOURS = 24
 

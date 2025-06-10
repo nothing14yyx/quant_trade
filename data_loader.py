@@ -365,7 +365,6 @@ class DataLoader:
 
     def update_cg_global_metrics(self, min_interval_hours: float = 24.0) -> None:
         """更新 CoinGecko 全局指标
-
         :param min_interval_hours: 与上次更新时间相隔的日度间隔(小时)。默认按日刷新，
                                    即仅在 UTC 零点后才会重新获取数据。
         """
