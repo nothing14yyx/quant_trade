@@ -19,6 +19,9 @@ from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
 from utils.feature_health import apply_health_check_df, health_check
 
+# 历史窗口长度，确保长周期指标计算不产生 NaN
+HISTORY_LEN = 1000
+
 
 def to_shanghai(dt):
     """Convert naive or UTC datetime to Asia/Shanghai timezone."""
@@ -143,17 +146,20 @@ def main_loop(interval_sec: int = 60):
         now_utc = datetime.now(timezone.utc)
         now_local = now_utc.astimezone(TZ_SH)
 
-        # 1. 动态获取数据库里拥有 >=60 条1h K线的币种
-        df_symbols_ok = pd.read_sql("""
+        # 1. 动态获取数据库里拥有 >=HISTORY_LEN 条1h K线的币种
+        df_symbols_ok = pd.read_sql(
+            f"""
             SELECT symbol FROM klines
             WHERE `interval`='1h'
             GROUP BY symbol
-            HAVING COUNT(*) >= 60
-        """, engine)
+            HAVING COUNT(*) >= {HISTORY_LEN}
+        """,
+            engine,
+        )
         symbols = df_symbols_ok["symbol"].tolist()
 
         if not symbols:
-            print("数据库没有任何币的1h K线（或都不足60条），等待...")
+            print(f"数据库没有任何币的1h K线（或都不足{HISTORY_LEN}条），等待...")
             time.sleep(interval_sec)
             continue
 
@@ -217,7 +223,7 @@ def main_loop(interval_sec: int = 60):
         """
         df_all = pd.read_sql(sql_feat, engine, parse_dates=["open_time", "close_time"])
 
-        # 5. 按symbol+周期分组，数据不足60条的自动跳过
+        # 5. 按symbol+周期分组，数据不足 HISTORY_LEN 条的自动跳过
         from typing import Dict, Optional
         feat_data: Dict[str, Dict[str, Optional[pd.DataFrame]]] = {
             sym: {} for sym in symbols
@@ -225,10 +231,10 @@ def main_loop(interval_sec: int = 60):
         for sym in symbols:
             for iv in ("1h", "4h", "1d"):
                 df_si = df_all[(df_all["symbol"] == sym) & (df_all["interval"] == iv)]
-                if len(df_si) < 60:
+                if len(df_si) < HISTORY_LEN:
                     feat_data[sym][iv] = None
                 else:
-                    feat_data[sym][iv] = df_si.iloc[-60:].reset_index(drop=True)
+                    feat_data[sym][iv] = df_si.iloc[-HISTORY_LEN:].reset_index(drop=True)
 
         all_full_results: list[dict] = []
         all_fused_scores: list[float] = []
