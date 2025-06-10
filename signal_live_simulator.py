@@ -113,6 +113,44 @@ def sync_all_symbols_threaded(loader: DataLoader, symbols: list[str], intervals:
             except Exception as e:
                 print(f"[线程同步异常] {sym}-{intv}: {e}")
 
+def update_aux_data(loader: DataLoader, symbols: list[str]) -> None:
+    """同步除 K 线外的其他指标"""
+    try:
+        loader.update_sentiment()
+    except Exception as e:
+        print(f"[sentiment 更新失败] {e}")
+
+    try:
+        loader.update_cg_global_metrics()
+    except Exception as e:
+        print(f"[cg_global_metrics 更新失败] {e}")
+
+    try:
+        loader.update_cg_market_data(symbols)
+    except Exception as e:
+        print(f"[cg_market_data 更新失败] {e}")
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        fut_map = {
+            executor.submit(loader.update_open_interest, sym): sym for sym in symbols
+        }
+        for f in as_completed(fut_map):
+            sym = fut_map[f]
+            try:
+                f.result()
+            except Exception as e:
+                print(f"[open_interest 更新异常] {sym}: {e}")
+
+        fut_map = {
+            executor.submit(loader.update_funding_rate, sym): sym for sym in symbols
+        }
+        for f in as_completed(fut_map):
+            sym = fut_map[f]
+            try:
+                f.result()
+            except Exception as e:
+                print(f"[funding_rate 更新异常] {sym}: {e}")
+
 def upsert_df(df, table_name, engine, pk_cols):
     """将 DataFrame 的数据写入 MySQL（有主键冲突则更新）。"""
     if df.empty:
@@ -163,12 +201,15 @@ def main_loop(interval_sec: int = 60):
             time.sleep(interval_sec)
             continue
 
-        # 2. 多线程同步K线
+        # 2. 更新其他指标（FG指数、CoinGecko 等）
+        update_aux_data(loader, symbols)
+
+        # 3. 多线程同步K线
         sync_all_symbols_threaded(loader, symbols, ["1h", "4h", "1d"], max_workers=8)
 
         placeholders = ",".join(f"'{s}'" for s in symbols)
 
-        # 3. 查询每个币种最新的1h K线 close_time
+        # 4. 查询每个币种最新的1h K线 close_time
         sql = f"""
             SELECT symbol, MAX(close_time) AS close_time
             FROM klines
