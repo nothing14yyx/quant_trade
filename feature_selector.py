@@ -31,6 +31,7 @@ engine = create_engine(
 
 TARGET = cfg.get("feature_selector", {}).get("target", "target_down")
 TOP_N  = cfg.get("feature_selector", {}).get("top_n", 30)
+BLACKLIST = cfg.get("feature_selector", {}).get("blacklist", [])
 MIN_COVER = 0.08          # <8% 非空 → 丢弃
 ENABLE_PCA = True
 PCA_COMPONENTS = 3
@@ -45,7 +46,7 @@ orig_cols = {
     "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
     "symbol", TARGET  # 去掉 interval/ignore/target_up/target_down
 }
-all_features = [c for c in df.columns if c not in orig_cols]
+all_features = [c for c in df.columns if c not in orig_cols and c not in BLACKLIST]
 
 # ---------- 2. 按周期归类 ----------
 # 默认仅匹配 *_1h/*_4h/*_d1 结尾。为了让小时/周标记以及 _x/_y/_feat 列也能参与评估，
