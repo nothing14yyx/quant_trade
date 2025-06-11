@@ -120,6 +120,10 @@ class RobustSignalGenerator:
         :param sl_mult: 止损倍数
         :return: (take_profit, stop_loss)
         """
+        # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
+        tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
+        sl_mult = float(np.clip(sl_mult, 0.5, 2.0))
+
         if direction == 1:
             take_profit = price + tp_mult * atr
             stop_loss   = price - sl_mult * atr
@@ -681,16 +685,9 @@ class RobustSignalGenerator:
                 'details': details
             }
 
-        # ===== 12. 多级仓位逻辑（替代 calculate_position_size） =====
+        # ===== 12. 仓位大小按连续得分映射 =====
         abs_score = abs(fused_score)
-        if abs_score > 0.8:
-            pos_size = 1.0
-        elif abs_score > 0.5:
-            pos_size = 0.6
-        elif abs_score > 0.3:
-            pos_size = 0.3
-        else:
-            pos_size = 0.1
+        pos_size = 0.1 + 0.9 * min(abs_score, 1.0)
 
         if oi_overheat:
             pos_size *= 0.7
