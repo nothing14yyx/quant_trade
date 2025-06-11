@@ -230,17 +230,19 @@ class FeatureEngineer:
         save_to_db: bool = False,
         batch_size: int | None = None,
     ) -> None:
-        symbols = self.get_symbols()
+        symbols = self.get_symbols(("1h", "4h", "1d", "5m", "15m"))
         symbols = symbols[: (topn or self.topn)]
 
         all_dfs: list[pd.DataFrame] = []
         final_cols: set[str] = set()
         append = False
         for sym in tqdm(symbols, desc="Calc features"):
-            # 1. 先拉取 1h/4h/1d 数据
+            # 1. 先拉取各周期数据
             df_1h = self.load_klines_db(sym, "1h")
             df_4h = self.load_klines_db(sym, "4h")
             df_1d = self.load_klines_db(sym, "1d")
+            df_5m = self.load_klines_db(sym, "5m")
+            df_15m = self.load_klines_db(sym, "15m")
             if not all([df_1h is not None, df_4h is not None, df_1d is not None]):
                 continue
 
@@ -252,6 +254,18 @@ class FeatureEngineer:
             f1h = calc_features_raw(df_1h, "1h")
             f4h = calc_features_raw(df_4h, "4h")
             f1d = calc_features_raw(df_1d, "d1")
+            f5m = calc_features_raw(df_5m, "5m") if df_5m is not None else None
+            f15m = calc_features_raw(df_15m, "15m") if df_15m is not None else None
+
+            if f5m is not None:
+                f5m["mom_5m_roll1h"] = f5m["pct_chg1_5m"].rolling(12, min_periods=1).mean()
+                f5m["mom_5m_roll1h_std"] = f5m["pct_chg1_5m"].rolling(12, min_periods=1).std()
+                f5m = f5m[["mom_5m_roll1h", "mom_5m_roll1h_std"]]
+
+            if f15m is not None:
+                f15m["mom_15m_roll1h"] = f15m["pct_chg1_15m"].rolling(4, min_periods=1).mean()
+                f15m["mom_15m_roll1h_std"] = f15m["pct_chg1_15m"].rolling(4, min_periods=1).std()
+                f15m = f15m[["mom_15m_roll1h", "mom_15m_roll1h_std"]]
 
             # 4. 将各周期特征表中的 close 重命名，避免与 raw.close 冲突
             f1h = f1h.rename(columns={"close": "close_1h"})
@@ -259,7 +273,12 @@ class FeatureEngineer:
             f1d = f1d.rename(columns={"close": "close_d1"})
 
             # 5. 重命名索引列“index”为“open_time”，以便 merge_asof
-            for feat in (f1h, f4h, f1d):
+            feats_all = [f1h, f4h, f1d]
+            if f5m is not None:
+                feats_all.append(f5m)
+            if f15m is not None:
+                feats_all.append(f15m)
+            for feat in feats_all:
                 feat.reset_index(inplace=True)
                 feat.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
 
@@ -296,6 +315,20 @@ class FeatureEngineer:
                 right_on="close_time_d1",
                 direction="backward",
             )
+            if f5m is not None:
+                merged = pd.merge_asof(
+                    merged.sort_values("open_time"),
+                    f5m.sort_values("open_time"),
+                    on="open_time",
+                    direction="backward",
+                )
+            if f15m is not None:
+                merged = pd.merge_asof(
+                    merged.sort_values("open_time"),
+                    f15m.sort_values("open_time"),
+                    on="open_time",
+                    direction="backward",
+                )
 
             # --- 跨周期衍生特征 ---
             merged["close_spread_1h_4h"] = merged["close_1h"] - merged["close_4h"]
