@@ -193,10 +193,18 @@ class FeatureEngineer:
             return None
         return df
 
-    def _add_missing_flags(self, df: pd.DataFrame, feat_cols: list) -> pd.DataFrame:
-        """Forward fill within each symbol and optionally add isna flags."""
+    def _add_missing_flags(self, df: pd.DataFrame, feat_cols: list) -> tuple[pd.DataFrame, list]:
+        """Forward fill, drop极稀疏列, 并追加缺失标记。"""
 
         missing_ratio = df[feat_cols].isna().mean()
+
+        # ----- 删除缺失率 ≥95% 的列 -----
+        drop_cols = missing_ratio[missing_ratio >= 0.95].index.tolist()
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+            feat_cols = [c for c in feat_cols if c not in drop_cols]
+            missing_ratio = missing_ratio.drop(drop_cols)
+
         flag_cols = [c for c in feat_cols if 0 < missing_ratio[c] < 0.95]
 
         flags_df = df[flag_cols].isna().astype(int)
@@ -212,7 +220,7 @@ class FeatureEngineer:
         df_filled[feat_cols] = df_filled[feat_cols].fillna(0.0)
 
         df_out = pd.concat([df_filled, flags_df], axis=1)
-        return df_out
+        return df_out, feat_cols
 
     def _finalize_batch(self, dfs: list[pd.DataFrame]) -> tuple[pd.DataFrame, list[str]]:
         df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
@@ -243,18 +251,29 @@ class FeatureEngineer:
 
 
         if self.mode == "train":
-            scaler_params = compute_robust_z_params(df_all, feat_cols_all)
+            scaler_params = {}
+            scaled_parts = []
+            for sym, g in df_all.groupby("symbol", group_keys=False):
+                params = compute_robust_z_params(g, feat_cols_all)
+                scaler_params[sym] = params
+                scaled_parts.append(apply_robust_z_with_params(g, params))
             self.scaler_path.parent.mkdir(parents=True, exist_ok=True)
             save_scaler_params_to_json(scaler_params, str(self.scaler_path))
-            df_scaled = apply_robust_z_with_params(df_all, scaler_params)
+            df_scaled = pd.concat(scaled_parts, ignore_index=True)
         else:
             if not self.scaler_path.is_file():
                 raise FileNotFoundError(f"找不到 scaler 参数文件：{self.scaler_path}")
             scaler_params = load_scaler_params_from_json(str(self.scaler_path))
-            df_scaled = apply_robust_z_with_params(df_all, scaler_params)
+            scaled_parts = []
+            for sym, g in df_all.groupby("symbol", group_keys=False):
+                params = scaler_params.get(sym)
+                if params is None:
+                    params = compute_robust_z_params(g, feat_cols_all)
+                scaled_parts.append(apply_robust_z_with_params(g, params))
+            df_scaled = pd.concat(scaled_parts, ignore_index=True)
 
         df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-30, 30)
-        df_final = self._add_missing_flags(df_scaled, feat_cols_all)
+        df_final, feat_cols_all = self._add_missing_flags(df_scaled, feat_cols_all)
         df_final.drop(columns=[c for c in FUTURE_COLS if c in df_final.columns], inplace=True)
 
         final_other_cols = [c for c in df_final.columns if c not in base_cols]

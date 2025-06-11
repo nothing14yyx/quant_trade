@@ -188,13 +188,15 @@ def train_one(df_all: pd.DataFrame,
     data = df_all.dropna(subset=[tgt])
     # 此时 data 已经继承了原始 df_all 的顺序，且原始 df_all 事先已按 open_time 排序
 
-    if regression:
-        X = data[feat_use]
-        y = data[tgt]
-    else:
-        # 分类任务直接使用原样本，后续通过 scale_pos_weight 处理不平衡
-        X = data[feat_use]
-        y = data[tgt]
+    X = data[feat_use]
+    y = data[tgt]
+
+    # ----- 留出最后 10% 仅做最终评估 -----
+    hold_len = max(1, int(len(X) * 0.1))
+    X_hold = X.iloc[-hold_len:]
+    y_hold = y.iloc[-hold_len:]
+    X = X.iloc[:-hold_len]
+    y = y.iloc[:-hold_len]
 
     # 5-4  计算类别不平衡补偿
     if not regression:
@@ -292,10 +294,10 @@ def train_one(df_all: pd.DataFrame,
             **best_params,
         )
 
-    # 5-6  用最后 20% 样本做验证，重新训练并 early-stop
-    cut = int(len(X) * 0.8)
-    X_tr, X_val = X.iloc[:cut], X.iloc[cut:]
-    y_tr, y_val = y.iloc[:cut], y.iloc[cut:]
+    # 5-6  三段式时间切分：CV -> 验证 -> 留出集
+    val_len = max(1, int(len(X) * 0.1))
+    X_tr, X_val = X.iloc[:-val_len], X.iloc[-val_len:]
+    y_tr, y_val = y.iloc[:-val_len], y.iloc[-val_len:]
 
     best.fit(
         X_tr,
@@ -307,6 +309,17 @@ def train_one(df_all: pd.DataFrame,
             lgb.log_evaluation(period=0),
         ],
     )
+
+    # ----- 留出集评估 -----
+    if len(X_hold):
+        if regression:
+            hold_pred = best.predict(X_hold, num_iteration=best.best_iteration_)
+            hold_score = -mean_absolute_error(y_hold, hold_pred)
+        else:
+            hold_pred = best.predict_proba(X_hold, num_iteration=best.best_iteration_)[:, 1]
+            hold_score = roc_auc_score(y_hold, hold_pred)
+        label = "Holdout-MAE" if regression else "Holdout-AUC"
+        print(f"{label}: {hold_score:.4f}")
 
     feat_imp = getattr(best, "feature_importances_", None)
 
