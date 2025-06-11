@@ -7,7 +7,7 @@ from sklearn.metrics import roc_auc_score, mean_absolute_error
 from sklearn.calibration import CalibratedClassifierCV
 
 import optuna
-from optuna.integration import LightGBMPruningCallback
+from lightgbm.callback import CallbackEnv
 from sqlalchemy import create_engine
 
 # ---------- 自定义：只在过去样本内合成的 SMOTE ----------
@@ -57,6 +57,45 @@ class TimeSeriesAwareSMOTE:
         order = np.argsort(time_aug)
         self.sample_indices_ = np.array(sample_idx)[order]
         return X_aug.iloc[order].reset_index(drop=True), y_aug.iloc[order].reset_index(drop=True)
+
+
+class OffsetLightGBMPruningCallback:
+    """在交叉验证中为 LightGBM 的每折评估添加 step 偏移，避免 Optuna 重复 step 警告"""
+
+    def __init__(self, trial: optuna.Trial, metric: str, valid_name: str = "valid_0",
+                 report_interval: int = 1, step_offset: int = 0) -> None:
+        self._trial = trial
+        self._metric = metric
+        self._valid_name = valid_name
+        self._report_interval = report_interval
+        self._step_offset = step_offset
+
+    def __call__(self, env: CallbackEnv) -> None:
+        if (env.iteration + 1) % self._report_interval != 0:
+            return
+
+        evals = env.evaluation_result_list
+        if not evals:
+            return
+
+        is_cv = len(evals[0]) == 5
+        target_valid_name = "valid" if is_cv else self._valid_name
+
+        for valid_name, metric, value in [(e[0], e[1], e[2]) for e in evals]:
+            if valid_name == target_valid_name and (
+                metric == self._metric or metric == "valid " + self._metric
+            ):
+                step = env.iteration + self._step_offset
+                self._trial.report(value, step=step)
+                if self._trial.should_prune():
+                    raise optuna.TrialPruned(f"Trial was pruned at iteration {step}.")
+                break
+        else:
+            raise ValueError(
+                f'The entry associated with the validation name "{target_valid_name}" '
+                f'and the metric name "{self._metric}" is not found in the evaluation result list '
+                f"{str(evals)}."
+            )
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
@@ -198,7 +237,11 @@ def train_one(df_all: pd.DataFrame,
                 eval_metric="l1" if regression else "auc",
                 callbacks=[
                     lgb.early_stopping(stopping_rounds=50, verbose=False),
-                    LightGBMPruningCallback(trial, "l1" if regression else "auc"),
+                    OffsetLightGBMPruningCallback(
+                        trial,
+                        "l1" if regression else "auc",
+                        step_offset=fold_idx * 10000,
+                    ),
                 ],
             )
 
