@@ -223,8 +223,9 @@ class FeatureEngineer:
             "symbol", "target_up", "target_down",
         ] + FUTURE_COLS
         df_all.drop(columns=[c for c in FUTURE_COLS if c in df_all.columns], inplace=True)
-        other_cols = [c for c in df_all.columns if c not in base_cols]
-        df_all = df_all[base_cols + other_cols]
+        base_cols_exist = [c for c in base_cols if c in df_all.columns]
+        other_cols = [c for c in df_all.columns if c not in base_cols_exist]
+        df_all = df_all[base_cols_exist + other_cols]
 
         if not self.feature_cols_all:
             numeric_cols = [
