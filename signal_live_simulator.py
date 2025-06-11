@@ -365,14 +365,16 @@ def main_loop(interval_sec: int = 60):
         calc_start_local = datetime.now(TZ_SH)
 
         # 4. 拉特征
-        sql_feat = f"""
-            SELECT symbol, `interval`, open_time, close_time, open, close, high, low, volume, fg_index, funding_rate
-            FROM klines
-            WHERE symbol IN ({placeholders})
-              AND `interval` IN ('1h','4h','1d')
-            ORDER BY symbol, `interval`, open_time
-        """
-        df_all = pd.read_sql(sql_feat, engine, parse_dates=["open_time", "close_time"])
+        dfs_feat = []
+        for sym in symbols:
+            for iv in ("1h", "4h", "1d"):
+                q = text(
+                    "SELECT symbol, `interval`, open_time, close_time, open, close, high, low, volume, fg_index, funding_rate "
+                    "FROM klines WHERE symbol=:sym AND `interval`=:iv ORDER BY open_time DESC LIMIT :lim"
+                )
+                df_tmp = pd.read_sql(q, engine, params={"sym": sym, "iv": iv, "lim": HISTORY_LEN}, parse_dates=["open_time", "close_time"])
+                dfs_feat.append(df_tmp)
+        df_all = pd.concat(dfs_feat, ignore_index=True) if dfs_feat else pd.DataFrame()
 
         # 5. 按symbol+周期分组，数据不足 HISTORY_LEN 条的自动跳过
         from typing import Dict, Optional
