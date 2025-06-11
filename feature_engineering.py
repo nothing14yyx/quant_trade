@@ -260,8 +260,14 @@ class FeatureEngineer:
             df_1h = self.load_klines_db(sym, "1h")
             df_4h = self.load_klines_db(sym, "4h")
             df_1d = self.load_klines_db(sym, "1d")
-            df_5m = self.load_klines_db(sym, "5m")
-            df_15m = self.load_klines_db(sym, "15m")
+            try:
+                df_5m = self.load_klines_db(sym, "5m")
+            except Exception:
+                df_5m = None
+            try:
+                df_15m = self.load_klines_db(sym, "15m")
+            except Exception:
+                df_15m = None
             if not all([df_1h is not None, df_4h is not None, df_1d is not None]):
                 continue
 
