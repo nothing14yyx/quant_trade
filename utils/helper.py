@@ -10,15 +10,27 @@ import json
 
 
 def _safe_ta(func, *args, index=None, cols=None, **kwargs):
-    """Call pandas_ta function and return NaNs when input length is insufficient."""
+    """调用 pandas_ta 指标函数, 在数据不足时返回指定 dtype 的 DataFrame。"""
     res = func(*args, **kwargs)
     if res is None:
-        if cols is None:
-            return pd.Series(index=index, dtype="float64")
-        return pd.DataFrame(index=index, columns=cols, dtype="float64")
+        res = pd.DataFrame(index=index, columns=cols or ["val"], dtype="float64")
+    else:
+        if isinstance(res, pd.Series):
+            res = res.to_frame()
+        res = res.astype("float64")
+        if cols is not None:
+            for c in cols:
+                if c not in res.columns:
+                    res[c] = np.nan
+            res = res[cols]
     return res
 
 def assign_safe(feats: pd.DataFrame, name: str, series):
+    """安全地向 feats 赋值，支持传入 Series 或单列 DataFrame。"""
+    if isinstance(series, pd.DataFrame):
+        if series.shape[1] != 1:
+            raise ValueError("assign_safe 仅支持单列 DataFrame")
+        series = series.iloc[:, 0]
     feats[name] = np.asarray(series, dtype="float64")
     # print(f"{name}: {feats[name].dtype}")
 
@@ -49,15 +61,20 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     if "funding_rate" in df:
         assign_safe(feats, "funding_rate", df["funding_rate"].astype(float).ffill())
         fr_ema = _safe_ta(ta.ema, feats["funding_rate"], length=24, index=df.index)
-        assign_safe(feats, f"funding_rate_anom_{period}", (feats["funding_rate"] - fr_ema))
+        fr_ema_s = fr_ema.iloc[:, 0]
+        assign_safe(feats, f"funding_rate_anom_{period}", (feats["funding_rate"] - fr_ema_s))
 
     ema_short = _safe_ta(ta.ema, feats["close"], length=10, index=df.index)
-    if ema_short.isna().all():
-        ema_short = feats["close"].ewm(span=10, adjust=False).mean()
+    ema_short_s = ema_short.iloc[:, 0]
+    if ema_short_s.isna().all():
+        ema_short_s = feats["close"].ewm(span=10, adjust=False).mean()
+
     ema_long = _safe_ta(ta.ema, feats["close"], length=50, index=df.index)
-    if ema_long.isna().all():
-        ema_long = feats["close"].ewm(span=50, adjust=False).mean()
-    assign_safe(feats, f"ema_diff_{period}", ema_short - ema_long)
+    ema_long_s = ema_long.iloc[:, 0]
+    if ema_long_s.isna().all():
+        ema_long_s = feats["close"].ewm(span=50, adjust=False).mean()
+
+    assign_safe(feats, f"ema_diff_{period}", ema_short_s - ema_long_s)
     assign_safe(feats, f"sma_10_{period}", _safe_ta(ta.sma, feats["close"], length=10, index=df.index))
     feats[f"pct_chg1_{period}"] = feats["close"].pct_change(fill_method=None)
     feats[f"pct_chg3_{period}"] = feats["close"].pct_change(3, fill_method=None)
@@ -65,7 +82,8 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"rsi_{period}", _safe_ta(ta.rsi, feats["close"], length=14, index=df.index))
     feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
     atr = _safe_ta(ta.atr, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
-    assign_safe(feats, f"atr_pct_{period}", atr / feats["close"]) 
+    atr_s = atr.iloc[:, 0]
+    assign_safe(feats, f"atr_pct_{period}", atr_s.div(feats["close"], axis=0))
     feats[f"atr_chg_{period}"] = feats[f"atr_pct_{period}"].diff()
 
     adx_df = _safe_ta(
@@ -158,15 +176,17 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"donchian_delta_{period}", dc.get("DCU_20_20") - dc.get("DCL_20_20"))
 
     assign_safe(feats, f"vol_roc_{period}", _safe_ta(ta.roc, feats["volume"], length=5, index=df.index))
+    sma_vol_short = _safe_ta(ta.sma, feats["volume"], length=10, index=df.index).iloc[:, 0]
     assign_safe(
         feats,
         f"vol_ma_ratio_{period}",
-        feats["volume"] / _safe_ta(ta.sma, feats["volume"], length=10, index=df.index).replace(0, np.nan),
+        feats["volume"] / sma_vol_short.replace(0, np.nan),
     )
+    sma_vol_long = _safe_ta(ta.sma, feats["volume"], length=30, index=df.index).iloc[:, 0]
     assign_safe(
         feats,
         f"vol_ma_ratio_long_{period}",
-        feats["volume"] / _safe_ta(ta.sma, feats["volume"], length=30, index=df.index).replace(0, np.nan),
+        feats["volume"] / sma_vol_long.replace(0, np.nan),
     )
 
     if "taker_buy_base" in df:
@@ -215,7 +235,8 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"long_lower_shadow_{period}", lower_long.astype(float))
 
     sma_bbw = _safe_ta(ta.sma, feats[f"bb_width_{period}"], length=20, index=df.index)
-    vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
+    sma_bbw_s = sma_bbw.iloc[:, 0]
+    vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw_s * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
 
     assign_safe(feats, f"vol_profile_density_{period}", feats["volume"] / range_)

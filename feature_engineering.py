@@ -207,10 +207,6 @@ class FeatureEngineer:
             )
         ]
 
-        for col in feat_cols_all:
-            arr = df_all[col].dropna().values
-            low, high = np.nanpercentile(arr, [1, 99])
-            df_all[col] = df_all[col].clip(low, high)
 
         if self.mode == "train":
             scaler_params = compute_robust_z_params(df_all, feat_cols_all)
