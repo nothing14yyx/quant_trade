@@ -38,6 +38,7 @@ FUTURE_COLS = [
     "future_max_drawdown",
 ]
 
+
 class FeatureEngineer:
     """多周期特征工程生成器 (1h → 4h → 1d)。
 
@@ -118,20 +119,10 @@ class FeatureEngineer:
             fut_lo = close.shift(-1).rolling(n, min_periods=1).min()
 
             if threshold in (None, "auto"):
-                vol = (
-                    close.pct_change()
-                    .abs()
-                    .rolling(vol_window, min_periods=1)
-                    .mean()
-                ) * 1.5
+                vol = (close.pct_change().abs().rolling(vol_window, min_periods=1).mean()) * 1.5
                 th_up = th_down = vol
             elif threshold == "quantile":
-                th = (
-                    close.pct_change()
-                    .abs()
-                    .rolling(vol_window, min_periods=1)
-                    .quantile(0.8)
-                )
+                th = close.pct_change().abs().rolling(vol_window, min_periods=1).quantile(0.8)
                 th_up = th_down = th
             elif threshold == "balanced":
                 chg_up = fut_hi / close - 1
@@ -150,12 +141,7 @@ class FeatureEngineer:
                 bins_down = np.quantile(down_ret.dropna(), np.linspace(0, 1, n_bins + 1))
                 g["target_up_multi"] = pd.cut(up_ret, bins=bins_up, labels=False, include_lowest=True)
                 g["target_down_multi"] = pd.cut(down_ret, bins=bins_down, labels=False, include_lowest=True)
-            g["future_volatility"] = (
-                close.pct_change()
-                .rolling(n)
-                .std()
-                .shift(-n)
-            )
+            g["future_volatility"] = close.pct_change().rolling(n).std().shift(-n)
             g["future_max_rise"] = fut_hi / close - 1
             g["future_max_drawdown"] = fut_lo / close - 1
             drop_cols = ["target_up", "target_down", "future_volatility"]
@@ -212,13 +198,14 @@ class FeatureEngineer:
         flags_df.columns = [f"{col}_isnan" for col in flag_cols]
 
         df_filled = df.copy()
-        if "symbol" in df_filled.columns:
-            df_filled[feat_cols] = (
-                df_filled.groupby("symbol", group_keys=False)[feat_cols].ffill()
-            )
-        else:
-            df_filled[feat_cols] = df_filled[feat_cols].ffill()
+        if "open_time" in df_filled.columns:
+            if "symbol" in df_filled.columns:
+                df_filled = df_filled.sort_values(["symbol", "open_time"])
+            else:
+                df_filled = df_filled.sort_values("open_time")
+        df_filled[feat_cols] = df_filled[feat_cols].fillna(method="ffill")
         df_filled[feat_cols] = df_filled[feat_cols].fillna(0.0)
+        df_filled = df_filled.sort_index()
 
         df_out = pd.concat([df_filled, flags_df], axis=1)
         return df_out, feat_cols
@@ -227,9 +214,20 @@ class FeatureEngineer:
         df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
 
         base_cols = [
-            "open_time", "open", "high", "low", "close", "volume", "close_time",
-            "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
-            "symbol", "target_up", "target_down",
+            "open_time",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "close_time",
+            "quote_asset_volume",
+            "num_trades",
+            "taker_buy_base",
+            "taker_buy_quote",
+            "symbol",
+            "target_up",
+            "target_down",
         ] + FUTURE_COLS
         df_all.drop(columns=[c for c in FUTURE_COLS if c in df_all.columns], inplace=True)
         base_cols_exist = [c for c in base_cols if c in df_all.columns]
@@ -238,18 +236,18 @@ class FeatureEngineer:
 
         if not self.feature_cols_all:
             numeric_cols = [
-                c for c in other_cols
+                c
+                for c in other_cols
                 if pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c])
             ]
             self.feature_cols_all = numeric_cols.copy()
 
         feat_cols_all = [
-            c for c in self.feature_cols_all
-            if c in df_all.columns and (
-                pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c])
-            )
+            c
+            for c in self.feature_cols_all
+            if c in df_all.columns
+            and (pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c]))
         ]
-
 
         if self.mode == "train":
             scaler_params = {}
@@ -444,7 +442,9 @@ class FeatureEngineer:
         final_cols: set[str] = set()
         append = False
         if n_jobs > 1:
-            results = Parallel(n_jobs=n_jobs)(delayed(self._calc_symbol_features)(sym) for sym in tqdm(symbols, desc="Calc features"))
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(self._calc_symbol_features)(sym) for sym in tqdm(symbols, desc="Calc features")
+            )
         else:
             results = [self._calc_symbol_features(sym) for sym in tqdm(symbols, desc="Calc features")]
 

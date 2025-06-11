@@ -1,8 +1,9 @@
 # model_trainer.py  (2025-06-03, 已添加按 open_time 排序)
 # ----------------------------------------------------------------
-import os, yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd
+import os, yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd, datetime
 from pathlib import Path
 from sklearn.metrics import roc_auc_score, mean_absolute_error
+from sklearn.metrics import precision_recall_curve
 
 
 import optuna
@@ -21,6 +22,7 @@ def forward_chain_split(n_samples: int, n_splits: int = 5, gap: int = 0):
         if val_end > n_samples:
             val_end = n_samples
         yield indices[:train_end], indices[val_start:val_end]
+
 
 # ---------- 自定义：只在过去样本内合成的 SMOTE ----------
 class TimeSeriesAwareSMOTE:
@@ -65,7 +67,11 @@ class TimeSeriesAwareSMOTE:
         time_aug = pd.concat([open_time, pd.Series(new_times)], ignore_index=True)
 
         order = np.argsort(time_aug)
-        return X_aug.iloc[order].reset_index(drop=True), y_aug.iloc[order].reset_index(drop=True), np.array(sample_idx)[order]
+        return (
+            X_aug.iloc[order].reset_index(drop=True),
+            y_aug.iloc[order].reset_index(drop=True),
+            np.array(sample_idx)[order],
+        )
 
     def fit_resample(self, X: pd.DataFrame, y: pd.Series, open_time: pd.Series):
         if self.group_freq:
@@ -73,7 +79,11 @@ class TimeSeriesAwareSMOTE:
             res_X_all, res_y_all, idx_all = [], [], []
             for g in groups.unique():
                 mask = groups == g
-                X_res, y_res, idx_res = self._resample_one(X[mask].reset_index(drop=True), y[mask].reset_index(drop=True), open_time[mask].reset_index(drop=True))
+                X_res, y_res, idx_res = self._resample_one(
+                    X[mask].reset_index(drop=True),
+                    y[mask].reset_index(drop=True),
+                    open_time[mask].reset_index(drop=True),
+                )
                 offset = len(pd.concat(res_X_all)) if res_X_all else 0
                 idx_all.extend((np.array(idx_res) + offset).tolist())
                 res_X_all.append(X_res)
@@ -91,8 +101,14 @@ class TimeSeriesAwareSMOTE:
 class OffsetLightGBMPruningCallback:
     """在交叉验证中为 LightGBM 的每折评估添加 step 偏移，避免 Optuna 重复 step 警告"""
 
-    def __init__(self, trial: optuna.Trial, metric: str, valid_name: str = "valid_0",
-                 report_interval: int = 1, step_offset: int = 0) -> None:
+    def __init__(
+        self,
+        trial: optuna.Trial,
+        metric: str,
+        valid_name: str = "valid_0",
+        report_interval: int = 1,
+        step_offset: int = 0,
+    ) -> None:
         self._trial = trial
         self._metric = metric
         self._valid_name = valid_name
@@ -111,9 +127,7 @@ class OffsetLightGBMPruningCallback:
         target_valid_name = "valid" if is_cv else self._valid_name
 
         for valid_name, metric, value in [(e[0], e[1], e[2]) for e in evals]:
-            if valid_name == target_valid_name and (
-                metric == self._metric or metric == "valid " + self._metric
-            ):
+            if valid_name == target_valid_name and (metric == self._metric or metric == "valid " + self._metric):
                 step = env.iteration + self._step_offset
                 self._trial.report(value, step=step)
                 if self._trial.should_prune():
@@ -125,6 +139,7 @@ class OffsetLightGBMPruningCallback:
                 f'and the metric name "{self._metric}" is not found in the evaluation result list '
                 f"{str(evals)}."
             )
+
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
@@ -157,6 +172,7 @@ if not feature_cols:
 # ---------- 4. 目标列 ----------
 targets = {"up": "target_up", "down": "target_down", "vol": "future_volatility"}
 
+
 # ---------- 辅助：剔除极端异常样本 ----------
 def drop_price_outliers(df: pd.DataFrame, pct: float = 0.995) -> pd.DataFrame:
     if not {"close", "open"}.issubset(df.columns):
@@ -169,12 +185,9 @@ def drop_price_outliers(df: pd.DataFrame, pct: float = 0.995) -> pd.DataFrame:
         print(f"drop_price_outliers: removed {removed} rows")
     return df[keep]
 
+
 # ---------- 5. 训练函数 ----------
-def train_one(df_all: pd.DataFrame,
-              features: list[str],
-              tgt: str,
-              model_path: Path,
-              regression: bool = False) -> None:
+def train_one(df_all: pd.DataFrame, features: list[str], tgt: str, model_path: Path, regression: bool = False) -> None:
 
     # 5-1  缺列补 NaN
     for col in features:
@@ -267,10 +280,7 @@ def train_one(df_all: pd.DataFrame,
 
         return float(np.mean(scores))
 
-    study = optuna.create_study(
-        direction="maximize",
-        pruner=optuna.pruners.SuccessiveHalvingPruner()
-    )
+    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.SuccessiveHalvingPruner())
     study.optimize(objective, n_trials=80, show_progress_bar=False)
     best_params = study.best_params
 
@@ -323,20 +333,26 @@ def train_one(df_all: pd.DataFrame,
 
     feat_imp = getattr(best, "feature_importances_", None)
 
-    # 5-7  保存模型与特征列
+    # ----- 根据验证集寻找最佳阈值 -----
+    best_th = 0.5
+    if not regression:
+        val_proba = best.predict_proba(X_val, num_iteration=best.best_iteration_)[:, 1]
+        prec, rec, thr = precision_recall_curve(y_val, val_proba)
+        f1 = 2 * prec * rec / (prec + rec + 1e-12)
+        if len(thr):
+            best_th = float(thr[np.nanargmax(f1)])
+
+    # 5-7  保存模型与特征列及阈值
     model_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"model": best, "features": feat_use},
-                model_path, compress=3)
+    joblib.dump({"model": best, "features": feat_use, "threshold": best_th}, model_path, compress=3)
     score_label = "CV-MAE" if regression else "CV-AUC"
-    print(
-        f"✔ Saved: {model_path.name}  ({score_label} {study.best_value:.4f})")
+    print(f"✔ Saved: {model_path.name}  ({score_label} {study.best_value:.4f}, th {best_th:.3f})")
 
     # 5-8  打印前 15 个重要特征
     if feat_imp is not None:
-        imp = (pd.Series(feat_imp, index=feat_use)
-                 .sort_values(ascending=False)
-                 .head(15))
+        imp = pd.Series(feat_imp, index=feat_use).sort_values(ascending=False).head(15)
         print(imp.to_string())
+
 
 # ---------- 6. 周期 × 方向 × 符号 训练循环 ----------
 symbols = df["symbol"].unique() if train_by_symbol else [None]
@@ -362,15 +378,12 @@ for sym in symbols:
                 subset = df_rng
 
             for tag, tgt_col in targets.items():
-                parts = [period]
-                if sym is not None:
-                    parts.append(sym)
-                if rng.get("name") and rng["name"] != "all":
-                    parts.append(rng["name"])
-                parts.append(tag)
-                file_name = "model_" + "_".join(parts) + ".pkl"
+                file_date = datetime.datetime.utcnow().strftime("%Y%m%d")
+                file_name = f"model_{period}_{tag}_{file_date}.pkl"
                 print(f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}")
                 out_file = Path("models") / file_name
                 train_one(subset.copy(), cols, tgt_col, out_file, regression=(tag == "vol"))
+                with open(Path("models") / "changelog.csv", "a") as f:
+                    f.write(f"{file_name},{file_date}\n")
 
 print("\n✅  All models finished.")
