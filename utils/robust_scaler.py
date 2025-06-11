@@ -37,17 +37,22 @@ def load_scaler_params_from_json(path: str) -> dict:
         return json.load(f)
 
 def apply_robust_z_with_params(df: pd.DataFrame, params: dict) -> pd.DataFrame:
-    """
-    对传入的 DataFrame（每列应与 params 中键对应）按给定的 lower/upper/mean/std 做剪裁 + 归一化，
-    返回相同索引、已缩放好的 DataFrame。
-    """
+    """根据给定参数进行剪裁与归一化，支持按 symbol 分组的参数结构。"""
+
     df_scaled = df.copy()
+
+    # 若 params 的键不是列名，则视为 {symbol: {col: params}} 结构
+    if not set(params.keys()) & set(df_scaled.columns):
+        if "symbol" not in df_scaled.columns:
+            raise ValueError("DataFrame 缺少 symbol 列，无法匹配分组参数")
+        sym = df_scaled["symbol"].iloc[0]
+        params = params.get(sym, {})
+
     for col, p in params.items():
         if col not in df_scaled.columns:
             continue
         arr = df_scaled[col].values.astype(float)
-        # 用训练时保存的 lower/upper 进行剪裁
         arr_clipped = np.clip(arr, p["lower"], p["upper"])
-        # 再用训练时的 mean/std 归一化
         df_scaled[col] = (arr_clipped - p["mean"]) / p["std"]
+
     return df_scaled
