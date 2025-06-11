@@ -2,6 +2,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from collections import Counter, deque
+import threading
 pd.set_option('future.no_silent_downcasting', True)
 
 class RobustSignalGenerator:
@@ -44,6 +45,9 @@ class RobustSignalGenerator:
 
         # 当前权重，初始与 base_weights 相同
         self.current_weights = self.base_weights.copy()
+
+        # 多线程访问历史数据时的互斥锁
+        self._lock = threading.Lock()
 
         # 初始化各因子对应的IC分数（均设为1，后续可动态更新）
         self.ic_scores = {k: 1 for k in self.base_weights.keys()}
@@ -143,7 +147,16 @@ class RobustSignalGenerator:
         lgb_model = model_dict["model"]
         train_cols = model_dict["features"]
 
-        row_data = {col: [features.get(col, 0)] for col in train_cols}
+        row_data = {}
+        missing_cols = []
+        for col in train_cols:
+            if col in features:
+                row_data[col] = [features[col]]
+            else:
+                row_data[col] = [0]
+                missing_cols.append(col)
+        if missing_cols:
+            print(f"[get_ai_score] 缺失特征列: {missing_cols}")
         X_df = pd.DataFrame(row_data)
         # === 这里加一行，强制所有特征为 float 类型，防止 dtype 报错 ===
         X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
@@ -588,7 +601,8 @@ class RobustSignalGenerator:
             oi_chg = open_interest.get('oi_chg')
             if oi_chg is not None:
                 fused_score *= 1 + 0.1 * oi_chg
-                self.oi_change_history.append(oi_chg)
+                with self._lock:
+                    self.oi_change_history.append(oi_chg)
                 th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_preds.get('1h'))
                 if oi_chg > th_oi:
                     fused_score *= 0.8
@@ -616,7 +630,8 @@ class RobustSignalGenerator:
             }
 
         # ===== 8. 把 fused_score 入历史，用于动态阈值计算 =====
-        self.history_scores.append(fused_score)
+        with self._lock:
+            self.history_scores.append(fused_score)
 
         # ===== 9. 极端行情保护 =====
         crowding_factor = 1.0
@@ -635,7 +650,7 @@ class RobustSignalGenerator:
             'vol_pred_4h': vol_preds.get('4h'),
             'vol_pred_d1': vol_preds.get('d1'),
             'oi_overheat': oi_overheat,
-            'oi_threshold': locals().get('th_oi'),
+            'oi_threshold': th_oi,
             'crowding_factor': crowding_factor,
         }
 
