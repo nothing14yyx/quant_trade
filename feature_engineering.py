@@ -77,8 +77,8 @@ class FeatureEngineer:
     @staticmethod
     def add_up_down_targets(
         df: pd.DataFrame,
-        threshold: float | str | None = 0.015,
-        shift_n: int = 3,
+        threshold: float | str | None = "balanced",
+        shift_n: int | str = "dynamic",
         vol_window: int = 24,
     ) -> pd.DataFrame:
         """生成涨跌与波动率等标签，无未来数据泄漏
@@ -87,44 +87,63 @@ class FeatureEngineer:
             - float：固定阈值
             - "auto": 使用 rolling mean 波动率 * 1.5
             - "quantile": 使用 rolling 80% 分位波动率
+            - "balanced": 使用全局分位并控制正样本在 45%~55%
             - None：等同于 "auto"
         """
-        close = df["close"]
-        fut_hi = close.shift(-1).rolling(shift_n, min_periods=1).max()
-        fut_lo = close.shift(-1).rolling(shift_n, min_periods=1).min()
 
-        if threshold in (None, "auto"):
-            vol = (
-                df.groupby("symbol")["close"]
-                .pct_change()
-                .abs()
-                .rolling(vol_window, min_periods=1)
-                .mean()
-            ) * 1.5
-            th = vol
-        elif threshold == "quantile":
-            th = (
-                df.groupby("symbol")["close"]
-                .pct_change()
-                .abs()
-                .rolling(vol_window, min_periods=1)
-                .quantile(0.8)
+        results = []
+        atr_col = next((c for c in df.columns if c.startswith("atr_pct")), None)
+        for sym, g in df.groupby("symbol", group_keys=False):
+            if shift_n == "dynamic" and atr_col is not None:
+                mean_atr = g[atr_col].mean()
+                n = 2 if mean_atr > 0.07 else 4
+            elif isinstance(shift_n, int):
+                n = shift_n
+            else:
+                n = 3
+
+            close = g["close"]
+            fut_hi = close.shift(-1).rolling(n, min_periods=1).max()
+            fut_lo = close.shift(-1).rolling(n, min_periods=1).min()
+
+            if threshold in (None, "auto"):
+                vol = (
+                    close.pct_change()
+                    .abs()
+                    .rolling(vol_window, min_periods=1)
+                    .mean()
+                ) * 1.5
+                th_up = th_down = vol
+            elif threshold == "quantile":
+                th = (
+                    close.pct_change()
+                    .abs()
+                    .rolling(vol_window, min_periods=1)
+                    .quantile(0.8)
+                )
+                th_up = th_down = th
+            elif threshold == "balanced":
+                chg_up = fut_hi / close - 1
+                chg_down = fut_lo / close - 1
+                th_up = pd.Series(chg_up.quantile(0.55), index=g.index)
+                th_down = pd.Series(chg_down.quantile(0.45), index=g.index)
+            else:
+                th_up = th_down = pd.Series(float(threshold), index=g.index)
+
+            g["target_up"] = ((fut_hi / close - 1) >= th_up).astype(float)
+            g["target_down"] = ((fut_lo / close - 1) <= th_down).astype(float)
+            g["future_volatility"] = (
+                close.pct_change()
+                .rolling(n)
+                .std()
+                .shift(-n)
             )
-        else:
-            th = pd.Series(float(threshold), index=df.index)
+            g["future_max_rise"] = fut_hi / close - 1
+            g["future_max_drawdown"] = fut_lo / close - 1
+            g.loc[g.tail(n).index, ["target_up", "target_down", "future_volatility"]] = np.nan
+            results.append(g)
 
-        df["target_up"] = ((fut_hi / close - 1) >= th).astype(float)
-        df["target_down"] = ((fut_lo / close - 1) <= -th).astype(float)
-        df["future_volatility"] = (
-            df.groupby("symbol")["close"].pct_change()
-            .rolling(shift_n)
-            .std()
-            .shift(-shift_n)
-        )
-        df["future_max_rise"] = fut_hi / close - 1
-        df["future_max_drawdown"] = fut_lo / close - 1
-        df.loc[df.tail(shift_n).index, ["target_up", "target_down", "future_volatility"]] = np.nan
-        return df
+        return pd.concat(results).sort_index()
 
     def get_symbols(self, intervals: tuple[str, str, str] = ("1h", "4h", "1d")) -> List[str]:
         """返回同时拥有 intervals 三周期数据的 symbol 列表。"""
