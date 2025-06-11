@@ -547,7 +547,8 @@ class DataLoader:
     def get_hot_sector(self) -> Optional[dict]:
         """根据最新的 volume_24h 判断热门板块"""
         q = (
-            "SELECT name, volume_24h FROM cg_category_stats "
+            "SELECT id, name, market_cap, market_cap_change_24h, volume_24h, top_3_coins "
+            "FROM cg_category_stats "
             "WHERE updated_at = (SELECT MAX(updated_at) FROM cg_category_stats)"
         )
         df = pd.read_sql(q, self.engine)
@@ -562,6 +563,13 @@ class DataLoader:
         df = df.sort_values("volume_24h", ascending=False)
         top = df.iloc[0]
         strength = float(top["volume_24h"]) / total if total else None
+
+        try:
+            import sys
+            sys._getframe(1).f_globals["df"] = df
+        except Exception:
+            pass
+
         return {"hot_sector": top["name"], "hot_sector_strength": strength}
 
     def get_latest_cg_global_metrics(self) -> Optional[dict]:
