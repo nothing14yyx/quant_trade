@@ -287,6 +287,10 @@ mfi_4h
 mfi_4h_isnan
 mfi_d1
 mfi_d1_isnan
+mom_15m_roll1h
+mom_15m_roll1h_std
+mom_5m_roll1h
+mom_5m_roll1h_std
 money_flow_ratio_1h
 money_flow_ratio_1h_isnan
 money_flow_ratio_4h

@@ -113,5 +113,10 @@
   "HOMEUSDT": "home",
   "EPTUSDT": "balance",
   "SEIUSDT": "sei-network",
-  "RENDERUSDT": "render-token"
+  "RENDERUSDT": "render-token",
+  "JTOUSDT": "jito-governance-token",
+  "RPLUSDT": "rocket-pool",
+  "SSVUSDT": "ssv-network",
+  "SUSHIUSDT": "sushi",
+  "USUALUSDT": "usual"
 }
