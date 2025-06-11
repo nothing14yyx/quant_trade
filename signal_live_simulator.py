@@ -243,6 +243,8 @@ def main_loop(interval_sec: int = 60):
             GROUP BY symbol
         """
         df_last_1h = pd.read_sql(sql, engine, parse_dates=["close_time"])
+        # ensure timezone-aware datetimes
+        df_last_1h["close_time"] = pd.to_datetime(df_last_1h["close_time"], utc=True)
 
         # 有币没有最新K线就跳过
         missing = set(symbols) - set(df_last_1h["symbol"].tolist())
