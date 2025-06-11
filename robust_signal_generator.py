@@ -652,6 +652,8 @@ class RobustSignalGenerator:
         vix_p = None
         if global_metrics is not None:
             vix_p = global_metrics.get('vix_proxy')
+        if vix_p is None and open_interest is not None:
+            vix_p = open_interest.get('vix_proxy')
 
         regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
         th = self.dynamic_threshold(
