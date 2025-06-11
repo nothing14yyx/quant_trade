@@ -280,7 +280,7 @@ def train_one(df_all: pd.DataFrame, features: list[str], tgt: str, model_path: P
 
         return float(np.mean(scores))
     study = optuna.create_study(direction="maximize", pruner=optuna.pruners.SuccessiveHalvingPruner())
-    study.optimize(objective, n_trials=80, show_progress_bar=False)
+    study.optimize(objective, n_trials=40, show_progress_bar=False)
 
     best_params = study.best_params
 
