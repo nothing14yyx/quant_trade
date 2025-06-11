@@ -57,6 +57,9 @@ raw_feats = {
     "1d": calc_features_raw(dfs_raw["1d"], "d1").reset_index(drop=True),
 }
 
+for df in raw_feats.values():
+    df["symbol"] = symbol
+
 # =================== 5. 初始化信号生成器 ===================
 model_paths = config["models"]
 feature_cols_1h = config["feature_cols"]["1h"]
