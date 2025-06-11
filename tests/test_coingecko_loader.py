@@ -171,7 +171,7 @@ def test_update_cg_category_stats(monkeypatch):
     assert len(df) == 1
 
 
-def test_get_hot_sector():
+def test_get_hot_sector_no_injection():
     engine = sqlalchemy.create_engine('sqlite:///:memory:')
     with engine.begin() as conn:
         conn.exec_driver_sql(
@@ -185,9 +185,13 @@ def test_get_hot_sector():
         )
     dl = make_dl(engine)
 
+    assert 'df' not in globals()
     hot = dl.get_hot_sector()
     assert hot == {'hot_sector': 'GameFi', 'hot_sector_strength': 200 / 300}
-    row = df.iloc[0]
+    assert 'df' not in globals()
+
+    df_db = pd.read_sql('cg_category_stats', engine)
+    row = df_db.sort_values('volume_24h', ascending=False).iloc[0]
     assert row['id'] == 'gamefi'
     assert row['name'] == 'GameFi'
     assert row['market_cap'] == 1000
