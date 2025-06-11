@@ -6,7 +6,7 @@ import pandas as pd
 
 def compute_robust_z_params(df: pd.DataFrame, cols: list) -> dict:
     """
-    计算训练集所有数值特征列的 1% / 99% 分位、均值和标准差，并返回一个 dict：
+    计算训练集所有数值特征列的 0.5% / 99.5% 分位、均值和标准差，并返回一个 dict：
     {
       "col1": {"lower": xx, "upper": xx, "mean": xx, "std": xx},
       "col2": {…}, …
@@ -15,8 +15,8 @@ def compute_robust_z_params(df: pd.DataFrame, cols: list) -> dict:
     params = {}
     for col in cols:
         arr = df[col].dropna().values
-        # ===== 从原来的 0.25%/99.75% 改为 1%/99% =====
-        lower, upper = np.nanpercentile(arr, [1, 99])
+        # ===== 从原来的 1%/99% 改为 0.5%/99.5%，更宽容地保留极值 =====
+        lower, upper = np.nanpercentile(arr, [0.5, 99.5])
         clipped = np.clip(arr, lower, upper)
         mu = float(np.nanmean(clipped))
         sigma = float(np.nanstd(clipped)) + 1e-6

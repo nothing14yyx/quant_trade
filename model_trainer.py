@@ -22,7 +22,7 @@ class TimeSeriesAwareSMOTE:
 
     def _resample_one(self, X, y, open_time):
         rng = np.random.RandomState(self.random_state)
-        minority = y.mode().index[y.value_counts().idxmin()]
+        minority = y.value_counts().idxmin()
         maj_count = (y != minority).sum()
         min_idx = np.where(y == minority)[0]
         deficit = maj_count - len(min_idx)
