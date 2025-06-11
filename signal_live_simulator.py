@@ -452,6 +452,7 @@ def main_loop(interval_sec: int = 60):
 
             gm = loader.get_latest_cg_global_metrics()
             oi = loader.get_latest_open_interest(sym)
+            ob = loader.get_latest_order_book_imbalance(sym)
 
             result = signal_generator.generate_signal(
                 feat_1h,
@@ -462,6 +463,7 @@ def main_loop(interval_sec: int = 60):
                 raw_features_d1=raw_feat_d1,
                 global_metrics=gm,
                 open_interest=oi,
+                order_book_imbalance=ob,
             )
             fused_score = result["score"]
 
@@ -521,6 +523,7 @@ def main_loop(interval_sec: int = 60):
 
             gm = loader.get_latest_cg_global_metrics()
             oi = loader.get_latest_open_interest(sym)
+            ob = loader.get_latest_order_book_imbalance(sym)
 
             result = signal_generator.generate_signal(
                 feat_1h,
@@ -532,6 +535,7 @@ def main_loop(interval_sec: int = 60):
                 raw_features_d1=raw_feat_d1,
                 global_metrics=gm,
                 open_interest=oi,
+                order_book_imbalance=ob,
             )
             record = {
                 "symbol": sym,
