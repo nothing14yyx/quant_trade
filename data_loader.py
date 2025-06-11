@@ -43,6 +43,16 @@ def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
     raise RuntimeError(f"Failed after {retries} retries for {fn.__qualname__}")
 
 
+def compute_vix_proxy(funding_rate: Optional[float], oi_chg: Optional[float]) -> Optional[float]:
+    """根据资金费率与持仓量变化计算简易波动率代理"""
+    if funding_rate is None or oi_chg is None:
+        return None
+    try:
+        return 0.5 * float(funding_rate) + 0.5 * float(oi_chg)
+    except Exception:
+        return None
+
+
 class DataLoader:
 
     _sentiment_cache: Optional[pd.DataFrame] = None
@@ -248,10 +258,18 @@ class DataLoader:
                 oi_chg = None
         else:
             oi_chg = None
+        fr_q = (
+            "SELECT fundingRate FROM funding_rate "
+            "WHERE symbol=:s ORDER BY fundingTime DESC LIMIT 1"
+        )
+        fr_df = pd.read_sql(text(fr_q), self.engine, params={"s": symbol})
+        funding_rate = float(fr_df["fundingRate"].iloc[0]) if not fr_df.empty else None
+        vix_p = compute_vix_proxy(funding_rate, oi_chg)
         return {
             "timestamp": latest["timestamp"],
             "open_interest": float(latest["open_interest"]),
             "oi_chg": float(oi_chg) if oi_chg is not None else None,
+            "vix_proxy": float(vix_p) if vix_p is not None else None,
         }
 
     # ───────────────────────────── Order Book ────────────────────────────
@@ -595,6 +613,9 @@ class DataLoader:
             "total_volume": float(latest["total_volume"]),
             "eth_dominance": float(latest["eth_dominance"]),
         }
+        oi = self.get_latest_open_interest("BTCUSDT")
+        if oi and oi.get("vix_proxy") is not None:
+            metrics["vix_proxy"] = oi["vix_proxy"]
         hot = self.get_hot_sector()
         if hot:
             metrics.update(hot)
