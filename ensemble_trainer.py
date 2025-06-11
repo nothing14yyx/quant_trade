@@ -50,8 +50,8 @@ def train_ensemble(df_all: pd.DataFrame, features: list[str], tgt: str, model_pa
     feat_use = features.copy()
     for col in features:
         nan_flag = f"{col}_isnan"
-        df_all[nan_flag] = df_all[col].isna().astype(int)
-        feat_use.append(nan_flag)
+        if nan_flag in df_all.columns:
+            feat_use.append(nan_flag)
 
     data = df_all.dropna(subset=[tgt])
     pos_ratio = (data[tgt] == 1).mean()
