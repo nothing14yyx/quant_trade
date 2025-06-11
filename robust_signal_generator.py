@@ -12,7 +12,7 @@ class RobustSignalGenerator:
       用于动态调整权重
     """
 
-    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=300, symbol_categories=None):
+    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=3000, symbol_categories=None):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         for period, path_dict in model_paths.items():
@@ -69,11 +69,11 @@ class RobustSignalGenerator:
 
     def __getattr__(self, name):
         if name in {"eth_dom_history", "btc_dom_history", "oi_change_history", "history_scores"}:
-            val = deque(maxlen=500)
+            val = deque(maxlen=3000)
             setattr(self, name, val)
             return val
         if name == "ic_history":
-            val = {k: deque(maxlen=500) for k in self.base_weights}
+            val = {k: deque(maxlen=3000) for k in self.base_weights}
             setattr(self, name, val)
             return val
         raise AttributeError(name)
@@ -284,16 +284,20 @@ class RobustSignalGenerator:
 
         return self.ic_scores
 
-    def dynamic_weight_update(self):
-        # IC驱动动态权重分配（基于IC滑窗均值）
+    def dynamic_weight_update(self, halflife=50):
+        """根据因子IC的指数加权均值更新权重"""
         if not hasattr(self, "ic_history"):
-            self.ic_history = {k: deque(maxlen=500) for k in self.base_weights}
+            self.ic_history = {k: deque(maxlen=3000) for k in self.base_weights}
 
         ic_avg = []
+        decay = np.log(0.5) / float(halflife)
         for k in self.ic_scores.keys():
             hist = self.ic_history.get(k)
             if hist:
-                ic_avg.append(np.nanmean(hist))
+                arr = np.array(hist, dtype=float)
+                weights = np.exp(decay * np.arange(len(arr))[::-1])
+                weights /= weights.sum()
+                ic_avg.append(float(np.nansum(arr * weights)))
             else:
                 ic_avg.append(self.ic_scores[k])
         ic_arr = np.array([max(0, v) for v in ic_avg])
@@ -320,12 +324,13 @@ class RobustSignalGenerator:
         pred_vol=None,
         pred_vol_4h=None,
         pred_vol_d1=None,
+        vix_proxy=None,
         base=0.10,
         min_thres=0.06,
         max_thres=0.25,
         regime=None,
     ):
-        """根据历史 ATR、ADX 以及预测波动率动态计算阈值"""
+        """根据历史 ATR、ADX、预测波动率及恐慌指数动态计算阈值"""
 
         thres = base
 
@@ -351,6 +356,10 @@ class RobustSignalGenerator:
 
         # ===== 资金费率贡献 =====
         thres += min(0.05, abs(funding) * 5)
+
+        # ===== 恐慌指数贡献 =====
+        if vix_proxy is not None:
+            thres += min(0.05, max(0.0, vix_proxy) * 0.05)
 
         # ===== 历史分位阈值补充 =====
         if len(self.history_scores) > 100:
@@ -392,14 +401,26 @@ class RobustSignalGenerator:
             return int(cnt.most_common(1)[0][0])  # 返回方向
         return 0
 
-    def crowding_protection(self, signal_list):
-        # 极端行情保护：若同方向信号占比过高，自动降权或减仓
-        pos_counts = Counter(signal_list)
-        total = sum(pos_counts.values())
-        for direction in [-1, 1]:
-            if total > 0 and pos_counts[direction] / total > self.max_same_direction_rate:
-                return direction
-        return 0
+    def crowding_protection(self, scores, current_score):
+        """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
+        if not scores:
+            return 1.0
+
+        arr = np.array(list(scores) + [current_score], dtype=float)
+        signs = np.sign(arr[:-1])
+        total = len(signs)
+        pos_counts = Counter(signs)
+        dominant_dir, cnt = pos_counts.most_common(1)[0]
+
+        factor = 1.0
+        if total > 0 and cnt / total > self.max_same_direction_rate and np.sign(current_score) == dominant_dir:
+            factor = 0.5
+
+        ranks = pd.Series(np.abs(arr)).rank(pct=True).iloc[-1]
+        if ranks >= 0.9 and np.sign(current_score) == dominant_dir:
+            factor = min(factor, 0.7)
+
+        return factor
 
     def generate_signal(
         self,
@@ -594,10 +615,10 @@ class RobustSignalGenerator:
         self.history_scores.append(fused_score)
 
         # ===== 9. 极端行情保护 =====
+        crowding_factor = 1.0
         if all_scores_list is not None:
-            crowding_dir = self.crowding_protection(np.sign(all_scores_list))
-            if (crowding_dir != 0) and (np.sign(fused_score) == crowding_dir):
-                fused_score *= 0.5
+            crowding_factor = self.crowding_protection(all_scores_list, fused_score)
+            fused_score *= crowding_factor
 
         # ===== 10. 准备 details，用于回测与调试 =====
         details = {
@@ -611,6 +632,7 @@ class RobustSignalGenerator:
             'vol_pred_d1': vol_preds.get('d1'),
             'oi_overheat': oi_overheat,
             'oi_threshold': locals().get('th_oi'),
+            'crowding_factor': crowding_factor,
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
@@ -627,6 +649,10 @@ class RobustSignalGenerator:
         atr_d1 = raw_fd1.get('atr_pct_d1', features_d1.get('atr_pct_d1', 0)) if raw_fd1 else None
         adx_d1 = raw_fd1.get('adx_d1', features_d1.get('adx_d1', 0)) if raw_fd1 else None
 
+        vix_p = None
+        if global_metrics is not None:
+            vix_p = global_metrics.get('vix_proxy')
+
         regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
         th = self.dynamic_threshold(
             atr_1h,
@@ -639,6 +665,7 @@ class RobustSignalGenerator:
             pred_vol=vol_preds.get('1h'),
             pred_vol_4h=vol_preds.get('4h'),
             pred_vol_d1=vol_preds.get('d1'),
+            vix_proxy=vix_p,
             regime=regime,
         )
 
