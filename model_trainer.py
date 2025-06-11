@@ -181,12 +181,8 @@ def train_one(df_all: pd.DataFrame,
         if col not in df_all.columns:
             df_all[col] = np.nan
 
-    # 5-2  加入已有的缺失标记列
+    # 5-2  不再额外拼接 _isnan 标记列，避免重复
     feat_use = features.copy()
-    for col in features:
-        nan_flag = f"{col}_isnan"
-        if nan_flag in df_all.columns:
-            feat_use.append(nan_flag)
 
     # 5-3  过滤掉标签为 NaN 的行后再取训练集
     data = df_all.dropna(subset=[tgt])
@@ -196,24 +192,9 @@ def train_one(df_all: pd.DataFrame,
         X = data[feat_use]
         y = data[tgt]
     else:
-        pos_ratio = (data[tgt] == 1).mean()
-        if pos_ratio < 0.4 or pos_ratio > 0.6:
-            sampler = TimeSeriesAwareSMOTE(k_neighbors=2, random_state=42, group_freq="M")
-            res_X, res_y = sampler.fit_resample(data[feat_use], data[tgt], data["open_time"])  # type: ignore
-
-            # sampler.sample_indices_ 已按时间顺序排列
-            res_open_time = data["open_time"].iloc[sampler.sample_indices_].reset_index(drop=True)
-
-            res = res_X.copy()
-            res[tgt] = res_y
-            res["open_time"] = res_open_time
-            res = res.sort_values("open_time")
-
-            X = res[feat_use]
-            y = res[tgt]
-        else:
-            X = data[feat_use]
-            y = data[tgt]
+        # 分类任务直接使用原样本，后续通过 scale_pos_weight 处理不平衡
+        X = data[feat_use]
+        y = data[tgt]
 
     # 5-4  计算类别不平衡补偿
     if not regression:
@@ -284,8 +265,11 @@ def train_one(df_all: pd.DataFrame,
 
         return float(np.mean(scores))
 
-    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner())
-    study.optimize(objective, n_trials=50, show_progress_bar=False)
+    study = optuna.create_study(
+        direction="maximize",
+        pruner=optuna.pruners.SuccessiveHalvingPruner()
+    )
+    study.optimize(objective, n_trials=80, show_progress_bar=False)
     best_params = study.best_params
 
     if regression:
