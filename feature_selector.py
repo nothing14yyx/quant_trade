@@ -30,8 +30,8 @@ engine = create_engine(
 )
 
 TARGET = cfg.get("feature_selector", {}).get("target", "target_down")
-TOP_N  = cfg.get("feature_selector", {}).get("top_n", 12)
-MIN_COVER = 0.05          # <5% 非空 → 丢弃
+TOP_N  = cfg.get("feature_selector", {}).get("top_n", 30)
+MIN_COVER = 0.08          # <8% 非空 → 丢弃
 ENABLE_PCA = True
 PCA_COMPONENTS = 3
 N_SPLIT   = 5
@@ -98,7 +98,7 @@ for period, cols in feature_pool.items():
         print(f"样本太少（{len(subset)} < 800），跳过该周期。")
         continue
 
-    if ENABLE_PCA and len(keep_cols) > PCA_COMPONENTS:
+    if ENABLE_PCA and len(keep_cols) > 100:
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(subset[keep_cols].fillna(0))
         from sklearn.decomposition import PCA
