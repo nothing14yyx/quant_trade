@@ -254,6 +254,32 @@ class DataLoader:
             "oi_chg": float(oi_chg) if oi_chg is not None else None,
         }
 
+    # ───────────────────────────── Order Book ────────────────────────────
+    def update_order_book(self, symbol: str) -> None:
+        """抓取并保存深度快照 (前10档)"""
+        payload = _safe_retry(
+            lambda: self.client.futures_order_book(symbol=symbol, limit=10),
+            retries=self.retries,
+            backoff=self.backoff,
+        )
+        if not payload:
+            return
+        ts = pd.Timestamp.utcnow().tz_localize(None)
+        bids = json.dumps(payload.get("bids", []))
+        asks = json.dumps(payload.get("asks", []))
+        df = pd.DataFrame([
+            {"symbol": symbol, "timestamp": ts, "bids": bids, "asks": asks}
+        ])
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "REPLACE INTO order_book (symbol, timestamp, bids, asks) "
+                    "VALUES (:symbol,:timestamp,:bids,:asks)"
+                ),
+                df.to_dict("records"),
+            )
+        logger.info("[order_book] %s", symbol)
+
 
     # ───────────────────────────── CoinGecko 辅助数据 ──────────────────────
     CG_SEARCH_URL = "https://api.coingecko.com/api/v3/search"

@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS open_interest (
     PRIMARY KEY(symbol, timestamp)
 );
 
+CREATE TABLE IF NOT EXISTS order_book (
+    symbol VARCHAR(20),
+    timestamp DATETIME,
+    bids TEXT,
+    asks TEXT,
+    PRIMARY KEY(symbol, timestamp)
+);
+
 CREATE TABLE IF NOT EXISTS cg_market_data (
     symbol VARCHAR(20),
     timestamp DATETIME,
