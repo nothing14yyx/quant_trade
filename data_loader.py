@@ -564,12 +564,6 @@ class DataLoader:
         top = df.iloc[0]
         strength = float(top["volume_24h"]) / total if total else None
 
-        try:
-            import sys
-            sys._getframe(1).f_globals["df"] = df
-        except Exception:
-            pass
-
         return {"hot_sector": top["name"], "hot_sector_strength": strength}
 
     def get_latest_cg_global_metrics(self) -> Optional[dict]:
