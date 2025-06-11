@@ -194,9 +194,13 @@ class FeatureEngineer:
         return df
 
     def _add_missing_flags(self, df: pd.DataFrame, feat_cols: list) -> pd.DataFrame:
-        # 一次性生成所有 isna 标志列，消除碎片 warning
-        flags_df = df[feat_cols].isna().astype(int)
-        flags_df.columns = [f"{col}_isnan" for col in feat_cols]
+        """Forward fill within each symbol and optionally add isna flags."""
+
+        missing_ratio = df[feat_cols].isna().mean()
+        flag_cols = [c for c in feat_cols if 0 < missing_ratio[c] < 0.95]
+
+        flags_df = df[flag_cols].isna().astype(int)
+        flags_df.columns = [f"{col}_isnan" for col in flag_cols]
 
         df_filled = df.copy()
         if "symbol" in df_filled.columns:
@@ -217,7 +221,8 @@ class FeatureEngineer:
             "open_time", "open", "high", "low", "close", "volume", "close_time",
             "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
             "symbol", "target_up", "target_down",
-        ]
+        ] + FUTURE_COLS
+        df_all.drop(columns=[c for c in FUTURE_COLS if c in df_all.columns], inplace=True)
         other_cols = [c for c in df_all.columns if c not in base_cols]
         df_all = df_all[base_cols + other_cols]
 
@@ -247,7 +252,7 @@ class FeatureEngineer:
             scaler_params = load_scaler_params_from_json(str(self.scaler_path))
             df_scaled = apply_robust_z_with_params(df_all, scaler_params)
 
-        df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-15, 15)
+        df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-30, 30)
         df_final = self._add_missing_flags(df_scaled, feat_cols_all)
         df_final.drop(columns=[c for c in FUTURE_COLS if c in df_final.columns], inplace=True)
 
