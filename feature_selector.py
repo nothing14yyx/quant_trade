@@ -5,6 +5,7 @@
 #   2) 覆盖率过滤仅基于全表即可（保留原逻辑，但 orig_cols 中删掉无用列）
 #   3) 交叉验证改为 TimeSeriesSplit，避免随机分层导致未来泄露
 #   4) 在训练前剔除所有非数值列（尤其 datetime64），防止 LightGBM 报错
+#   5) 相关性阈值降至 0.90，并在此基础上计算 VIF，迭代剔除 VIF>10 的列
 
 import os, yaml, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
@@ -12,6 +13,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.inspection import permutation_importance
 import shap
 from sqlalchemy import create_engine
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
@@ -166,8 +168,22 @@ for period, cols in feature_pool.items():
     # 删除相关系数极高的特征，避免冗余
     corr = subset[cand_feats].corr().abs()
     upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
-    to_drop = [col for col in upper.columns if any(upper[col] > 0.95)]
-    final_feats = [f for f in cand_feats if f not in to_drop][:TOP_N]
+    to_drop = [col for col in upper.columns if any(upper[col] > 0.90)]
+    vif_feats = [f for f in cand_feats if f not in to_drop]
+
+    # 根据 VIF 进一步去除多重共线性
+    while True:
+        X_vif = subset[vif_feats].dropna()
+        vifs = [variance_inflation_factor(X_vif[vif_feats].values, i)
+                for i in range(len(vif_feats))]
+        max_vif = max(vifs)
+        if max_vif <= 10 or len(vif_feats) <= 1:
+            break
+        drop_idx = vifs.index(max_vif)
+        dropped = vif_feats.pop(drop_idx)
+        print(f"VIF {max_vif:.2f} -> 移除 {dropped}")
+
+    final_feats = vif_feats[:TOP_N]
 
     print(f"Top-{TOP_N} 特征：")
     for f in final_feats:

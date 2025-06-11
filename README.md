@@ -61,6 +61,9 @@ python backtester.py --recent-days 7
 同样地，`model_trainer.py` 在训练各周期模型时也会先过滤相应的
 时间行，确保 4h 与 1d 模型仅使用自身周期的数据。
 
+自 v2.11 起，`feature_selector.py` 将相关性阈值从 0.95 下调至 0.90，并在此基
+础上计算 VIF，若某列的 VIF 超过 10 会被迭代剔除。
+
 ## live_full_data 表
 
 `signal_live_simulator.py` 会持续将实时信号写入 `live_full_data`。自 v2.2
