@@ -8,7 +8,7 @@ TZ_SH = pytz.timezone("Asia/Shanghai")
 import pandas as pd
 import numpy as np
 import yaml
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import json
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,6 +34,20 @@ SYNC_SCHEDULE = {
     "4h": timedelta(hours=4),
     "1d": timedelta(days=1),
 }
+
+# ==== 每日因子 IC 更新相关设置 ====
+IC_UPDATE_MARGIN_MINUTES = 10  # 离 UTC0 的分钟数阈值
+IC_UPDATE_WINDOW = 1000        # 历史窗口长度
+IC_UPDATE_LOG = Path("data/ic_last_update.txt")
+
+try:
+    if IC_UPDATE_LOG.exists():
+        _txt = IC_UPDATE_LOG.read_text().strip()
+        LAST_IC_DATE = datetime.strptime(_txt, "%Y-%m-%d").date()
+    else:
+        LAST_IC_DATE = None
+except Exception:
+    LAST_IC_DATE = None
 
 
 def to_shanghai(dt):
@@ -174,6 +188,55 @@ def update_aux_data(loader: DataLoader, symbols: list[str]) -> None:
             except Exception as e:
                 print(f"[funding_rate 更新异常] {sym}: {e}")
 
+def load_recent_ic_data(symbols: list[str], window: int = IC_UPDATE_WINDOW) -> pd.DataFrame:
+    """读取近期历史数据并计算 1h 特征"""
+    dfs: list[pd.DataFrame] = []
+    for sym in symbols:
+        try:
+            df = pd.read_sql(
+                text(
+                    "SELECT open_time, open, high, low, close, volume, fg_index, funding_rate, \"cg_price\", \"cg_market_cap\", \"cg_total_volume\" "
+                    "FROM klines WHERE symbol=:sym AND `interval`='1h' ORDER BY open_time DESC LIMIT :lim"
+                ),
+                engine,
+                params={"sym": sym, "lim": window},
+                parse_dates=["open_time"],
+            )
+        except Exception as e:
+            print(f"[ic_data] 读取 {sym} 失败: {e}")
+            continue
+        if df.empty:
+            continue
+        df = df.sort_values("open_time")
+        feats = calc_features_raw(df, "1h")
+        feats["symbol"] = sym
+        feats["open_time"] = df["open_time"].values
+        feats["open"] = df["open"].values
+        feats["close"] = df["close"].values
+        dfs.append(feats)
+
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
+    return pd.DataFrame()
+
+def maybe_update_ic_scores(now_utc: datetime, symbols: list[str]) -> None:
+    """在接近 UTC0 时读取历史数据并更新因子 IC"""
+    global LAST_IC_DATE
+    if now_utc.hour == 0 and now_utc.minute < IC_UPDATE_MARGIN_MINUTES:
+        today = now_utc.date()
+        if LAST_IC_DATE == today:
+            return
+        df_recent = load_recent_ic_data(symbols)
+        if df_recent.empty:
+            return
+        try:
+            signal_generator.update_ic_scores(df_recent, group_by="symbol")
+            LAST_IC_DATE = today
+            IC_UPDATE_LOG.write_text(today.isoformat())
+            print(f"[IC] 因子 IC 已更新 {today}")
+        except Exception as e:
+            print(f"[IC] 更新失败: {e}")
+
 def upsert_df(df, table_name, engine, pk_cols):
     """将 DataFrame 的数据写入 MySQL（有主键冲突则更新）。"""
     if df.empty:
@@ -219,6 +282,9 @@ def main_loop(interval_sec: int = 60):
             engine,
         )
         symbols = df_symbols_ok["symbol"].tolist()
+
+        # 在 UTC0 附近更新因子 IC
+        maybe_update_ic_scores(now_utc, symbols)
 
         if not symbols:
             print(f"数据库没有任何币的1h K线（或都不足{HISTORY_LEN}条），等待...")
