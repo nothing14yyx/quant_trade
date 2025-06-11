@@ -37,6 +37,16 @@ CREATE TABLE sentiment (
     fg_index               DOUBLE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Order book snapshots (top 10 levels)
+CREATE TABLE order_book (
+    symbol    VARCHAR(20)  NOT NULL,
+    timestamp DATETIME(3)  NOT NULL,
+    bids      TEXT,
+    asks      TEXT,
+    PRIMARY KEY (symbol, timestamp),
+    INDEX idx_ts_ob (timestamp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE funding_rate (
     symbol          VARCHAR(32) NOT NULL,
     fundingTime     DATETIME    NOT NULL,
@@ -351,6 +361,7 @@ CREATE TABLE `live_top10_signals` (
 TRUNCATE TABLE klines;
 TRUNCATE TABLE sentiment;
 TRUNCATE TABLE funding_rate;
+TRUNCATE TABLE order_book;
 TRUNCATE TABLE open_interest;
 TRUNCATE TABLE cg_market_data;
 TRUNCATE TABLE cg_global_metrics;

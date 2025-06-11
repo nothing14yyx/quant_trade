@@ -19,7 +19,7 @@ from tqdm import tqdm
 from sqlalchemy import create_engine
 
 # 不再 import calc_features_full，而改为：
-from utils.helper import calc_features_raw  # pylint: disable=import-error
+from utils.helper import calc_features_raw, calc_order_book_features  # pylint: disable=import-error
 
 # Robust-z 参数持久化工具
 from utils.robust_scaler import (
@@ -146,6 +146,14 @@ class FeatureEngineer:
             return None
         return df.set_index("open_time").sort_index()
 
+    def load_order_book(self, symbol: str) -> Optional[pd.DataFrame]:
+        """读取指定合约的 order_book 快照"""
+        sql = "SELECT * FROM order_book WHERE symbol=%s ORDER BY timestamp"
+        df = pd.read_sql(sql, self.engine, params=(symbol,), parse_dates=["timestamp"])
+        if df.empty:
+            return None
+        return df
+
     def _add_missing_flags(self, df: pd.DataFrame, feat_cols: list) -> pd.DataFrame:
         # 一次性生成所有 isna 标志列，消除碎片 warning
         flags_df = df[feat_cols].isna().astype(int)
@@ -254,6 +262,17 @@ class FeatureEngineer:
             for feat in (f1h, f4h, f1d):
                 feat.reset_index(inplace=True)
                 feat.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
+
+            ob_df = self.load_order_book(sym)
+            if ob_df is not None and not ob_df.empty:
+                ob_feat = calc_order_book_features(ob_df)
+                ob_feat.reset_index(inplace=True)
+                f1h = pd.merge_asof(
+                    f1h.sort_values("open_time"),
+                    ob_feat.sort_values("open_time"),
+                    on="open_time",
+                    direction="backward",
+                )
 
             # ===== 修改开始：计算真实收盘时间并删掉多余 open_time =====
             f4h["close_time_4h"] = f4h["open_time"] + pd.Timedelta(hours=4) - pd.Timedelta(seconds=1)

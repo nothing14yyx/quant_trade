@@ -6,6 +6,7 @@ if not hasattr(np, "NaN"):
 
 import pandas as pd
 import pandas_ta as ta
+import json
 
 
 def _safe_ta(func, *args, index=None, cols=None, **kwargs):
@@ -305,3 +306,19 @@ def calc_features_full(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats = pd.concat([feats, flag_df], axis=1)
     feats = feats.fillna(0)
     return feats
+
+
+def calc_order_book_features(df: pd.DataFrame) -> pd.DataFrame:
+    """根据 order_book 快照计算买卖盘数量差比率"""
+    index = pd.to_datetime(df["timestamp"])
+    bid_sum = df["bids"].apply(
+        lambda x: sum(float(b[1]) for b in (x if isinstance(x, list) else json.loads(x)))
+    )
+    ask_sum = df["asks"].apply(
+        lambda x: sum(float(a[1]) for a in (x if isinstance(x, list) else json.loads(x)))
+    )
+    denom = (bid_sum + ask_sum).replace(0, np.nan)
+    imbalance = (bid_sum - ask_sum) / denom
+    df_out = pd.DataFrame({"bid_ask_imbalance": imbalance.values}, index=index)
+    df_out.index.name = "open_time"
+    return df_out
