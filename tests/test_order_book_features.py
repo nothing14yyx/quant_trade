@@ -6,6 +6,8 @@ import pytest
 
 from utils.helper import calc_order_book_features
 from feature_engineering import FeatureEngineer
+from data_loader import DataLoader
+import sqlalchemy
 
 
 def test_calc_order_book_features():
@@ -70,3 +72,24 @@ def test_merge_features_with_order_book(tmp_path):
     out_df = fe.out_df
     assert 'bid_ask_imbalance' in out_df.columns
     assert out_df['bid_ask_imbalance'].iloc[0] == pytest.approx((20-10)/30)
+
+
+def test_get_latest_order_book_imbalance():
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE order_book (symbol TEXT, timestamp TEXT, bids TEXT, asks TEXT, PRIMARY KEY(symbol, timestamp))"
+        )
+    dl = DataLoader.__new__(DataLoader)
+    dl.engine = engine
+    dl.retries = 1
+    dl.backoff = 0
+
+    ts = pd.Timestamp('2020-01-01 00:00:00')
+    bids = json.dumps([[1, 2]] * 10)
+    asks = json.dumps([[1, 1]] * 10)
+    df = pd.DataFrame({'symbol':['BTCUSDT'], 'timestamp':[ts], 'bids':[bids], 'asks':[asks]})
+    df.to_sql('order_book', engine, index=False, if_exists='append')
+
+    imbal = dl.get_latest_order_book_imbalance('BTCUSDT')
+    assert imbal == pytest.approx((20 - 10) / 30)

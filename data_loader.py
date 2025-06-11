@@ -17,6 +17,7 @@ from binance.exceptions import BinanceAPIException
 from sqlalchemy import create_engine, text, bindparam
 from sqlalchemy.exc import IntegrityError
 from utils.ratelimiter import RateLimiter  # 你的限速器
+from utils.helper import calc_order_book_features
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -297,6 +298,19 @@ class DataLoader:
                 df.to_dict("records"),
             )
         logger.info("[order_book] %s", symbol)
+
+    def get_latest_order_book_imbalance(self, symbol: str) -> Optional[float]:
+        """返回指定合约最近一次盘口失衡值"""
+        q = (
+            "SELECT timestamp, bids, asks FROM order_book "
+            "WHERE symbol=:s ORDER BY timestamp DESC LIMIT 1"
+        )
+        df = pd.read_sql(text(q), self.engine, params={"s": symbol})
+        if df.empty:
+            return None
+        feats = calc_order_book_features(df)
+        val = feats["bid_ask_imbalance"].iloc[0]
+        return float(val) if pd.notnull(val) else None
 
 
     # ───────────────────────────── CoinGecko 辅助数据 ──────────────────────
