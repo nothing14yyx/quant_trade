@@ -2,9 +2,61 @@
 # ----------------------------------------------------------------
 import os, yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
-from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
-from imblearn.over_sampling import RandomOverSampler
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.metrics import roc_auc_score, mean_absolute_error
+from sklearn.calibration import CalibratedClassifierCV
+
+import optuna
+from optuna.integration import LightGBMPruningCallback
 from sqlalchemy import create_engine
+
+# ---------- 自定义：只在过去样本内合成的 SMOTE ----------
+class TimeSeriesAwareSMOTE:
+    """在时间序列数据上执行 SMOTE，确保仅使用过去的少数类样本"""
+
+    def __init__(self, k_neighbors: int = 2, random_state: int | None = 42):
+        self.k_neighbors = k_neighbors
+        self.random_state = random_state
+        self.sample_indices_: list[int] | None = None
+
+    def fit_resample(self, X: pd.DataFrame, y: pd.Series, open_time: pd.Series):
+        rng = np.random.RandomState(self.random_state)
+        minority = y.mode().index[y.value_counts().idxmin()]
+        maj_count = (y != minority).sum()
+        min_idx = np.where(y == minority)[0]
+        maj_idx = np.where(y != minority)[0]
+        deficit = maj_count - len(min_idx)
+        if deficit <= 0:
+            self.sample_indices_ = np.arange(len(X))
+            return X, y
+
+        new_rows = []
+        new_times = []
+        sample_idx = list(range(len(X)))
+        for idx in min_idx:
+            prev_idx = min_idx[min_idx < idx]
+            if len(prev_idx) == 0:
+                continue
+            neighbor = rng.choice(prev_idx)
+            alpha = rng.rand()
+            row = X.iloc[idx] + alpha * (X.iloc[neighbor] - X.iloc[idx])
+            new_rows.append(row)
+            new_times.append(open_time.iloc[idx])
+            sample_idx.append(idx)
+            if len(new_rows) >= deficit:
+                break
+
+        if not new_rows:
+            self.sample_indices_ = np.arange(len(X))
+            return X, y
+
+        X_aug = pd.concat([X, pd.DataFrame(new_rows)], ignore_index=True)
+        y_aug = pd.concat([y, pd.Series([minority] * len(new_rows))], ignore_index=True)
+        time_aug = pd.concat([open_time, pd.Series(new_times)], ignore_index=True)
+
+        order = np.argsort(time_aug)
+        self.sample_indices_ = np.array(sample_idx)[order]
+        return X_aug.iloc[order].reset_index(drop=True), y_aug.iloc[order].reset_index(drop=True)
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
@@ -78,14 +130,12 @@ def train_one(df_all: pd.DataFrame,
     else:
         pos_ratio = (data[tgt] == 1).mean()
         if pos_ratio < 0.4 or pos_ratio > 0.6:
-            sampler = RandomOverSampler(random_state=42)
-            res_X, res_y = sampler.fit_resample(data[feat_use], data[tgt])
+            sampler = TimeSeriesAwareSMOTE(k_neighbors=2, random_state=42)
+            res_X, res_y = sampler.fit_resample(data[feat_use], data[tgt], data["open_time"])  # type: ignore
 
-            # 重采样后索引已重置，需要使用 sampler.sample_indices_ 对齐原始 open_time
-            sample_idx = sampler.sample_indices_
-            res_open_time = data["open_time"].iloc[sample_idx].reset_index(drop=True)
+            # sampler.sample_indices_ 已按时间顺序排列
+            res_open_time = data["open_time"].iloc[sampler.sample_indices_].reset_index(drop=True)
 
-            # 构造包含 open_time 的 DataFrame，按时间重新排序
             res = res_X.copy()
             res[tgt] = res_y
             res["open_time"] = res_open_time
@@ -101,50 +151,90 @@ def train_one(df_all: pd.DataFrame,
     if not regression:
         pos_weight = (y == 0).sum() / max((y == 1).sum(), 1)
 
-    # 5-5  随机搜索 + 时间序列交叉验证（此处不再传 early-stopping callbacks）
+    # 5-5  使用 Optuna + pruner 进行超参搜索
+
+    def objective(trial: optuna.Trial):
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 300, 900),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+            "num_leaves": trial.suggest_int("num_leaves", 31, 127),
+            "max_depth": trial.suggest_int("max_depth", -1, 20),
+            "min_child_samples": trial.suggest_int("min_child_samples", 20, 100),
+            "subsample": trial.suggest_float("subsample", 0.8, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+            "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 0.5),
+        }
+
+        scores = []
+        tscv = TimeSeriesSplit(n_splits=5)
+        for tr_idx, val_idx in tscv.split(X):
+            X_tr, X_val = X.iloc[tr_idx], X.iloc[val_idx]
+            y_tr, y_val = y.iloc[tr_idx], y.iloc[val_idx]
+
+            if regression:
+                model = lgb.LGBMRegressor(
+                    objective="regression",
+                    metric="l1",
+                    random_state=42,
+                    n_jobs=-1,
+                    verbosity=-1,
+                    **params,
+                )
+            else:
+                model = lgb.LGBMClassifier(
+                    objective="binary",
+                    metric="auc",
+                    random_state=42,
+                    n_jobs=-1,
+                    scale_pos_weight=pos_weight,
+                    verbosity=-1,
+                    **params,
+                )
+
+            model.fit(
+                X_tr,
+                y_tr,
+                eval_set=[(X_val, y_val)],
+                eval_metric="l1" if regression else "auc",
+                callbacks=[
+                    lgb.early_stopping(stopping_rounds=50, verbose=False),
+                    LightGBMPruningCallback(trial, "l1" if regression else "auc"),
+                ],
+            )
+
+            if regression:
+                preds = model.predict(X_val, num_iteration=model.best_iteration_)
+                score = -mean_absolute_error(y_val, preds)
+            else:
+                preds = model.predict_proba(X_val, num_iteration=model.best_iteration_)[:, 1]
+                score = roc_auc_score(y_val, preds)
+            scores.append(score)
+
+        return float(np.mean(scores))
+
+    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner())
+    study.optimize(objective, n_trials=20, show_progress_bar=False)
+    best_params = study.best_params
+
     if regression:
-        base = lgb.LGBMRegressor(
+        best = lgb.LGBMRegressor(
             objective="regression",
             metric="l1",
             random_state=42,
             n_jobs=-1,
             verbosity=-1,
+            **best_params,
         )
     else:
-        base = lgb.LGBMClassifier(
+        best = lgb.LGBMClassifier(
             objective="binary",
             metric="auc",
             random_state=42,
             n_jobs=-1,
             scale_pos_weight=pos_weight,
             verbosity=-1,
+            **best_params,
         )
-
-    param_grid = {
-        "n_estimators": [300, 600, 900],
-        "learning_rate": [0.01, 0.05, 0.1],
-        "num_leaves": [31, 63, 127],
-        "max_depth": [-1, 10, 20],
-        "min_child_samples": [20, 50, 100],
-        "subsample": [0.8, 0.9, 1.0],
-        "colsample_bytree": [0.6, 0.8, 1.0],
-        "reg_lambda": [0, 0.1, 0.5],
-    }
-
-    tscv = TimeSeriesSplit(n_splits=5)
-    search = RandomizedSearchCV(
-        estimator=base,
-        param_distributions=param_grid,
-        n_iter=12,
-        cv=tscv,
-        scoring="neg_mean_absolute_error" if regression else "roc_auc",
-        random_state=42,
-        verbose=1,
-        refit=True,
-    )
-    search.fit(X, y)
-
-    best = search.best_estimator_
 
     # 5-6  用最后 20% 样本做验证，重新训练并 early-stop
     cut = int(len(X) * 0.8)
@@ -162,18 +252,27 @@ def train_one(df_all: pd.DataFrame,
         ],
     )
 
+    feat_imp = getattr(best, "feature_importances_", None)
+
+    if not regression:
+        calibrator = CalibratedClassifierCV(best, method="isotonic", n_jobs=-1)
+        calibrator.fit(X_tr, y_tr)
+        best = calibrator
+
     # 5-7  保存模型与特征列
     model_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump({"model": best, "features": feat_use},
                 model_path, compress=3)
     score_label = "CV-MAE" if regression else "CV-AUC"
-    print(f"✔ Saved: {model_path.name}  ({score_label} {search.best_score_:.4f})")
+    print(
+        f"✔ Saved: {model_path.name}  ({score_label} {study.best_value:.4f})")
 
     # 5-8  打印前 15 个重要特征
-    imp = (pd.Series(best.feature_importances_, index=feat_use)
-             .sort_values(ascending=False)
-             .head(15))
-    print(imp.to_string())
+    if feat_imp is not None:
+        imp = (pd.Series(feat_imp, index=feat_use)
+                 .sort_values(ascending=False)
+                 .head(15))
+        print(imp.to_string())
 
 # ---------- 6. 周期 × 方向 × 符号 训练循环 ----------
 symbols = df["symbol"].unique() if train_by_symbol else [None]
