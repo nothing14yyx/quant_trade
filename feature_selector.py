@@ -114,7 +114,7 @@ for period, cols in feature_pool.items():
 
     if ENABLE_PCA and len(keep_cols) > 100:
         scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(subset[keep_cols].fillna(0))
+        X_scaled = scaler.fit_transform(subset[keep_cols])
         from sklearn.decomposition import PCA
         pca = PCA(n_components=PCA_COMPONENTS, random_state=42)
         comps = pca.fit_transform(X_scaled)
