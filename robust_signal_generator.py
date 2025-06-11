@@ -455,6 +455,7 @@ class RobustSignalGenerator:
         *,
         global_metrics=None,
         open_interest=None,
+        order_book_imbalance=None,
         symbol=None,
     ):
         """
@@ -467,6 +468,7 @@ class RobustSignalGenerator:
             - raw_features_4h: dict，可选，未标准化的 4h 特征；其中 atr_pct_4h 为实际
               比例（如 0.05 表示 5%），在计算止盈止损和指标计算时会优先使用
             - raw_features_d1: dict，可选，未标准化的 1d 特征
+            - order_book_imbalance: float，可选，L2 Order Book 的买卖盘差值比
             - symbol: str，可选，当前币种，如 'BTCUSDT'
         输出：
             一个 dict，包含 'signal'、'score'、'position_size'、'take_profit'、'stop_loss' 和 'details'
@@ -720,6 +722,9 @@ class RobustSignalGenerator:
             regime=regime,
         )
 
+        if order_book_imbalance is not None:
+            details['order_book_imbalance'] = float(order_book_imbalance)
+
         if abs(fused_score) < th:
             return {
                 'signal': 0,
@@ -729,6 +734,18 @@ class RobustSignalGenerator:
                 'stop_loss': None,
                 'details': details
             }
+
+        if order_book_imbalance is not None:
+            details['order_book_imbalance'] = float(order_book_imbalance)
+            if abs(order_book_imbalance) > 0.1 and np.sign(order_book_imbalance) != np.sign(fused_score):
+                return {
+                    'signal': 0,
+                    'score': fused_score,
+                    'position_size': 0.0,
+                    'take_profit': None,
+                    'stop_loss': None,
+                    'details': details,
+                }
 
         # ===== 12. 仓位大小按连续得分映射 =====
         abs_score = abs(fused_score)
