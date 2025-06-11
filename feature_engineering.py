@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
+from joblib import Parallel, delayed
 from sqlalchemy import create_engine
 
 # 不再 import calc_features_full，而改为：
@@ -295,11 +296,146 @@ class FeatureEngineer:
             msg = "追加写入" if append else "导出"
             print(f"✅ CSV 已{msg} → {self.merged_table_path}")
 
+    def _calc_symbol_features(self, sym: str) -> Optional[pd.DataFrame]:
+        """计算单个合约的所有特征并返回 DataFrame."""
+        df_1h = self.load_klines_db(sym, "1h")
+        df_4h = self.load_klines_db(sym, "4h")
+        df_1d = self.load_klines_db(sym, "1d")
+        try:
+            df_5m = self.load_klines_db(sym, "5m")
+        except Exception:
+            df_5m = None
+        try:
+            df_15m = self.load_klines_db(sym, "15m")
+        except Exception:
+            df_15m = None
+
+        if not all([df_1h is not None, df_4h is not None, df_1d is not None]):
+            return None
+        if len(df_1h) < 50 or len(df_4h) < 50 or len(df_1d) < 50:
+            return None
+
+        f1h = calc_features_raw(df_1h, "1h")
+        f4h = calc_features_raw(df_4h, "4h")
+        f1d = calc_features_raw(df_1d, "d1")
+        f5m = calc_features_raw(df_5m, "5m") if df_5m is not None else None
+        f15m = calc_features_raw(df_15m, "15m") if df_15m is not None else None
+
+        if f5m is not None:
+            chg5 = f5m["pct_chg1_5m"].shift(1)
+            f5m["mom_5m_roll1h"] = chg5.rolling(12, min_periods=1).mean()
+            f5m["mom_5m_roll1h_std"] = chg5.rolling(12, min_periods=1).std()
+            f5m = f5m[["mom_5m_roll1h", "mom_5m_roll1h_std"]]
+
+        if f15m is not None:
+            chg15 = f15m["pct_chg1_15m"].shift(1)
+            f15m["mom_15m_roll1h"] = chg15.rolling(4, min_periods=1).mean()
+            f15m["mom_15m_roll1h_std"] = chg15.rolling(4, min_periods=1).std()
+            f15m = f15m[["mom_15m_roll1h", "mom_15m_roll1h_std"]]
+
+        f1h = f1h.rename(columns={"close": "close_1h"})
+        f4h = f4h.rename(columns={"close": "close_4h"})
+        f1d = f1d.rename(columns={"close": "close_d1"})
+
+        feats_all = [f1h, f4h, f1d]
+        if f5m is not None:
+            feats_all.append(f5m)
+        if f15m is not None:
+            feats_all.append(f15m)
+        for feat in feats_all:
+            feat.reset_index(inplace=True)
+            feat.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
+
+        ob_df = self.load_order_book(sym)
+        if ob_df is not None and not ob_df.empty:
+            ob_feat = calc_order_book_features(ob_df)
+            ob_feat.reset_index(inplace=True)
+            f1h = pd.merge_asof(
+                f1h.sort_values("open_time"),
+                ob_feat.sort_values("open_time"),
+                on="open_time",
+                direction="backward",
+            )
+
+        f4h["close_time_4h"] = f4h["open_time"] + pd.Timedelta(hours=4) - pd.Timedelta(seconds=1)
+        f1d["close_time_d1"] = f1d["open_time"] + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        f4h = f4h.drop(columns=["open_time"])
+        f1d = f1d.drop(columns=["open_time"])
+
+        merged = pd.merge_asof(
+            f1h.sort_values("open_time"),
+            f4h.sort_values("close_time_4h"),
+            left_on="open_time",
+            right_on="close_time_4h",
+            direction="backward",
+        )
+        merged = pd.merge_asof(
+            merged.sort_values("open_time"),
+            f1d.sort_values("close_time_d1"),
+            left_on="open_time",
+            right_on="close_time_d1",
+            direction="backward",
+        )
+        if f5m is not None:
+            merged = pd.merge_asof(
+                merged.sort_values("open_time"),
+                f5m.sort_values("open_time"),
+                on="open_time",
+                direction="backward",
+            )
+        if f15m is not None:
+            merged = pd.merge_asof(
+                merged.sort_values("open_time"),
+                f15m.sort_values("open_time"),
+                on="open_time",
+                direction="backward",
+            )
+
+        merged["close_spread_1h_4h"] = merged["close_1h"] - merged["close_4h"]
+        merged["close_spread_1h_d1"] = merged["close_1h"] - merged["close_d1"]
+        merged["ma_ratio_1h_4h"] = merged["sma_10_1h"] / merged["sma_10_4h"].replace(0, np.nan)
+        merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(0, np.nan)
+        merged["ma_ratio_4h_d1"] = merged["sma_10_4h"] / merged["sma_10_d1"].replace(0, np.nan)
+        merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged["atr_pct_4h"].replace(0, np.nan)
+        merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged["bb_width_4h"].replace(0, np.nan)
+        merged["rsi_diff_1h_4h"] = merged["rsi_1h"] - merged["rsi_4h"]
+        merged["rsi_diff_1h_d1"] = merged["rsi_1h"] - merged["rsi_d1"]
+        merged["rsi_diff_4h_d1"] = merged["rsi_4h"] - merged["rsi_d1"]
+        merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
+        merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
+        merged["macd_hist_4h_mul_bb_width_1h"] = merged["macd_hist_4h"] * merged["bb_width_1h"]
+        merged["rsi_1h_mul_vol_ma_ratio_4h"] = merged["rsi_1h"] * merged["vol_ma_ratio_4h"]
+        merged["macd_hist_1h_mul_bb_width_4h"] = merged["macd_hist_1h"] * merged["bb_width_4h"]
+        merged["vol_ratio_1h_4h"] = merged["vol_ma_ratio_1h"] / merged["vol_ma_ratio_4h"].replace(0, np.nan)
+        merged["vol_ratio_4h_d1"] = merged["vol_ma_ratio_4h"] / merged["vol_ma_ratio_d1"].replace(0, np.nan)
+
+        raw = df_1h.reset_index()
+        out = raw.merge(
+            merged,
+            on="open_time",
+            how="left",
+            suffixes=("", "_feat"),
+        )
+
+        out["symbol"] = sym
+        out["hour_of_day"] = out["open_time"].dt.hour.astype(float)
+        out["day_of_week"] = out["open_time"].dt.dayofweek.astype(float)
+        out = self.add_up_down_targets(out)
+
+        na_cols = out.columns[out.isna().all()]
+        if len(na_cols):
+            out.drop(columns=na_cols, inplace=True)
+
+        if out.shape[1] > 0:
+            return out
+        return None
+
     def merge_features(
         self,
         topn: int | None = None,
         save_to_db: bool = False,
         batch_size: int | None = None,
+        n_jobs: int = 1,
     ) -> None:
         symbols = self.get_symbols(("1h", "4h", "1d", "5m", "15m"))
         symbols = symbols[: (topn or self.topn)]
@@ -307,147 +443,15 @@ class FeatureEngineer:
         all_dfs: list[pd.DataFrame] = []
         final_cols: set[str] = set()
         append = False
-        for sym in tqdm(symbols, desc="Calc features"):
-            # 1. 先拉取各周期数据
-            df_1h = self.load_klines_db(sym, "1h")
-            df_4h = self.load_klines_db(sym, "4h")
-            df_1d = self.load_klines_db(sym, "1d")
-            try:
-                df_5m = self.load_klines_db(sym, "5m")
-            except Exception:
-                df_5m = None
-            try:
-                df_15m = self.load_klines_db(sym, "15m")
-            except Exception:
-                df_15m = None
-            if not all([df_1h is not None, df_4h is not None, df_1d is not None]):
+        if n_jobs > 1:
+            results = Parallel(n_jobs=n_jobs)(delayed(self._calc_symbol_features)(sym) for sym in tqdm(symbols, desc="Calc features"))
+        else:
+            results = [self._calc_symbol_features(sym) for sym in tqdm(symbols, desc="Calc features")]
+
+        for out in results:
+            if out is None:
                 continue
-
-            # 2. 如果某个周期数据不足以计算所有指标（ema50 需要至少 50 条），则跳过
-            if len(df_1h) < 50 or len(df_4h) < 50 or len(df_1d) < 50:
-                continue
-
-            # 3. 计算各周期“原始”特征（不做剪裁/归一化）
-            f1h = calc_features_raw(df_1h, "1h")
-            f4h = calc_features_raw(df_4h, "4h")
-            f1d = calc_features_raw(df_1d, "d1")
-            f5m = calc_features_raw(df_5m, "5m") if df_5m is not None else None
-            f15m = calc_features_raw(df_15m, "15m") if df_15m is not None else None
-
-            if f5m is not None:
-                f5m["mom_5m_roll1h"] = f5m["pct_chg1_5m"].rolling(12, min_periods=1).mean()
-                f5m["mom_5m_roll1h_std"] = f5m["pct_chg1_5m"].rolling(12, min_periods=1).std()
-                f5m = f5m[["mom_5m_roll1h", "mom_5m_roll1h_std"]]
-
-            if f15m is not None:
-                f15m["mom_15m_roll1h"] = f15m["pct_chg1_15m"].rolling(4, min_periods=1).mean()
-                f15m["mom_15m_roll1h_std"] = f15m["pct_chg1_15m"].rolling(4, min_periods=1).std()
-                f15m = f15m[["mom_15m_roll1h", "mom_15m_roll1h_std"]]
-
-            # 4. 将各周期特征表中的 close 重命名，避免与 raw.close 冲突
-            f1h = f1h.rename(columns={"close": "close_1h"})
-            f4h = f4h.rename(columns={"close": "close_4h"})
-            f1d = f1d.rename(columns={"close": "close_d1"})
-
-            # 5. 重命名索引列“index”为“open_time”，以便 merge_asof
-            feats_all = [f1h, f4h, f1d]
-            if f5m is not None:
-                feats_all.append(f5m)
-            if f15m is not None:
-                feats_all.append(f15m)
-            for feat in feats_all:
-                feat.reset_index(inplace=True)
-                feat.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
-
-            ob_df = self.load_order_book(sym)
-            if ob_df is not None and not ob_df.empty:
-                ob_feat = calc_order_book_features(ob_df)
-                ob_feat.reset_index(inplace=True)
-                f1h = pd.merge_asof(
-                    f1h.sort_values("open_time"),
-                    ob_feat.sort_values("open_time"),
-                    on="open_time",
-                    direction="backward",
-                )
-
-            # ===== 修改开始：计算真实收盘时间并删掉多余 open_time =====
-            f4h["close_time_4h"] = f4h["open_time"] + pd.Timedelta(hours=4) - pd.Timedelta(seconds=1)
-            f1d["close_time_d1"] = f1d["open_time"] + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-            f4h = f4h.drop(columns=["open_time"])
-            f1d = f1d.drop(columns=["open_time"])
-            # ===== 修改结束 =====
-
-            # 6. merge_asof 对齐 1h→4h→1d：务必对齐到已经收盘的那根 K 线
-            merged = pd.merge_asof(
-                f1h.sort_values("open_time"),
-                f4h.sort_values("close_time_4h"),
-                left_on="open_time",
-                right_on="close_time_4h",
-                direction="backward",
-            )
-            merged = pd.merge_asof(
-                merged.sort_values("open_time"),
-                f1d.sort_values("close_time_d1"),
-                left_on="open_time",
-                right_on="close_time_d1",
-                direction="backward",
-            )
-            if f5m is not None:
-                merged = pd.merge_asof(
-                    merged.sort_values("open_time"),
-                    f5m.sort_values("open_time"),
-                    on="open_time",
-                    direction="backward",
-                )
-            if f15m is not None:
-                merged = pd.merge_asof(
-                    merged.sort_values("open_time"),
-                    f15m.sort_values("open_time"),
-                    on="open_time",
-                    direction="backward",
-                )
-
-            # --- 跨周期衍生特征 ---
-            merged["close_spread_1h_4h"] = merged["close_1h"] - merged["close_4h"]
-            merged["close_spread_1h_d1"] = merged["close_1h"] - merged["close_d1"]
-            merged["ma_ratio_1h_4h"] = merged["sma_10_1h"] / merged["sma_10_4h"].replace(0, np.nan)
-            merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(0, np.nan)
-            merged["ma_ratio_4h_d1"] = merged["sma_10_4h"] / merged["sma_10_d1"].replace(0, np.nan)
-            merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged["atr_pct_4h"].replace(0, np.nan)
-            merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged["bb_width_4h"].replace(0, np.nan)
-            merged["rsi_diff_1h_4h"] = merged["rsi_1h"] - merged["rsi_4h"]
-            merged["rsi_diff_1h_d1"] = merged["rsi_1h"] - merged["rsi_d1"]
-            merged["rsi_diff_4h_d1"] = merged["rsi_4h"] - merged["rsi_d1"]
-            merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
-            merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
-            merged["macd_hist_4h_mul_bb_width_1h"] = merged["macd_hist_4h"] * merged["bb_width_1h"]
-            merged["rsi_1h_mul_vol_ma_ratio_4h"] = merged["rsi_1h"] * merged["vol_ma_ratio_4h"]
-            merged["macd_hist_1h_mul_bb_width_4h"] = merged["macd_hist_1h"] * merged["bb_width_4h"]
-            merged["vol_ratio_1h_4h"] = merged["vol_ma_ratio_1h"] / merged["vol_ma_ratio_4h"].replace(0, np.nan)
-            merged["vol_ratio_4h_d1"] = merged["vol_ma_ratio_4h"] / merged["vol_ma_ratio_d1"].replace(0, np.nan)
-
-            # 7. 将原始 1h K 线回拼回 merged，打上 target_up/target_down
-            raw = df_1h.reset_index()  # raw["open_time"] 是 datetime64[ns]
-
-            out = raw.merge(
-                merged,
-                on="open_time",
-                how="left",
-                suffixes=("", "_feat")
-            )
-
-            out["symbol"] = sym
-            out["hour_of_day"] = out["open_time"].dt.hour.astype(float)
-            out["day_of_week"] = out["open_time"].dt.dayofweek.astype(float)
-            out = self.add_up_down_targets(out)
-
-            # 8. 删除完全为 NaN 的列
-            na_cols = out.columns[out.isna().all()]
-            if len(na_cols):
-                out.drop(columns=na_cols, inplace=True)
-
-            if out.shape[1] > 0:
-                all_dfs.append(out)
+            all_dfs.append(out)
 
             if batch_size and batch_size > 0 and len(all_dfs) >= batch_size:
                 df_final, other_cols = self._finalize_batch(all_dfs)
