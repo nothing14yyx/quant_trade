@@ -80,6 +80,10 @@ class RobustSignalGenerator:
             val = {k: deque(maxlen=3000) for k in self.base_weights}
             setattr(self, name, val)
             return val
+        if name == "_lock":
+            val = threading.Lock()
+            setattr(self, name, val)
+            return val
         raise AttributeError(name)
 
     @staticmethod
@@ -597,6 +601,7 @@ class RobustSignalGenerator:
 
                 fused_score *= 1 + 0.05 * hot * corr
         oi_overheat = False
+        th_oi = None
         if open_interest is not None:
             oi_chg = open_interest.get('oi_chg')
             if oi_chg is not None:
