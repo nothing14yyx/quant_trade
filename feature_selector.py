@@ -6,6 +6,7 @@
 #   3) 交叉验证改为 TimeSeriesSplit，避免随机分层导致未来泄露
 #   4) 在训练前剔除所有非数值列（尤其 datetime64），防止 LightGBM 报错
 #   5) 相关性阈值降至 0.90，并在此基础上计算 VIF，迭代剔除 VIF>10 的列
+#      (VIF 计算时若数据行数太多，先抽样加速)
 
 import os, yaml, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
@@ -31,6 +32,7 @@ TARGET = cfg.get("feature_selector", {}).get("target", "target_down")
 TOP_N  = cfg.get("feature_selector", {}).get("top_n", 12)
 MIN_COVER = 0.10          # <10% 非空 → 丢弃
 N_SPLIT   = 5
+MAX_VIF_SAMPLE = 10000    # 计算 VIF 时最多抽样的行数
 
 # ---------- 1. 取特征大表 ----------
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time","close_time"])
@@ -174,6 +176,8 @@ for period, cols in feature_pool.items():
     # 根据 VIF 进一步去除多重共线性
     while True:
         X_vif = subset[vif_feats].dropna()
+        if len(X_vif) > MAX_VIF_SAMPLE:
+            X_vif = X_vif.sample(MAX_VIF_SAMPLE, random_state=42)
         vifs = [variance_inflation_factor(X_vif[vif_feats].values, i)
                 for i in range(len(vif_feats))]
         max_vif = max(vifs)
