@@ -47,7 +47,7 @@ def calc_mfi_np(high, low, close, volume, window=14):
     sum_pmf = pd.Series(pmf).rolling(window).sum().to_numpy()
     sum_nmf = pd.Series(nmf).rolling(window).sum().to_numpy()
     ratio = sum_pmf / (sum_nmf + 1e-12)
-    mfi = 100 * sum_pmf / (sum_pmf + sum_nmf)
+    mfi = np.divide(100 * sum_pmf, sum_pmf + sum_nmf + 1e-12)
     return ratio, mfi
 
 
