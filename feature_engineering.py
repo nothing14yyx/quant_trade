@@ -30,6 +30,12 @@ from utils.robust_scaler import (
 )
 from utils.feature_health import health_check, apply_health_check_df
 
+# Future-related columns to drop for leakage prevention
+FUTURE_COLS = [
+    "future_volatility",
+    "future_max_rise",
+    "future_max_drawdown",
+]
 
 class FeatureEngineer:
     """多周期特征工程生成器 (1h → 4h → 1d)。
@@ -191,8 +197,16 @@ class FeatureEngineer:
         # 一次性生成所有 isna 标志列，消除碎片 warning
         flags_df = df[feat_cols].isna().astype(int)
         flags_df.columns = [f"{col}_isnan" for col in feat_cols]
+
         df_filled = df.copy()
-        df_filled[feat_cols] = df_filled[feat_cols].ffill().fillna(0.0)
+        if "symbol" in df_filled.columns:
+            df_filled[feat_cols] = (
+                df_filled.groupby("symbol", group_keys=False)[feat_cols].ffill()
+            )
+        else:
+            df_filled[feat_cols] = df_filled[feat_cols].ffill()
+        df_filled[feat_cols] = df_filled[feat_cols].fillna(0.0)
+
         df_out = pd.concat([df_filled, flags_df], axis=1)
         return df_out
 
@@ -235,6 +249,7 @@ class FeatureEngineer:
 
         df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-15, 15)
         df_final = self._add_missing_flags(df_scaled, feat_cols_all)
+        df_final.drop(columns=[c for c in FUTURE_COLS if c in df_final.columns], inplace=True)
 
         final_other_cols = [c for c in df_final.columns if c not in base_cols]
         return df_final, final_other_cols

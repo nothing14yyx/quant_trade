@@ -2,13 +2,25 @@
 # ----------------------------------------------------------------
 import os, yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score, mean_absolute_error
-from sklearn.calibration import CalibratedClassifierCV
+
 
 import optuna
 from lightgbm.callback import CallbackEnv
 from sqlalchemy import create_engine
+
+
+def forward_chain_split(n_samples: int, n_splits: int = 5, gap: int = 0):
+    """Yield train and validation indices in a forward chaining manner."""
+    fold_size = n_samples // (n_splits + 1)
+    indices = np.arange(n_samples)
+    for i in range(n_splits):
+        train_end = fold_size * (i + 1)
+        val_start = train_end + gap
+        val_end = val_start + fold_size
+        if val_end > n_samples:
+            val_end = n_samples
+        yield indices[:train_end], indices[val_start:val_end]
 
 # ---------- 自定义：只在过去样本内合成的 SMOTE ----------
 class TimeSeriesAwareSMOTE:
@@ -169,12 +181,12 @@ def train_one(df_all: pd.DataFrame,
         if col not in df_all.columns:
             df_all[col] = np.nan
 
-    # 5-2  生成 NaN 标记列，并把标志加入特征列表
+    # 5-2  加入已有的缺失标记列
     feat_use = features.copy()
     for col in features:
         nan_flag = f"{col}_isnan"
-        df_all[nan_flag] = df_all[col].isna().astype(int)
-        feat_use.append(nan_flag)
+        if nan_flag in df_all.columns:
+            feat_use.append(nan_flag)
 
     # 5-3  过滤掉标签为 NaN 的行后再取训练集
     data = df_all.dropna(subset=[tgt])
@@ -222,8 +234,8 @@ def train_one(df_all: pd.DataFrame,
         }
 
         scores = []
-        tscv = TimeSeriesSplit(n_splits=5)
-        for fold_idx, (tr_idx, val_idx) in enumerate(tscv.split(X)):
+        fcv = forward_chain_split(len(X), n_splits=5, gap=50)
+        for fold_idx, (tr_idx, val_idx) in enumerate(fcv):
             X_tr, X_val = X.iloc[tr_idx], X.iloc[val_idx]
             y_tr, y_val = y.iloc[tr_idx], y.iloc[val_idx]
 
@@ -273,7 +285,7 @@ def train_one(df_all: pd.DataFrame,
         return float(np.mean(scores))
 
     study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner())
-    study.optimize(objective, n_trials=20, show_progress_bar=False)
+    study.optimize(objective, n_trials=50, show_progress_bar=False)
     best_params = study.best_params
 
     if regression:
@@ -313,11 +325,6 @@ def train_one(df_all: pd.DataFrame,
     )
 
     feat_imp = getattr(best, "feature_importances_", None)
-
-    if not regression:
-        calibrator = CalibratedClassifierCV(best, method="isotonic", n_jobs=-1)
-        calibrator.fit(X_tr, y_tr)
-        best = calibrator
 
     # 5-7  保存模型与特征列
     model_path.parent.mkdir(parents=True, exist_ok=True)
