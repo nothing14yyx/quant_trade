@@ -19,7 +19,7 @@ mysql:
 data_loader:
   topn: 100             # 获取成交额排名前N的合约
   interval: "1h"       # 主周期K线
-  aux_interval: ["4h", "1d"]   # 辅助周期K线
+  aux_interval: ["5m", "15m", "4h", "1d"]   # 辅助周期K线
   start:  # 起始日期 例如"2024-06-01" 默认获取一年
   end:     # 结束日期
   cache_dir: "data/klines"
@@ -83,6 +83,10 @@ feature_cols:
     - cg_market_cap_roc_1h
     - cg_total_volume_roc_1h
     - price_ratio_cg_1h
+    - mom_5m_roll1h
+    - mom_5m_roll1h_std
+    - mom_15m_roll1h
+    - mom_15m_roll1h_std
     # 时间/节奏
     - hour_of_day
     - day_of_week
