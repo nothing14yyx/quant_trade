@@ -31,7 +31,16 @@ engine = create_engine(
 
 TARGET = cfg.get("feature_selector", {}).get("target", "target_down")
 TOP_N  = cfg.get("feature_selector", {}).get("top_n", 30)
-BLACKLIST = cfg.get("feature_selector", {}).get("blacklist", [])
+
+# 与 FeatureEngineer 保持同步的未来字段列表，避免选入泄漏特征
+FUTURE_COLS = [
+    "future_volatility",
+    "future_max_rise",
+    "future_max_drawdown",
+]
+
+# 黑名单中默认加入 FUTURE_COLS，若 config 中已包含则去重
+BLACKLIST = list({*cfg.get("feature_selector", {}).get("blacklist", []), *FUTURE_COLS})
 MIN_COVER = 0.08          # <8% 非空 → 丢弃
 ENABLE_PCA = True
 PCA_COMPONENTS = 3
@@ -44,7 +53,7 @@ df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time","clo
 orig_cols = {
     "open_time", "open", "high", "low", "close", "volume", "close_time",
     "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
-    "symbol", TARGET  # 去掉 interval/ignore/target_up/target_down
+    "symbol", TARGET, *FUTURE_COLS  # 去掉 interval/ignore/target_up/target_down
 }
 all_features = [c for c in df.columns if c not in orig_cols and c not in BLACKLIST]
 
