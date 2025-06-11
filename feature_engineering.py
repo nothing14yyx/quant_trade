@@ -45,7 +45,10 @@ class FeatureEngineer:
     """
 
     def __init__(self, config_path: str | os.PathLike = "utils/config.yaml") -> None:
-        with open(config_path, "r", encoding="utf-8") as f:
+        path = Path(config_path)
+        if not path.is_absolute() and not path.is_file():
+            path = Path(__file__).resolve().parent / path
+        with open(path, "r", encoding="utf-8") as f:
             self.cfg = yaml.safe_load(f) or {}
 
         # MySQL 连接配置
