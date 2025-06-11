@@ -6,6 +6,9 @@ from collections import deque
 
 from robust_signal_generator import RobustSignalGenerator
 
+def compute_vix_proxy(fr, oi):
+    return 0.5 * fr + 0.5 * oi
+
 
 def make_dummy_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
@@ -72,6 +75,14 @@ def test_dynamic_threshold_with_vix():
     rsg = make_dummy_rsg()
     base_th = rsg.dynamic_threshold(0.02, 25)
     th = rsg.dynamic_threshold(0.02, 25, vix_proxy=1.0)
+    assert th > base_th
+
+
+def test_dynamic_threshold_with_computed_vix():
+    rsg = make_dummy_rsg()
+    proxy = compute_vix_proxy(0.02, 0.04)
+    base_th = rsg.dynamic_threshold(0.02, 25)
+    th = rsg.dynamic_threshold(0.02, 25, vix_proxy=proxy)
     assert th > base_th
 
 
