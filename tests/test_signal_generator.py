@@ -14,7 +14,7 @@ def make_dummy_rsg():
 
     rsg.symbol_categories = {}
 
-    rsg.max_same_direction_rate = 0.6
+    rsg.max_same_direction_rate = 0.9
     rsg.base_weights = {
         'ai': 0.2, 'trend': 0.2, 'momentum': 0.2,
         'volatility': 0.2, 'volume': 0.1,
@@ -68,6 +68,13 @@ def test_dynamic_threshold_multi_period():
     assert th3 == pytest.approx(0.2175)
 
 
+def test_dynamic_threshold_with_vix():
+    rsg = make_dummy_rsg()
+    base_th = rsg.dynamic_threshold(0.02, 25)
+    th = rsg.dynamic_threshold(0.02, 25, vix_proxy=1.0)
+    assert th > base_th
+
+
 def test_consensus_check():
     rsg = make_dummy_rsg()
     assert rsg.consensus_check(0.2, 0.3, 0.1) == 1
@@ -77,8 +84,10 @@ def test_consensus_check():
 
 def test_crowding_protection():
     rsg = make_dummy_rsg()
-    assert rsg.crowding_protection([1, 1, 1, 0, -1]) == 0
-    assert rsg.crowding_protection([1, 1, -1, -1]) == 0
+    factor = rsg.crowding_protection([0.9, 0.8, 0.85, -0.2], 0.95)
+    assert factor == pytest.approx(0.7)
+    factor2 = rsg.crowding_protection([0.1, -0.2], 0.15)
+    assert factor2 == pytest.approx(1.0)
 
 
 def test_generate_signal_raw_atr():
