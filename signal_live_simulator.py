@@ -215,6 +215,17 @@ def main_loop(interval_sec: int = 60):
             time.sleep(interval_sec)
             continue
 
+        # 如果上一根1h K线时间已知且尚未到达下一根K线收盘时间，直接等待
+        if last_1h_kline_time is not None:
+            next_kline_time = last_1h_kline_time + timedelta(hours=1)
+            if now_utc < next_kline_time:
+                waiting_local = datetime.now(TZ_SH)
+                print(
+                    f"无新1h K线，等待... {waiting_local.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                time.sleep(interval_sec)
+                continue
+
         # 2. 更新其他指标（FG指数、CoinGecko 等）
         update_aux_data(loader, symbols)
 
