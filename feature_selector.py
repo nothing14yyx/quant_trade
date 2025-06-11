@@ -11,6 +11,7 @@
 import os, yaml, lightgbm as lgb, numpy as np, pandas as pd
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import StandardScaler
 from sklearn.inspection import permutation_importance
 import shap
 from sqlalchemy import create_engine
@@ -30,7 +31,9 @@ engine = create_engine(
 
 TARGET = cfg.get("feature_selector", {}).get("target", "target_down")
 TOP_N  = cfg.get("feature_selector", {}).get("top_n", 12)
-MIN_COVER = 0.10          # <10% 非空 → 丢弃
+MIN_COVER = 0.05          # <5% 非空 → 丢弃
+ENABLE_PCA = True
+PCA_COMPONENTS = 3
 N_SPLIT   = 5
 MAX_VIF_SAMPLE = 10000    # 计算 VIF 时最多抽样的行数
 
@@ -74,7 +77,7 @@ for period, cols in feature_pool.items():
     coverage = df_period[use_cols].notna().mean()
     keep_cols = coverage[coverage >= MIN_COVER].index.tolist()
     if not keep_cols:
-        print("无有效特征列（覆盖率 < 10%），跳过该周期。")
+        print("无有效特征列（覆盖率 < 5%），跳过该周期。")
         continue
 
     # ===== 新增：剔除所有非数值列（尤其 datetime64） =====
@@ -94,6 +97,17 @@ for period, cols in feature_pool.items():
     if len(subset) < 800:
         print(f"样本太少（{len(subset)} < 800），跳过该周期。")
         continue
+
+    if ENABLE_PCA and len(keep_cols) > PCA_COMPONENTS:
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(subset[keep_cols].fillna(0))
+        from sklearn.decomposition import PCA
+        pca = PCA(n_components=PCA_COMPONENTS, random_state=42)
+        comps = pca.fit_transform(X_scaled)
+        for i in range(PCA_COMPONENTS):
+            col = f"pca_{i+1}"
+            subset[col] = comps[:, i]
+            keep_cols.append(col)
 
     X = subset[keep_cols]
     y = subset[TARGET].astype(int)
