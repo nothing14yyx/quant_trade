@@ -58,47 +58,31 @@ database:
   uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
 
 feature_cols:
-  1h:
-    # 时间/节奏
-    - hour_of_day          # 1h 内的交易小时
-    - day_of_week          # 周内交易日序
-    # 价格/动量
-    - pct_chg1_1h          # 1 根 K 线涨跌幅
-    - cci_delta_1h         # 1h CCI 变化率
-    - bear_streak_1h       # 连续下跌动能
-    # 波动率跨周期
-    - atr_pct_ratio_1h_4h  # 1h vs 4h 波动率比
-    # 成交量/流动性
-    - obv_delta_1h         # 1h 能量潮变化
-    - vol_breakout_1h      # 1h 成交量突破
+  # ===========================
+  # Core features (v0.2, 2025-06-11)
+  # ===========================
+  1h:            # ——短线捕捉，快速反应——
+    - pct_chg1_1h            # ① 价格动量
+    - atr_pct_1h             # ② 波动率/形态
+    - vol_ma_ratio_long_1h   # ③ 量能 / 资金流
+    - hv_14d_1h              # ④ 情绪 / 风险
+  4h:            # ——中线过滤，趋势确认——
+    - pct_chg6_4h            # ① 价格动量
+    - atr_pct_4h             # ② 波动率/形态
+    - vol_roc_4h             # ③ 量能 / 资金流
+    - cg_total_volume_roc_4h # ④ 宏观 / 市场面
+  1d:            # ——长线框架，宏观定势——
+    - pct_chg3_d1            # ① 价格动量
+    - hv_14d_d1              # ② 波动率/形态（长周期风险）
+    - vol_ma_ratio_long_d1   # ③ 量能 / 资金流
+    - cg_market_cap_roc_d1   # ④ 宏观 / 市场面
 
-  4h:
-    # 价格/动量
-    - pct_chg6_4h          # 6 根 4h K 线涨跌幅
-    - cci_delta_4h         # 4h CCI 变化率
-    # 蜡烛形态
-    - upper_wick_ratio_4h  # 4h 上影线比例
-    - lower_wick_ratio_4h  # 4h 下影线比例
-    # 波动率
-    - atr_chg_4h           # 4h ATR 绝对变化
-    # 跨周期价差
-    - close_spread_1h_4h   # 1h 收盘价 vs 4h 收盘价差
-    # 宏观/链上
-    - cg_total_volume_roc_4h  # 4h 总市值成交量日环比
+  # ——跨周期比较特征（避免单周期噪声）——
+  cross_period:
+    - rsi_diff_1h_4h         # RSI 快慢差
+    - atr_pct_ratio_1h_4h    # 波动率快慢比
+    - macd_hist_diff_1h_4h   # MACD 动量差
 
-  1d:
-    # 趋势信号
-    - macd_signal_d1       # 日线 MACD signal
-    # 宏观/链上
-    - cg_market_cap_roc_d1 # 日线大盘市值环比
-    # 波动率
-    - atr_chg_d1           # 日线 ATR 绝对变化
-    - kc_width_pct_chg_d1  # 日线肯德里克通道宽度变化率
-    # 动量/形态
-    - cci_d1               # 日线 CCI 原始值
-    - vol_ma_ratio_long_d1 # 日线长期成交量均线比
-    # 跨周期信号对比
-    - macd_hist_diff_1h_d1 # 1h vs 日线 MACD histogram 差值
 
 
 
