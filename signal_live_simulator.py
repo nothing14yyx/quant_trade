@@ -26,6 +26,15 @@ HISTORY_LEN = 200
 # CoinGecko /global 指标最小刷新间隔（小时），按 UTC 0 点每日更新
 CG_GLOBAL_INTERVAL_HOURS = 24
 
+# 各周期K线的最小刷新频率
+SYNC_SCHEDULE = {
+    "5m": timedelta(minutes=15),
+    "15m": timedelta(minutes=30),
+    "1h": timedelta(hours=1),
+    "4h": timedelta(hours=4),
+    "1d": timedelta(days=1),
+}
+
 
 def to_shanghai(dt):
     """Convert naive or UTC datetime to Asia/Shanghai timezone."""
@@ -192,6 +201,7 @@ def upsert_df(df, table_name, engine, pk_cols):
 
 def main_loop(interval_sec: int = 60):
     last_1h_kline_time = None
+    last_sync_times = {iv: None for iv in SYNC_SCHEDULE}
 
     while True:
         loop_start = time.time()
@@ -215,7 +225,17 @@ def main_loop(interval_sec: int = 60):
             time.sleep(interval_sec)
             continue
 
-        # 如果上一根1h K线时间已知且尚未到达下一根K线收盘时间，直接等待
+        # 2. 按计划同步各周期K线
+        due_intervals = []
+        for iv, delta in SYNC_SCHEDULE.items():
+            last = last_sync_times.get(iv)
+            if last is None or now_utc - last >= delta:
+                due_intervals.append(iv)
+                last_sync_times[iv] = now_utc
+        if due_intervals:
+            sync_all_symbols_threaded(loader, symbols, due_intervals, max_workers=4)
+
+        # 如果上一根1h K线时间已知且尚未到达下一根K线收盘时间，跳过本轮信号计算
         if last_1h_kline_time is not None:
             next_kline_time = last_1h_kline_time + timedelta(hours=1)
             if now_utc < next_kline_time:
@@ -226,11 +246,8 @@ def main_loop(interval_sec: int = 60):
                 time.sleep(interval_sec)
                 continue
 
-        # 2. 更新其他指标（FG指数、CoinGecko 等）
+        # 3. 更新其他指标（FG指数、CoinGecko 等）
         update_aux_data(loader, symbols)
-
-        # 3. 多线程同步K线
-        sync_all_symbols_threaded(loader, symbols, ["1h", "4h", "1d"], max_workers=4)
 
         placeholders = ",".join(f"'{s}'" for s in symbols)
 
