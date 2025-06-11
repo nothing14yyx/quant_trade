@@ -67,6 +67,17 @@ class RobustSignalGenerator:
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         self.max_same_direction_rate = 0.85
 
+    def __getattr__(self, name):
+        if name in {"eth_dom_history", "btc_dom_history", "oi_change_history", "history_scores"}:
+            val = deque(maxlen=500)
+            setattr(self, name, val)
+            return val
+        if name == "ic_history":
+            val = {k: deque(maxlen=500) for k in self.base_weights}
+            setattr(self, name, val)
+            return val
+        raise AttributeError(name)
+
     @staticmethod
     def _score_from_proba(p):
         # 概率[0,1]映射到[-1,1]
@@ -264,12 +275,20 @@ class RobustSignalGenerator:
             ic = _compute(df)
 
         self.ic_scores.update(ic)
+
+        if not hasattr(self, "ic_history"):
+            self.ic_history = {k: deque(maxlen=500) for k in self.base_weights}
+
         for k, v in ic.items():
-            self.ic_history[k].append(v)
+            self.ic_history.setdefault(k, deque(maxlen=500)).append(v)
+
         return self.ic_scores
 
     def dynamic_weight_update(self):
         # IC驱动动态权重分配（基于IC滑窗均值）
+        if not hasattr(self, "ic_history"):
+            self.ic_history = {k: deque(maxlen=500) for k in self.base_weights}
+
         ic_avg = []
         for k in self.ic_scores.keys():
             hist = self.ic_history.get(k)
@@ -495,6 +514,8 @@ class RobustSignalGenerator:
 
             eth_dom = global_metrics.get('eth_dom_chg')
             if 'eth_dominance' in global_metrics:
+                if not hasattr(self, 'eth_dom_history'):
+                    self.eth_dom_history = deque(maxlen=500)
                 self.eth_dom_history.append(global_metrics['eth_dominance'])
                 if len(self.eth_dom_history) >= 5:
                     short_e = np.mean(list(self.eth_dom_history)[-5:])
