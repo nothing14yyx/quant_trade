@@ -25,6 +25,7 @@ def _safe_ta(func, *args, index=None, cols=None, **kwargs):
             res = res[cols]
     return res
 
+
 def assign_safe(feats: pd.DataFrame, name: str, series):
     """安全地向 feats 赋值，支持传入 Series 或单列 DataFrame。"""
     if isinstance(series, pd.DataFrame):
@@ -33,6 +34,7 @@ def assign_safe(feats: pd.DataFrame, name: str, series):
         series = series.iloc[:, 0]
     feats[name] = np.asarray(series, dtype="float64")
     # print(f"{name}: {feats[name].dtype}")
+
 
 def calc_mfi_np(high, low, close, volume, window=14):
     """Return Money Flow Ratio and Money Flow Index"""
@@ -48,13 +50,21 @@ def calc_mfi_np(high, low, close, volume, window=14):
     mfi = 100 * sum_pmf / (sum_pmf + sum_nmf)
     return ratio, mfi
 
+
 def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats = pd.DataFrame(index=df.index)
     for col in ["open", "high", "low", "close", "volume"]:
         feats[col] = np.full(len(feats), np.nan, dtype="float64")
 
+    price_cols = ["open", "high", "low", "close"]
+    quantiles = df[price_cols].quantile([0.001, 0.999])
+    lower = quantiles.loc[0.001]
+    upper = quantiles.loc[0.999]
+    df_clipped = df.copy()
+    df_clipped[price_cols] = df_clipped[price_cols].clip(lower, upper, axis=1)
+
     for col in ["open", "high", "low", "close", "volume"]:
-        assign_safe(feats, col, df[col].astype(float))
+        assign_safe(feats, col, df_clipped[col].astype(float))
 
     if "fg_index" in df:
         assign_safe(feats, "fg_index", df["fg_index"].astype(float).ffill())
@@ -97,7 +107,9 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     )
     assign_safe(feats, f"adx_{period}", adx_df.get("ADX_14"))
     feats[f"adx_delta_{period}"] = feats[f"adx_{period}"].diff()
-    assign_safe(feats, f"cci_{period}", _safe_ta(ta.cci, feats["high"], feats["low"], feats["close"], length=14, index=df.index))
+    assign_safe(
+        feats, f"cci_{period}", _safe_ta(ta.cci, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
+    )
     feats[f"cci_delta_{period}"] = feats[f"cci_{period}"].diff()
     mfr, mfi = calc_mfi_np(
         feats["high"].values,
@@ -224,8 +236,12 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
 
     range_ = (feats["high"] - feats["low"]).replace(0, np.nan)
     body = (feats["close"] - feats["open"]).abs()
-    assign_safe(feats, f"upper_wick_ratio_{period}", (feats["high"] - np.maximum(feats["open"], feats["close"])) / range_)
-    assign_safe(feats, f"lower_wick_ratio_{period}", (np.minimum(feats["open"], feats["close"]) - feats["low"]) / range_)
+    assign_safe(
+        feats, f"upper_wick_ratio_{period}", (feats["high"] - np.maximum(feats["open"], feats["close"])) / range_
+    )
+    assign_safe(
+        feats, f"lower_wick_ratio_{period}", (np.minimum(feats["open"], feats["close"]) - feats["low"]) / range_
+    )
     assign_safe(feats, f"body_ratio_{period}", body / range_)
 
     # === 新增：长影线与低波动突破等结构特征 ===
@@ -240,25 +256,35 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
 
     assign_safe(feats, f"vol_profile_density_{period}", feats["volume"] / range_)
-    assign_safe(feats, f"bid_ask_spread_pct_{period}", (feats["high"] - feats["low"]) / feats["close"].replace(0, np.nan))
+    assign_safe(
+        feats, f"bid_ask_spread_pct_{period}", (feats["high"] - feats["low"]) / feats["close"].replace(0, np.nan)
+    )
 
     returns = feats["close"].pct_change(fill_method=None)
     assign_safe(feats, f"skewness_{period}", returns.rolling(20).skew())
     assign_safe(feats, f"kurtosis_{period}", returns.rolling(20).kurt())
 
     feats[f"bull_streak_{period}"] = (
-        feats["close"].gt(feats["open"]).astype(float)
+        feats["close"]
+        .gt(feats["open"])
+        .astype(float)
         .groupby(feats["close"].le(feats["open"]).astype(int).cumsum())
         .cumsum()
     )
     feats[f"bear_streak_{period}"] = (
-        feats["close"].lt(feats["open"]).astype(float)
+        feats["close"]
+        .lt(feats["open"])
+        .astype(float)
         .groupby(feats["close"].ge(feats["open"]).astype(int).cumsum())
         .cumsum()
     )
 
     assign_safe(feats, f"rsi_mul_vol_ma_ratio_{period}", feats[f"rsi_{period}"] * feats[f"vol_ma_ratio_{period}"])
-    assign_safe(feats, f"willr_{period}", _safe_ta(ta.willr, feats["high"], feats["low"], feats["close"], length=14, index=df.index))
+    assign_safe(
+        feats,
+        f"willr_{period}",
+        _safe_ta(ta.willr, feats["high"], feats["low"], feats["close"], length=14, index=df.index),
+    )
 
     macd = _safe_ta(
         ta.macd,
@@ -308,6 +334,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
 
     return feats
 
+
 def calc_features_full(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats = calc_features_raw(df, period)
 
@@ -331,12 +358,8 @@ def calc_features_full(df: pd.DataFrame, period: str) -> pd.DataFrame:
 def calc_order_book_features(df: pd.DataFrame) -> pd.DataFrame:
     """根据 order_book 快照计算买卖盘数量差比率"""
     index = pd.to_datetime(df["timestamp"])
-    bid_sum = df["bids"].apply(
-        lambda x: sum(float(b[1]) for b in (x if isinstance(x, list) else json.loads(x)))
-    )
-    ask_sum = df["asks"].apply(
-        lambda x: sum(float(a[1]) for a in (x if isinstance(x, list) else json.loads(x)))
-    )
+    bid_sum = df["bids"].apply(lambda x: sum(float(b[1]) for b in (x if isinstance(x, list) else json.loads(x))))
+    ask_sum = df["asks"].apply(lambda x: sum(float(a[1]) for a in (x if isinstance(x, list) else json.loads(x))))
     denom = (bid_sum + ask_sum).replace(0, np.nan)
     imbalance = (bid_sum - ask_sum) / denom
     df_out = pd.DataFrame({"bid_ask_imbalance": imbalance.values}, index=index)
