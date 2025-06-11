@@ -272,6 +272,31 @@ class DataLoader:
             "vix_proxy": float(vix_p) if vix_p is not None else None,
         }
 
+    def get_latest_order_book_imbalance(self, symbol: str) -> Optional[float]:
+        """返回最近一次 L2 Order Book 的买卖盘差额比例"""
+        q = (
+            "SELECT bids, asks FROM order_book "
+            "WHERE symbol=:s ORDER BY timestamp DESC LIMIT 1"
+        )
+        df = pd.read_sql(text(q), self.engine, params={"s": symbol})
+        if df.empty:
+            return None
+        try:
+            bids = df.at[0, "bids"]
+            asks = df.at[0, "asks"]
+            if isinstance(bids, str):
+                bids = json.loads(bids)
+            if isinstance(asks, str):
+                asks = json.loads(asks)
+            bid_sum = sum(float(b[1]) for b in bids)
+            ask_sum = sum(float(a[1]) for a in asks)
+            denom = bid_sum + ask_sum
+            if denom == 0:
+                return None
+            return (bid_sum - ask_sum) / denom
+        except Exception:
+            return None
+
     # ───────────────────────────── Order Book ────────────────────────────
     def update_order_book(self, symbol: str) -> None:
         """抓取并保存深度快照 (前10档)"""
