@@ -206,7 +206,7 @@ def train_one(df_all: pd.DataFrame,
 
         scores = []
         tscv = TimeSeriesSplit(n_splits=5)
-        for tr_idx, val_idx in tscv.split(X):
+        for fold_idx, (tr_idx, val_idx) in enumerate(tscv.split(X)):
             X_tr, X_val = X.iloc[tr_idx], X.iloc[val_idx]
             y_tr, y_val = y.iloc[tr_idx], y.iloc[val_idx]
 
