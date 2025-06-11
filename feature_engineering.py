@@ -233,7 +233,7 @@ class FeatureEngineer:
             scaler_params = load_scaler_params_from_json(str(self.scaler_path))
             df_scaled = apply_robust_z_with_params(df_all, scaler_params)
 
-        df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-10, 10)
+        df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-15, 15)
         df_final = self._add_missing_flags(df_scaled, feat_cols_all)
 
         final_other_cols = [c for c in df_final.columns if c not in base_cols]

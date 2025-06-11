@@ -18,7 +18,7 @@ def test_robust_scaler_roundtrip(tmp_path):
     loaded = load_scaler_params_from_json(path)
     scaled = apply_robust_z_with_params(df, loaded)
 
-    lower, upper = np.percentile(df['a'], [1, 99])
+    lower, upper = np.percentile(df['a'], [0.5, 99.5])
     clipped = np.clip(df['a'], lower, upper)
     mu = clipped.mean()
     sigma = clipped.to_numpy().std() + 1e-6
