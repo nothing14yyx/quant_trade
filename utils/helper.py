@@ -325,7 +325,6 @@ def calc_features_full(df: pd.DataFrame, period: str) -> pd.DataFrame:
         flag_df[f"{col}_isnan"] = feats[col].isna().astype(int)
 
     feats = pd.concat([feats, flag_df], axis=1)
-    feats = feats.fillna(0)
     return feats
 
 
