@@ -55,7 +55,12 @@ orig_cols = {
     "quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote",
     "symbol", TARGET, *FUTURE_COLS  # 去掉 interval/ignore/target_up/target_down
 }
-all_features = [c for c in df.columns if c not in orig_cols and c not in BLACKLIST]
+all_features = [
+    c for c in df.columns
+    if c not in orig_cols
+    and c not in BLACKLIST
+    and not c.endswith("_isnan")
+]
 
 # ---------- 2. 按周期归类 ----------
 # 默认仅匹配 *_1h/*_4h/*_d1 结尾。为了让小时/周标记以及 _x/_y/_feat 列也能参与评估，
