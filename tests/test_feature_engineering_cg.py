@@ -54,3 +54,27 @@ def test_calc_features_raw_with_cg():
     for col in new_cols:
         assert col in feats
 
+
+def test_calc_features_raw_minutes():
+    times = pd.date_range('2020-01-01', periods=5, freq='5min')
+    df = pd.DataFrame({
+        'open': [1]*5,
+        'high': [1]*5,
+        'low': [1]*5,
+        'close': [1, 2, 3, 4, 5],
+        'volume': [1]*5,
+    }, index=times)
+    feats5 = calc_features_raw(df, '5m')
+    assert 'pct_chg1_5m' in feats5
+
+    times15 = pd.date_range('2020-01-01', periods=5, freq='15min')
+    df15 = pd.DataFrame({
+        'open': [1]*5,
+        'high': [1]*5,
+        'low': [1]*5,
+        'close': [1, 2, 3, 4, 5],
+        'volume': [1]*5,
+    }, index=times15)
+    feats15 = calc_features_raw(df15, '15m')
+    assert 'pct_chg1_15m' in feats15
+
