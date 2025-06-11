@@ -255,6 +255,7 @@ ma_ratio_1h_4h
 ma_ratio_1h_4h_isnan
 ma_ratio_1h_d1
 ma_ratio_1h_d1_isnan
+ma_ratio_4h_d1
 macd_1h
 macd_1h_isnan
 macd_4h
@@ -288,9 +289,13 @@ mfi_4h_isnan
 mfi_d1
 mfi_d1_isnan
 mom_15m_roll1h
+mom_15m_roll1h_isnan
 mom_15m_roll1h_std
+mom_15m_roll1h_std_isnan
 mom_5m_roll1h
+mom_5m_roll1h_isnan
 mom_5m_roll1h_std
+mom_5m_roll1h_std_isnan
 money_flow_ratio_1h
 money_flow_ratio_1h_isnan
 money_flow_ratio_4h
@@ -357,6 +362,7 @@ rsi_diff_1h_4h
 rsi_diff_1h_4h_isnan
 rsi_diff_1h_d1
 rsi_diff_1h_d1_isnan
+rsi_diff_4h_d1
 rsi_mul_vol_ma_ratio_1h
 rsi_mul_vol_ma_ratio_1h_isnan
 rsi_mul_vol_ma_ratio_4h
@@ -417,6 +423,8 @@ vol_profile_density_4h
 vol_profile_density_4h_isnan
 vol_profile_density_d1
 vol_profile_density_d1_isnan
+vol_ratio_1h_4h
+vol_ratio_4h_d1
 vol_roc_1h
 vol_roc_1h_isnan
 vol_roc_4h
