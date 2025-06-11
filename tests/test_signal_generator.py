@@ -406,3 +406,40 @@ def test_eth_dominance_influence():
                                  global_metrics=gm, symbol='ETHUSDT')
     expected = 0.5 * (1 + 0.1 * 0.2)
     assert result['score'] == pytest.approx(expected)
+
+
+def test_short_momentum_and_order_book():
+    rsg = make_dummy_rsg()
+    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_factor_scores = lambda f, p: {
+        'trend': 0,
+        'momentum': 0,
+        'volatility': 0,
+        'volume': 0,
+        'sentiment': 0,
+        'funding': 0,
+    }
+    rsg.combine_score = lambda ai, fs, weights=None: 0.5
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'mom_5m_roll1h': 0.1,
+        'mom_15m_roll1h': 0.1,
+        'bid_ask_imbalance': 0.1,
+    }
+    feats_4h = {'atr_pct_4h': 0}
+    feats_d1 = {}
+
+    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
+    assert res['score'] > 0.5
+    assert res['details']['short_momentum'] > 0
+    assert res['details']['ob_imbalance'] > 0

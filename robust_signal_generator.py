@@ -613,6 +613,29 @@ class RobustSignalGenerator:
                     fused_score *= 0.8
                     oi_overheat = True
 
+        # ===== 新指标：短周期动量与盘口失衡 =====
+        raw1h = raw_features_1h or features_1h
+        mom5 = raw1h.get('mom_5m_roll1h')
+        mom15 = raw1h.get('mom_15m_roll1h')
+        ob_imb = raw1h.get('bid_ask_imbalance')
+
+        mom_vals = [v for v in (mom5, mom15) if v is not None]
+        short_mom = float(np.nanmean(mom_vals)) if mom_vals else 0.0
+        if np.isnan(short_mom):
+            short_mom = 0.0
+        ob_imb = 0.0 if ob_imb is None or np.isnan(ob_imb) else float(ob_imb)
+
+        if fused_score > 0:
+            if short_mom > 0 and ob_imb > 0:
+                fused_score *= 1.1
+            elif short_mom < 0 or ob_imb < 0:
+                fused_score *= 0.9
+        elif fused_score < 0:
+            if short_mom < 0 and ob_imb < 0:
+                fused_score *= 1.1
+            elif short_mom > 0 or ob_imb > 0:
+                fused_score *= 0.9
+
         # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
             return {
@@ -657,6 +680,8 @@ class RobustSignalGenerator:
             'oi_overheat': oi_overheat,
             'oi_threshold': th_oi,
             'crowding_factor': crowding_factor,
+            'short_momentum': short_mom,
+            'ob_imbalance': ob_imb,
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
