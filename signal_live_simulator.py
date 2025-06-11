@@ -188,6 +188,16 @@ def update_aux_data(loader: DataLoader, symbols: list[str]) -> None:
             except Exception as e:
                 print(f"[funding_rate 更新异常] {sym}: {e}")
 
+        fut_map = {
+            executor.submit(loader.update_order_book, sym): sym for sym in symbols
+        }
+        for f in as_completed(fut_map):
+            sym = fut_map[f]
+            try:
+                f.result()
+            except Exception as e:
+                print(f"[order_book 更新异常] {sym}: {e}")
+
 def load_recent_ic_data(symbols: list[str], window: int = IC_UPDATE_WINDOW) -> pd.DataFrame:
     """读取近期历史数据并计算 1h 特征"""
     dfs: list[pd.DataFrame] = []
@@ -426,6 +436,9 @@ def main_loop(interval_sec: int = 60):
             raw_feat_1h = last_raw_1h.iloc[0].to_dict()
             raw_feat_4h = last_raw_4h.iloc[0].to_dict()
             raw_feat_d1 = last_raw_d1.iloc[0].to_dict()
+
+            ob_imb = loader.get_latest_order_book_imbalance(sym)
+            raw_feat_1h["bid_ask_imbalance"] = ob_imb
 
             feat_1h = health_check(feat_1h, abs_clip={"atr_pct_1h": (0, 0.2)})
             feat_4h = health_check(feat_4h, abs_clip={"atr_pct_4h": (0, 0.2)})
