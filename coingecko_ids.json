@@ -118,5 +118,7 @@
   "RPLUSDT": "rocket-pool",
   "SSVUSDT": "ssv-network",
   "SUSHIUSDT": "sushi",
-  "USUALUSDT": "usual"
+  "USUALUSDT": "usual",
+  "AUSDT": "solana",
+  "AXSUSDT": "axie-infinity"
 }

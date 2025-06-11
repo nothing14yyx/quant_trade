@@ -1,6 +1,6 @@
 import os
 import pytest
-pytest.skip("requires database access", allow_module_level=True)
+# pytest.skip("requires database access", allow_module_level=True)
 
 import pandas as pd
 import yaml
