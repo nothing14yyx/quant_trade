@@ -83,6 +83,7 @@ class FeatureEngineer:
         threshold: float | str | None = "balanced",
         shift_n: int | str = "dynamic",
         vol_window: int = 24,
+        n_bins: int | None = None,
     ) -> pd.DataFrame:
         """生成涨跌与波动率等标签，无未来数据泄漏
 
@@ -133,8 +134,15 @@ class FeatureEngineer:
             else:
                 th_up = th_down = pd.Series(float(threshold), index=g.index)
 
-            g["target_up"] = ((fut_hi / close - 1) >= th_up).astype(float)
-            g["target_down"] = ((fut_lo / close - 1) <= th_down).astype(float)
+            up_ret = fut_hi / close - 1
+            down_ret = fut_lo / close - 1
+            g["target_up"] = (up_ret >= th_up).astype(float)
+            g["target_down"] = (down_ret <= th_down).astype(float)
+            if n_bins and n_bins > 1:
+                bins_up = np.quantile(up_ret.dropna(), np.linspace(0, 1, n_bins + 1))
+                bins_down = np.quantile(down_ret.dropna(), np.linspace(0, 1, n_bins + 1))
+                g["target_up_multi"] = pd.cut(up_ret, bins=bins_up, labels=False, include_lowest=True)
+                g["target_down_multi"] = pd.cut(down_ret, bins=bins_down, labels=False, include_lowest=True)
             g["future_volatility"] = (
                 close.pct_change()
                 .rolling(n)
@@ -143,7 +151,10 @@ class FeatureEngineer:
             )
             g["future_max_rise"] = fut_hi / close - 1
             g["future_max_drawdown"] = fut_lo / close - 1
-            g.loc[g.tail(n).index, ["target_up", "target_down", "future_volatility"]] = np.nan
+            drop_cols = ["target_up", "target_down", "future_volatility"]
+            if n_bins and n_bins > 1:
+                drop_cols += ["target_up_multi", "target_down_multi"]
+            g.loc[g.tail(n).index, drop_cols] = np.nan
             results.append(g)
 
         return pd.concat(results).sort_index()
@@ -181,7 +192,7 @@ class FeatureEngineer:
         flags_df = df[feat_cols].isna().astype(int)
         flags_df.columns = [f"{col}_isnan" for col in feat_cols]
         df_filled = df.copy()
-        df_filled[feat_cols] = df_filled[feat_cols].fillna(0.0)
+        df_filled[feat_cols] = df_filled[feat_cols].ffill().fillna(0.0)
         df_out = pd.concat([df_filled, flags_df], axis=1)
         return df_out
 
@@ -359,15 +370,19 @@ class FeatureEngineer:
             merged["close_spread_1h_d1"] = merged["close_1h"] - merged["close_d1"]
             merged["ma_ratio_1h_4h"] = merged["sma_10_1h"] / merged["sma_10_4h"].replace(0, np.nan)
             merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(0, np.nan)
+            merged["ma_ratio_4h_d1"] = merged["sma_10_4h"] / merged["sma_10_d1"].replace(0, np.nan)
             merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged["atr_pct_4h"].replace(0, np.nan)
             merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged["bb_width_4h"].replace(0, np.nan)
             merged["rsi_diff_1h_4h"] = merged["rsi_1h"] - merged["rsi_4h"]
             merged["rsi_diff_1h_d1"] = merged["rsi_1h"] - merged["rsi_d1"]
+            merged["rsi_diff_4h_d1"] = merged["rsi_4h"] - merged["rsi_d1"]
             merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
             merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
             merged["macd_hist_4h_mul_bb_width_1h"] = merged["macd_hist_4h"] * merged["bb_width_1h"]
             merged["rsi_1h_mul_vol_ma_ratio_4h"] = merged["rsi_1h"] * merged["vol_ma_ratio_4h"]
             merged["macd_hist_1h_mul_bb_width_4h"] = merged["macd_hist_1h"] * merged["bb_width_4h"]
+            merged["vol_ratio_1h_4h"] = merged["vol_ma_ratio_1h"] / merged["vol_ma_ratio_4h"].replace(0, np.nan)
+            merged["vol_ratio_4h_d1"] = merged["vol_ma_ratio_4h"] / merged["vol_ma_ratio_d1"].replace(0, np.nan)
 
             # 7. 将原始 1h K 线回拼回 merged，打上 target_up/target_down
             raw = df_1h.reset_index()  # raw["open_time"] 是 datetime64[ns]

@@ -12,23 +12,22 @@ from sqlalchemy import create_engine
 
 # ---------- 自定义：只在过去样本内合成的 SMOTE ----------
 class TimeSeriesAwareSMOTE:
-    """在时间序列数据上执行 SMOTE，确保仅使用过去的少数类样本"""
+    """在时间序列数据上执行 SMOTE，支持按时间分组，确保仅使用过去的少数类样本"""
 
-    def __init__(self, k_neighbors: int = 2, random_state: int | None = 42):
+    def __init__(self, k_neighbors: int = 2, random_state: int | None = 42, group_freq: str | None = None):
         self.k_neighbors = k_neighbors
         self.random_state = random_state
+        self.group_freq = group_freq
         self.sample_indices_: list[int] | None = None
 
-    def fit_resample(self, X: pd.DataFrame, y: pd.Series, open_time: pd.Series):
+    def _resample_one(self, X, y, open_time):
         rng = np.random.RandomState(self.random_state)
         minority = y.mode().index[y.value_counts().idxmin()]
         maj_count = (y != minority).sum()
         min_idx = np.where(y == minority)[0]
-        maj_idx = np.where(y != minority)[0]
         deficit = maj_count - len(min_idx)
         if deficit <= 0:
-            self.sample_indices_ = np.arange(len(X))
-            return X, y
+            return X, y, np.arange(len(X))
 
         new_rows = []
         new_times = []
@@ -47,16 +46,34 @@ class TimeSeriesAwareSMOTE:
                 break
 
         if not new_rows:
-            self.sample_indices_ = np.arange(len(X))
-            return X, y
+            return X, y, np.arange(len(X))
 
         X_aug = pd.concat([X, pd.DataFrame(new_rows)], ignore_index=True)
         y_aug = pd.concat([y, pd.Series([minority] * len(new_rows))], ignore_index=True)
         time_aug = pd.concat([open_time, pd.Series(new_times)], ignore_index=True)
 
         order = np.argsort(time_aug)
-        self.sample_indices_ = np.array(sample_idx)[order]
-        return X_aug.iloc[order].reset_index(drop=True), y_aug.iloc[order].reset_index(drop=True)
+        return X_aug.iloc[order].reset_index(drop=True), y_aug.iloc[order].reset_index(drop=True), np.array(sample_idx)[order]
+
+    def fit_resample(self, X: pd.DataFrame, y: pd.Series, open_time: pd.Series):
+        if self.group_freq:
+            groups = open_time.dt.to_period(self.group_freq)
+            res_X_all, res_y_all, idx_all = [], [], []
+            for g in groups.unique():
+                mask = groups == g
+                X_res, y_res, idx_res = self._resample_one(X[mask].reset_index(drop=True), y[mask].reset_index(drop=True), open_time[mask].reset_index(drop=True))
+                offset = len(pd.concat(res_X_all)) if res_X_all else 0
+                idx_all.extend((np.array(idx_res) + offset).tolist())
+                res_X_all.append(X_res)
+                res_y_all.append(y_res)
+            X_out = pd.concat(res_X_all, ignore_index=True)
+            y_out = pd.concat(res_y_all, ignore_index=True)
+            self.sample_indices_ = np.array(idx_all)
+            return X_out, y_out
+        else:
+            X_res, y_res, idx_res = self._resample_one(X, y, open_time)
+            self.sample_indices_ = idx_res
+            return X_res, y_res
 
 
 class OffsetLightGBMPruningCallback:
@@ -169,7 +186,7 @@ def train_one(df_all: pd.DataFrame,
     else:
         pos_ratio = (data[tgt] == 1).mean()
         if pos_ratio < 0.4 or pos_ratio > 0.6:
-            sampler = TimeSeriesAwareSMOTE(k_neighbors=2, random_state=42)
+            sampler = TimeSeriesAwareSMOTE(k_neighbors=2, random_state=42, group_freq="M")
             res_X, res_y = sampler.fit_resample(data[feat_use], data[tgt], data["open_time"])  # type: ignore
 
             # sampler.sample_indices_ 已按时间顺序排列
