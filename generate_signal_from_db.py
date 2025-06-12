@@ -1,5 +1,7 @@
 import os
+
 import logging
+
 from pathlib import Path
 import pandas as pd
 import yaml
@@ -7,7 +9,9 @@ from sqlalchemy import create_engine
 
 from robust_signal_generator import RobustSignalGenerator
 from utils.helper import calc_features_raw
+
 from feature_engineering import calc_cross_features
+
 from utils.robust_scaler import (
     load_scaler_params_from_json,
     apply_robust_z_with_params,
@@ -15,10 +19,12 @@ from utils.robust_scaler import (
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
+
 
 
 def load_config(path=CONFIG_PATH):
@@ -46,16 +52,19 @@ def load_latest_klines(engine, symbol: str, interval: str, limit: int = 200) -> 
 
 
 def prepare_features(df: pd.DataFrame, period: str, params: dict, symbol: str) -> tuple[dict, dict]:
+
     """计算单周期特征并返回(缩放后的dict, 原始dict)"""
 
     feats = calc_features_raw(df.set_index("open_time"), period)
     raw = feats.iloc[-1]
+
 
     last = feats.tail(1).copy()
     last["symbol"] = symbol
     last = apply_robust_z_with_params(last, params)
     scaled = last.drop(columns=["symbol"]).iloc[0]
     return scaled.to_dict(), raw.to_dict()
+
 
 
 def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict, dict, dict, dict, dict]:
@@ -90,13 +99,16 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
     return scaled1h, scaled4h, scaledd1, raw1h, raw4h, rawd1
 
 
+
 def main(symbol: str = "BTCUSDT"):
     cfg = load_config()
     engine = connect_mysql(cfg)
 
     params = load_scaler_params_from_json(cfg["feature_engineering"]["scaler_path"])
 
+
     feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = prepare_all_features(engine, symbol, params)
+
 
     sg = RobustSignalGenerator(
         model_paths=cfg["models"],
@@ -115,7 +127,9 @@ def main(symbol: str = "BTCUSDT"):
         symbol=symbol,
     )
 
+
     logging.info("最新交易信号:\n%s", signal)
+
 
 
 if __name__ == "__main__":
