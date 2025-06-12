@@ -591,3 +591,6 @@ TRUNCATE TABLE cg_coin_categories;
 TRUNCATE TABLE features;
 TRUNCATE TABLE live_full_data;
 TRUNCATE TABLE live_top10_signals;
+
+
+SHOW COLUMNS FROM features LIKE 'funding_rate_isnan';

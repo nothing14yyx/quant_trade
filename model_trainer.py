@@ -179,6 +179,7 @@ train_cfg = cfg.get("train_settings", {})
 train_by_symbol = bool(train_cfg.get("by_symbol", False))
 min_rows = int(train_cfg.get("min_rows", 500))
 time_ranges = train_cfg.get("time_ranges", []) or [{"name": "all", "start": None, "end": None}]
+use_ts_smote = bool(train_cfg.get("ts_smote", False))
 
 # ---------- 2. 读取特征大表并按时间排序 ----------
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time"])
@@ -225,6 +226,10 @@ def train_one(df_all: pd.DataFrame, features: list[str], tgt: str, model_path: P
 
     X = data[feat_use]
     y = data[tgt]
+
+    if use_ts_smote:
+        smote = TimeSeriesAwareSMOTE()
+        X, y = smote.fit_resample(X, y, data["open_time"])
 
     # ----- 留出最后 10% 仅做最终评估 -----
     hold_len = max(1, int(len(X) * 0.1))
