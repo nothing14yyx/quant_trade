@@ -4,6 +4,7 @@ import pandas as pd
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
 
+
 DEFAULT_SYMBOL = "BTCUSDT"
 
 
@@ -76,3 +77,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     symbol = args.symbol.upper() if args.symbol else DEFAULT_SYMBOL
     main(symbol)
+
