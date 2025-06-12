@@ -10,6 +10,7 @@ import numpy as np
 import yaml
 from sqlalchemy import create_engine, text
 import json
+import copy
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -545,15 +546,18 @@ def main_loop(interval_sec: int = 60):
                 "pos": result.get("position_size", 0.0),
                 "take_profit": result.get("take_profit"),
                 "stop_loss": result.get("stop_loss"),
-                "indicators": json.dumps({
-                    "feat_1h": feat_1h,
-                    "feat_4h": feat_4h,
-                    "feat_d1": feat_d1,
-                    "raw_feat_1h": raw_feat_1h,
-                    "raw_feat_4h": raw_feat_4h,
-                    "raw_feat_d1": raw_feat_d1,
-                    **(result.get("details") or {}),
-                }, default=np_encoder),
+                "indicators": json.dumps(
+                    copy.deepcopy({
+                        "feat_1h": feat_1h,
+                        "feat_4h": feat_4h,
+                        "feat_d1": feat_d1,
+                        "raw_feat_1h": raw_feat_1h,
+                        "raw_feat_4h": raw_feat_4h,
+                        "raw_feat_d1": raw_feat_d1,
+                        **(result.get("details") or {}),
+                    }),
+                    default=np_encoder,
+                ),
             }
             all_full_results.append(record)
 
