@@ -332,6 +332,10 @@ def main(symbol: str = "BTCUSDT"):
     cfg = load_config()
     engine = connect_mysql(cfg)
 
+    # 打印最近20条1h K线及其收盘价
+    recent = load_latest_klines(engine, symbol, "1h", limit=20)
+    logging.info("最近20条1h K线:\n%s", recent[["open_time", "close"]].to_string(index=False))
+
     params = load_scaler_params_from_json(cfg["feature_engineering"]["scaler_path"])
 
     feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = prepare_all_features(engine, symbol, params)
