@@ -67,7 +67,10 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         assign_safe(feats, col, df_clipped[col].astype(float))
 
     if "fg_index" in df:
-        assign_safe(feats, "fg_index", df["fg_index"].astype(float).ffill())
+        fg = df["fg_index"].astype(float).ffill()
+        assign_safe(feats, "fg_index", fg)
+        # 额外提供按日粒度的情绪指标，便于多周期因子引用
+        assign_safe(feats, "fg_index_d1", fg)
     if "funding_rate" in df:
         assign_safe(feats, "funding_rate", df["funding_rate"].astype(float).ffill())
         fr_ema = _safe_ta(ta.ema, feats["funding_rate"], length=24, index=df.index)

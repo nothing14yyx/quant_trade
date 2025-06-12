@@ -623,8 +623,8 @@ class DataLoader:
 
         return {"hot_sector": top["name"], "hot_sector_strength": strength}
 
-    def get_latest_cg_global_metrics(self) -> Optional[dict]:
-        """返回最近两条 CoinGecko 全球指标并附带变化率"""
+    def get_latest_cg_global_metrics(self, symbol: Optional[str] = None) -> Optional[dict]:
+        """返回最近两条 CoinGecko 全球指标并附带变化率，可选给出指定币种的板块相关性"""
         q = (
             "SELECT timestamp, total_market_cap, total_volume, btc_dominance, eth_dominance "
             "FROM cg_global_metrics ORDER BY timestamp DESC LIMIT 2"
@@ -658,6 +658,19 @@ class DataLoader:
         hot = self.get_hot_sector()
         if hot:
             metrics.update(hot)
+            if symbol is not None:
+                df_cat = pd.read_sql(
+                    text("SELECT categories FROM cg_coin_categories WHERE symbol=:s"),
+                    self.engine,
+                    params={"s": symbol},
+                )
+                if not df_cat.empty:
+                    cats = df_cat["categories"].iloc[0]
+                    if isinstance(cats, str) and cats:
+                        arr = [c.strip() for c in cats.split(",") if c.strip()]
+                        metrics["sector_corr"] = (
+                            1.0 if hot["hot_sector"] in arr else 0.0
+                        )
         return metrics
 
     # ───────────────────────────── 选币逻辑 ───────────────────────────────
