@@ -4,6 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 
+
 def compute_robust_z_params(df: pd.DataFrame, cols: list) -> dict:
     """
     计算训练集所有数值特征列的 0.5% / 99.5% 分位、均值和标准差，并返回一个 dict：
@@ -15,6 +16,8 @@ def compute_robust_z_params(df: pd.DataFrame, cols: list) -> dict:
     params = {}
     for col in cols:
         arr = df[col].dropna().values
+        if arr.size == 0:
+            continue
         # ===== 从原来的 1%/99% 改为 0.5%/99.5%，更宽容地保留极值 =====
         lower, upper = np.nanpercentile(arr, [0.5, 99.5])
         clipped = np.clip(arr, lower, upper)
@@ -24,17 +27,20 @@ def compute_robust_z_params(df: pd.DataFrame, cols: list) -> dict:
             "lower": float(lower),
             "upper": float(upper),
             "mean": mu,
-            "std": sigma
+            "std": sigma,
         }
     return params
+
 
 def save_scaler_params_to_json(params: dict, path: str) -> None:
     with open(path, "w") as f:
         json.dump(params, f, indent=2)
 
+
 def load_scaler_params_from_json(path: str) -> dict:
     with open(path, "r") as f:
         return json.load(f)
+
 
 def apply_robust_z_with_params(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     """根据给定参数进行剪裁与归一化，支持按 symbol 分组的参数结构。"""
