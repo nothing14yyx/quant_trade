@@ -63,17 +63,18 @@ for itv in intervals:
 _f1h = calc_features_raw(dfs_raw["1h"], "1h")
 _f4h = calc_features_raw(dfs_raw["4h"], "4h")
 _fd1 = calc_features_raw(dfs_raw["1d"], "d1")
-raw_feats = {
-    "1h": _f1h.reset_index(drop=True),
-    "4h": _f4h.reset_index(drop=True),
-    "1d": _fd1.reset_index(drop=True),
-}
 
-# 计算跨周期特征，供调试或后续分析
+# 计算跨周期特征并与 1h 原始数据合并，添加时间字段
 cross_feats = calc_cross_features(_f1h, _f4h, _fd1)
+merged = (
+    dfs_raw["1h"].reset_index()
+    .merge(cross_feats, on="open_time", how="left", suffixes=("", "_feat"))
+)
+merged["symbol"] = symbol
+merged["hour_of_day"] = merged["open_time"].dt.hour.astype(float)
+merged["day_of_week"] = merged["open_time"].dt.dayofweek.astype(float)
 
-for df in raw_feats.values():
-    df["symbol"] = symbol
+raw_feats = merged
 
 # =================== 5. 初始化信号生成器 ===================
 model_paths = config["models"]
@@ -88,55 +89,37 @@ signal_generator = RobustSignalGenerator(
     feature_cols_d1=feature_cols_d1,
 )
 
-# =================== 6. 循环取最后 N 根 K 线，生成信号 ===================
+# =================== 6. 预处理并循环生成信号 ===================
+scaled_feats = (
+    apply_robust_z_with_params(raw_feats.copy(), SCALER_PARAMS)
+    if USE_NORMALIZED
+    else raw_feats.copy()
+)
+
 N = 60
 for idx in range(-N, 0):
-    # --- 6.1 如果需要归一化，则把 raw_feats 里的那一行先缩放 ---
-    if USE_NORMALIZED:
-        # 从 raw_feats 中取出“第 idx 行”（注意要保持 DataFrame 结构，用 [[idx]]）
-        last_raw_1h = raw_feats["1h"].iloc[[idx]]
-        last_raw_4h = raw_feats["4h"].iloc[[idx]]
-        last_raw_d1 = raw_feats["1d"].iloc[[idx]]
+    row_scaled = scaled_feats.iloc[idx]
+    row_raw = raw_feats.iloc[idx]
 
-        # 用 SCALER_PARAMS 做 Robust‐Z 缩放
-        scaled_1h_df = apply_robust_z_with_params(last_raw_1h, SCALER_PARAMS)
-        scaled_4h_df = apply_robust_z_with_params(last_raw_4h, SCALER_PARAMS)
-        scaled_d1_df = apply_robust_z_with_params(last_raw_d1, SCALER_PARAMS)
+    feat_1h = {c: row_scaled[c] for c in feature_cols_1h if c in row_scaled}
+    feat_4h = {c: row_scaled[c] for c in feature_cols_4h if c in row_scaled}
+    feat_d1 = {c: row_scaled[c] for c in feature_cols_d1 if c in row_scaled}
 
-        # 转为字典，作为模型输入
-        feat_1h = scaled_1h_df.iloc[0].to_dict()
-        feat_4h = scaled_4h_df.iloc[0].to_dict()
-        feat_d1 = scaled_d1_df.iloc[0].to_dict()
+    feat_1h["close"] = row_raw["close"]
 
-        # 为了止盈止损，需要保证 feat_1h['close'] 和 feat_4h['close']
-        # 均使用未缩放的原始收盘价
-        feat_1h['close'] = dfs_raw["1h"]['close'].iloc[idx]
-        feat_4h['close'] = dfs_raw["4h"]['close'].iloc[idx]
+    raw_dict = row_raw.to_dict()
 
-    else:
-        # --- 6.2 如果不归一化，直接把 raw_feats 里的那一行转 dict ---
-        feat_1h = raw_feats["1h"].iloc[idx].to_dict()
-        feat_4h = raw_feats["4h"].iloc[idx].to_dict()
-        feat_d1 = raw_feats["1d"].iloc[idx].to_dict()
-
-        # raw_feats 里本身就包含 'close'（原始收盘价），不需要再覆盖
-
-    # --- 6.3 创建原始特征字典，用于计算止盈止损等 ---
-    raw_1h = raw_feats["1h"].iloc[idx].to_dict()
-    raw_4h = raw_feats["4h"].iloc[idx].to_dict()
-    raw_d1 = raw_feats["1d"].iloc[idx].to_dict()
-
-    # --- 6.4 生成信号（需传入 raw 特征以获得正确的止盈止损） ---
     result = signal_generator.generate_signal(
-        feat_1h, feat_4h, feat_d1,
-        raw_features_1h=raw_1h,
-        raw_features_4h=raw_4h,
-        raw_features_d1=raw_d1
+        feat_1h,
+        feat_4h,
+        feat_d1,
+        raw_features_1h=raw_dict,
+        raw_features_4h=raw_dict,
+        raw_features_d1=raw_dict,
     )
 
-    # --- 6.5 打印结果，方便比对 ---
-    print("="*60)
-    print(f"时间 (1h): {dfs_raw['1h'].index[idx]}")
+    print("=" * 60)
+    print(f"时间 (1h): {row_raw['open_time']}")
     print("Feat 1h (最后一行)：", feat_1h)
     print("Feat 4h (最后一行)：", feat_4h)
     print("Feat d1 (最后一行)：", feat_d1)
