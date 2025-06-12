@@ -4,7 +4,7 @@
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from data_loader import DataLoader
 from generate_signal_from_db import (
@@ -65,7 +65,7 @@ class Scheduler:
         logging.info("generating signals for %s symbols", len(symbols))
         global_metrics = load_global_metrics(self.engine)
         results = []
-        now = datetime.utcnow().replace(second=0, microsecond=0)
+        now = datetime.now(UTC).replace(second=0, microsecond=0)
         for sym in symbols:
             try:
                 feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = prepare_all_features(
@@ -130,10 +130,10 @@ class Scheduler:
             )
 
     def run(self):
-        next_symbols_refresh = datetime.utcnow()
+        next_symbols_refresh = datetime.now(UTC)
         symbols = []
         while True:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             if now >= next_symbols_refresh:
                 symbols = self.dl.get_top_symbols()
                 next_symbols_refresh = now + timedelta(hours=1)
@@ -151,7 +151,7 @@ class Scheduler:
                     self.update_daily_data(symbols)
                 self.generate_signals(symbols)
             # sleep until next minute
-            time.sleep(60 - datetime.utcnow().second)
+            time.sleep(60 - datetime.now(UTC).second)
 
 
 if __name__ == "__main__":
