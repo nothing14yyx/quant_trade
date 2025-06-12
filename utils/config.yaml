@@ -58,61 +58,41 @@ database:
   uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
 
 feature_cols:
-
   1h:
     # —— 价格 / 动量 ——
-    - pct_chg1_1h          # 榜首动量:contentReference[oaicite:0]{index=0}
-    - pct_chg6_1h          # 补足短→中窗口
-    - cci_delta_1h         # 趋势斜率
-    - bear_streak_1h       # 连跌计数
-    # —— 跨周期价差 ——
-    - close_spread_1h_4h   # 乖离幅度:contentReference[oaicite:1]{index=1}
+    - pct_chg1_1h         # 单根1h涨跌幅:contentReference[oaicite:0]{index=0}
+    # —— 震荡 / 振荡 ——
+    - cci_delta_1h        # 1h CCI变化率:contentReference[oaicite:1]{index=1}
+    # —— 波动率 ——
+    - atr_pct_ratio_1h_4h # 1h vs 4h波动率比:contentReference[oaicite:2]{index=2}
     # —— 成交量 / 资金流 ——
-    - obv_delta_1h         # 量价背离:contentReference[oaicite:2]{index=2}
+    - obv_delta_1h        # 1h OBV变化:contentReference[oaicite:3]{index=3}
     # —— 蜡烛形态 ——
-    - upper_wick_ratio_1h  # 上影抛压
-    # —— 时间因子 ——
-    - hour_of_day          # 日内节奏
-    - day_of_week          # 周期性效应
-    # —— 趋势确认 ——
-    - bull_streak_1h       # 连涨计数
-    - cci_1h               # 绝对趋势值
+    - upper_wick_ratio_1h # 1h上影线比例:contentReference[oaicite:4]{index=4}
 
   4h:
     # —— 价格 / 动量 ——
-    - pct_chg6_4h          # 中期动量:contentReference[oaicite:3]{index=3}
-    - pct_chg3_4h          # 较短窗口补充
-    - rsi_slope_4h         # RSI 斜率
+    - pct_chg6_4h         # 最近6根4h涨跌幅:contentReference[oaicite:5]{index=5}
+    # —— 震荡 / 振荡 ——
+    - rsi_slope_4h        # 4h RSI斜率:contentReference[oaicite:6]{index=6}
     # —— 波动率 ——
-    - atr_pct_ratio_1h_4h  # 波动压缩 / 扩张:contentReference[oaicite:4]{index=4}
-    - atr_chg_4h           # ATR 变化幅
+    - atr_chg_4h          # 4h ATR变化率:contentReference[oaicite:7]{index=7}
     # —— 成交量 / 情绪 ——
-    - vol_roc_4h           # 量能加速
-    - cg_total_volume_roc_d1 # 市场总体量能:contentReference[oaicite:5]{index=5}
+    - vol_roc_4h          # 4h成交量环比增速:contentReference[oaicite:8]{index=8}
     # —— 蜡烛形态 ——
-    - upper_wick_ratio_4h  # 中期抛压
-    - lower_wick_ratio_4h  # 中期承接
-    # —— 统计形态 ——
-    - kc_width_pct_chg_d1  # Keltner 通道宽度变化（跨期）
-    - atr_pct_d1           # 日线波动背景
+    - upper_wick_ratio_4h # 4h上影线比例:contentReference[oaicite:9]{index=9}
 
   1d:
-    # —— 宏观 / 链上 ——
-    - cg_market_cap_roc_d1 # 总市值动量:contentReference[oaicite:6]{index=6}
-    # —— 趋势 / 动量 ——
-    - macd_signal_d1       # MACD 信号线
-    - rsi_diff_1h_4h       # 短-中期背离:contentReference[oaicite:7]{index=7}
-    - cci_d1               # 日级趋势
+    # —— 价格 / 动量 ——
+    - pct_chg6_d1         # 最近6日涨跌幅:contentReference[oaicite:10]{index=10}
+    # —— 震荡 / 振荡 ——
+    - macd_signal_d1      # 日线MACD信号线:contentReference[oaicite:11]{index=11}
     # —— 波动率 ——
-    - atr_pct_d1           # 日级 ATR
-    - hv_14d_d1            # 14 日历史波动
-    # —— 成交量 ——
-    - vol_roc_d1           # 日级量能
-    - vol_ma_ratio_long_d1 # 长期均量比
+    - atr_pct_d1          # 日线ATR百分比:contentReference[oaicite:12]{index=12}
+    # —— 宏观 / 链上 ——
+    - cg_market_cap_roc_d1# 日级链上市值环比:contentReference[oaicite:13]{index=13}
     # —— 蜡烛形态 ——
-    - lower_wick_ratio_d1  # 日线下影承接
-    # —— 统计形态 ——
-    - hv_14d_1h            # 补充尾部风险（高排且与上列低相关）
+    - lower_wick_ratio_d1 # 日线下影线比例:contentReference[oaicite:14]{index=14}
 
 train_settings:
   by_symbol: false
