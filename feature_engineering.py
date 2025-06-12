@@ -2,10 +2,6 @@
 """
 FeatureEngineer v2.3-patch1 (External indicators removed)  (2025-06-03)
 ==================================================================
-在原版 FeatureEngineer 的基础上，去掉所有“外部指标”相关的逻辑：
-  - 不再假设 klines 表里存在 vix、dxy、btc_dominance、adractcnt_*、txcnt_*、feetotntv_* 等列。
-  - merge_features 中的 DROP_PREFIXES 不再包含这些外部前缀。
-  - 其余特征计算依赖于 utils/helper.calc_features_full，它也已移除了外部字段。
 """
 
 import os
@@ -133,7 +129,6 @@ class FeatureEngineer:
     3. 支持 Robust-z 参数持久化：训练时算出 p1/p99/mean/std 并保存；推理时直接加载。
     4. 过滤掉非数值列，只对数值列做 Robust-z。
     5. _add_missing_flags 中一次性 concat，避免 DataFrame 碎片化。
-    6. 去掉外部指标（vix/dxy/链上等）相关逻辑，无需再清理这些列。
     """
 
     def __init__(self, config_path: str | os.PathLike = "utils/config.yaml") -> None:
