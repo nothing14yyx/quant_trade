@@ -1,6 +1,13 @@
 # model_trainer.py  (2025-06-03, 已添加按 open_time 排序)
 # ----------------------------------------------------------------
-import os, yaml, joblib, lightgbm as lgb, numpy as np, pandas as pd, datetime
+import os
+import re
+import yaml
+import joblib
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+import datetime
 from pathlib import Path
 from sklearn.metrics import roc_auc_score, mean_absolute_error
 from sklearn.metrics import precision_recall_curve
@@ -9,6 +16,20 @@ from sklearn.metrics import precision_recall_curve
 import optuna
 from lightgbm.callback import CallbackEnv
 from sqlalchemy import create_engine
+
+
+def _sanitize_feature_names(df: pd.DataFrame, features: list[str]) -> list[str]:
+    """Replace characters not supported by LightGBM in feature names."""
+    mapping = {}
+    sanitized = []
+    for col in features:
+        clean = re.sub(r'[\[\]{}\\"\n\r\t]', '_', col)
+        if clean != col:
+            mapping[col] = clean
+        sanitized.append(clean)
+    if mapping:
+        df.rename(columns=mapping, inplace=True)
+    return sanitized
 
 
 def forward_chain_split(n_samples: int, n_splits: int = 5, gap: int = 0):
@@ -190,12 +211,13 @@ def drop_price_outliers(df: pd.DataFrame, pct: float = 0.995) -> pd.DataFrame:
 def train_one(df_all: pd.DataFrame, features: list[str], tgt: str, model_path: Path, regression: bool = False) -> None:
 
     # 5-1  缺列补 NaN
-    for col in features:
+    feat_use = _sanitize_feature_names(df_all, features.copy())
+
+    for col in feat_use:
         if col not in df_all.columns:
             df_all[col] = np.nan
 
     # 5-2  不再额外拼接 _isnan 标记列，避免重复
-    feat_use = features.copy()
 
     # 5-3  过滤掉标签为 NaN 的行后再取训练集
     data = df_all.dropna(subset=[tgt])
