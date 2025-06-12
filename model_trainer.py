@@ -378,12 +378,9 @@ for sym in symbols:
                 subset = df_rng
 
             for tag, tgt_col in targets.items():
-                file_date = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
-                file_name = f"model_{period}_{tag}_{file_date}.pkl"
+                file_name = f"model_{period}_{tag}.pkl"
                 print(f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}")
                 out_file = Path("models") / file_name
                 train_one(subset.copy(), cols, tgt_col, out_file, regression=(tag == "vol"))
-                with open(Path("models") / "changelog.csv", "a") as f:
-                    f.write(f"{file_name},{file_date}\n")
 
 print("\n✅  All models finished.")
