@@ -163,6 +163,12 @@ class FeatureEngineer:
 
         # Robust-z 模式：train 或 inference
         self.mode: str = fe_cfg.get("mode", "train")
+
+        # 参考币种
+        self.btc_symbol: str = fe_cfg.get("btc_symbol", "BTCUSDT")
+        self.eth_symbol: str = fe_cfg.get("eth_symbol", "ETHUSDT")
+
+        self._kl_cache: dict[tuple[str, str], pd.DataFrame | None] = {}
         # 保存/加载剪裁+缩放参数的 JSON 路径
         self.scaler_path: Path = Path(
             fe_cfg.get("scaler_path", "scalers/all_features_scaler.json")
@@ -269,20 +275,56 @@ class FeatureEngineer:
             symbol_sets.append(set(df["symbol"]))
         return list(set.intersection(*symbol_sets))
 
+    def _load_klines_raw(self, symbol: str, interval: str) -> Optional[pd.DataFrame]:
+        key = (symbol, interval)
+        if key not in self._kl_cache:
+            sql = (
+                "SELECT * FROM klines WHERE symbol=%s AND `interval`=%s ORDER BY open_time"
+            )
+            df = pd.read_sql(
+                sql,
+                self.engine,
+                parse_dates=["open_time", "close_time"],
+                params=(symbol, interval),
+            )
+            if df.empty:
+                self._kl_cache[key] = None
+            else:
+                self._kl_cache[key] = df.set_index("open_time").sort_index()
+        cached = self._kl_cache.get(key)
+        return None if cached is None else cached.copy()
+
     def load_klines_db(self, symbol: str, interval: str) -> Optional[pd.DataFrame]:
-        """读取指定 symbol/interval 的 K 线，若无数据返回 None。"""
-        sql = (
-            "SELECT * FROM klines WHERE symbol=%s AND `interval`=%s ORDER BY open_time"
-        )
-        df = pd.read_sql(
-            sql,
-            self.engine,
-            parse_dates=["open_time", "close_time"],
-            params=(symbol, interval),
-        )
-        if df.empty:
+        """读取指定 symbol/interval 的 K 线，并附加 btc/eth 收盘价列."""
+        df = self._load_klines_raw(symbol, interval)
+        if df is None:
             return None
-        return df.set_index("open_time").sort_index()
+
+        out = df.reset_index()
+
+        if symbol != self.btc_symbol:
+            btc_df = self._load_klines_raw(self.btc_symbol, interval)
+            if btc_df is not None:
+                btc_df = btc_df[["close"]].rename(columns={"close": "btc_close"}).reset_index()
+                out = pd.merge_asof(
+                    out.sort_values("open_time"),
+                    btc_df.sort_values("open_time"),
+                    on="open_time",
+                    direction="backward",
+                )
+
+        if symbol != self.eth_symbol:
+            eth_df = self._load_klines_raw(self.eth_symbol, interval)
+            if eth_df is not None:
+                eth_df = eth_df[["close"]].rename(columns={"close": "eth_close"}).reset_index()
+                out = pd.merge_asof(
+                    out.sort_values("open_time"),
+                    eth_df.sort_values("open_time"),
+                    on="open_time",
+                    direction="backward",
+                )
+
+        return out.set_index("open_time").sort_index()
 
     def load_order_book(self, symbol: str) -> Optional[pd.DataFrame]:
         """读取指定合约的 order_book 快照"""

@@ -35,6 +35,8 @@ feature_engineering:
   topn: 100
   mode: train                        # train 或 inference
   scaler_path: scalers/all_features_scaler.json
+  btc_symbol: "BTCUSDT"
+  eth_symbol: "ETHUSDT"
 
 feature_selector:
   target: target_up   # 也可换 target_up
