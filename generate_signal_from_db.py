@@ -64,12 +64,22 @@ def prepare_features(df: pd.DataFrame, period: str, params: dict, symbol: str) -
     feats = calc_features_raw(df.set_index("open_time"), period)
     raw = feats.iloc[-1]
 
+    # funding_rate 列默认无周期后缀，这里补充生成 funding_rate_{period}
+    if "funding_rate" in feats.columns:
+        feats[f"funding_rate_{period}"] = feats["funding_rate"]
 
     last = feats.tail(1).copy()
     last["symbol"] = symbol
     last = apply_robust_z_with_params(last, params)
     scaled = last.drop(columns=["symbol"]).iloc[0]
-    return scaled.to_dict(), raw.to_dict()
+
+    scaled_dict = scaled.to_dict()
+    raw_dict = raw.to_dict()
+    if "funding_rate" in raw_dict:
+        raw_dict[f"funding_rate_{period}"] = raw_dict["funding_rate"]
+        scaled_dict[f"funding_rate_{period}"] = scaled_dict.get("funding_rate")
+
+    return scaled_dict, raw_dict
 
 
 
@@ -79,6 +89,8 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
     df1h = load_latest_klines(engine, symbol, "1h")
     df4h = load_latest_klines(engine, symbol, "4h")
     dfd1 = load_latest_klines(engine, symbol, "1d")
+    df5m = load_latest_klines(engine, symbol, "5m")
+    df15m = load_latest_klines(engine, symbol, "15m")
 
     f1h_df = calc_features_raw(df1h.set_index("open_time"), "1h")
     f4h_df = calc_features_raw(df4h.set_index("open_time"), "4h")
@@ -109,6 +121,33 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
     scaled1h, raw1h = prepare_features(df1h, "1h", params, symbol)
     scaled4h, raw4h = prepare_features(df4h, "4h", params, symbol)
     scaledd1, rawd1 = prepare_features(dfd1, "d1", params, symbol)
+
+    # 短周期动量指标
+    if not df5m.empty:
+        f5m = calc_features_raw(df5m.set_index("open_time"), "5m")
+        if "pct_chg1_5m" in f5m:
+            chg5 = f5m["pct_chg1_5m"].shift(1)
+            f5m["mom_5m_roll1h"] = chg5.rolling(12, min_periods=1).mean()
+            f5m["mom_5m_roll1h_std"] = chg5.rolling(12, min_periods=1).std()
+            last5 = f5m.tail(1).copy()
+            last5["symbol"] = symbol
+            s5 = apply_robust_z_with_params(last5, params).drop(columns=["symbol"]).iloc[0]
+            for c in ["mom_5m_roll1h", "mom_5m_roll1h_std"]:
+                scaled1h[c] = s5.get(c)
+                raw1h[c] = last5[c].iloc[0]
+
+    if not df15m.empty:
+        f15m = calc_features_raw(df15m.set_index("open_time"), "15m")
+        if "pct_chg1_15m" in f15m:
+            chg15 = f15m["pct_chg1_15m"].shift(1)
+            f15m["mom_15m_roll1h"] = chg15.rolling(4, min_periods=1).mean()
+            f15m["mom_15m_roll1h_std"] = chg15.rolling(4, min_periods=1).std()
+            last15 = f15m.tail(1).copy()
+            last15["symbol"] = symbol
+            s15 = apply_robust_z_with_params(last15, params).drop(columns=["symbol"]).iloc[0]
+            for c in ["mom_15m_roll1h", "mom_15m_roll1h_std"]:
+                scaled1h[c] = s15.get(c)
+                raw1h[c] = last15[c].iloc[0]
 
     for col in cross_cols:
         scaled1h[col] = cross_scaled[col]
@@ -236,8 +275,16 @@ def load_global_metrics(engine, symbol: str | None = None) -> dict | None:
         btc_dom_chg = pct(latest["btc_dominance"], prev["btc_dominance"])
         mcap_growth = pct(latest["total_market_cap"], prev["total_market_cap"])
         vol_chg = pct(latest["total_volume"], prev["total_volume"])
+        eth_dom_chg = pct(latest["eth_dominance"], prev["eth_dominance"])
+        btc_mcap_prev = prev["total_market_cap"] * prev["btc_dominance"] / 100
+        btc_mcap_cur = latest["total_market_cap"] * latest["btc_dominance"] / 100
+        alt_prev = prev["total_market_cap"] - btc_mcap_prev
+        alt_cur = latest["total_market_cap"] - btc_mcap_cur
+        btc_mcap_growth = pct(btc_mcap_cur, btc_mcap_prev)
+        alt_mcap_growth = pct(alt_cur, alt_prev)
     else:
         btc_dom_chg = mcap_growth = vol_chg = None
+        eth_dom_chg = btc_mcap_growth = alt_mcap_growth = None
 
     metrics = {
         "timestamp": latest["timestamp"],
@@ -248,6 +295,9 @@ def load_global_metrics(engine, symbol: str | None = None) -> dict | None:
         "total_market_cap": float(latest["total_market_cap"]),
         "total_volume": float(latest["total_volume"]),
         "eth_dominance": float(latest["eth_dominance"]),
+        "eth_dom_chg": float(eth_dom_chg) if eth_dom_chg is not None else None,
+        "btc_mcap_growth": float(btc_mcap_growth) if btc_mcap_growth is not None else None,
+        "alt_mcap_growth": float(alt_mcap_growth) if alt_mcap_growth is not None else None,
     }
     oi = load_latest_open_interest(engine, "BTCUSDT")
     if oi and oi.get("vix_proxy") is not None:
@@ -290,6 +340,9 @@ def main(symbol: str = "BTCUSDT"):
     oi = load_latest_open_interest(engine, symbol)
     order_imb = load_order_book_imbalance(engine, symbol)
     categories = load_symbol_categories(engine)
+
+    if order_imb is not None:
+        raw1h["bid_ask_imbalance"] = order_imb
 
     sg = RobustSignalGenerator(
         model_paths=cfg["models"],
