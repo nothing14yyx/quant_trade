@@ -4,6 +4,8 @@ import pandas as pd
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
 
+DEFAULT_SYMBOL = "BTCUSDT"
+
 
 def load_config(path: str = "utils/config.yaml"):
     with open(path, "r", encoding="utf-8") as f:
@@ -70,6 +72,7 @@ def main(symbol: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="单币交易信号与指标查询")
-    parser.add_argument("symbol", help="币安交易对，如 BTCUSDT")
+    parser.add_argument("--symbol", help="币安交易对，如 BTCUSDT")
     args = parser.parse_args()
-    main(args.symbol.upper())
+    symbol = args.symbol.upper() if args.symbol else DEFAULT_SYMBOL
+    main(symbol)
