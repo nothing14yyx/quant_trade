@@ -84,6 +84,18 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
     f4h_df = calc_features_raw(df4h.set_index("open_time"), "4h")
     fd1_df = calc_features_raw(dfd1.set_index("open_time"), "d1")
 
+    # 若日线数据缺失资金费率异常指标，尝试从 1h 数据构造
+    if (
+        "funding_rate_anom_d1" not in fd1_df
+        or fd1_df["funding_rate_anom_d1"].isna().all()
+    ) and "funding_rate" in df1h:
+        fr = pd.to_numeric(df1h["funding_rate"], errors="coerce")
+        fr.index = pd.to_datetime(df1h["open_time"], errors="coerce")
+        fr_d = fr.resample("1D").mean()
+        fr_ema = fr_d.ewm(span=24, adjust=False).mean()
+        fr_anom = (fr_d - fr_ema).reindex(fd1_df.index, method="ffill")
+        fd1_df["funding_rate_anom_d1"] = fr_anom
+
     merged = calc_cross_features(f1h_df, f4h_df, fd1_df)
     merged["hour_of_day"] = merged["open_time"].dt.hour.astype(float)
     merged["day_of_week"] = merged["open_time"].dt.dayofweek.astype(float)
@@ -101,6 +113,37 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
     for col in cross_cols:
         scaled1h[col] = cross_scaled[col]
         raw1h[col] = cross_last[col].iloc[0]
+        scaled4h[col] = cross_scaled[col]
+        scaledd1[col] = cross_scaled[col]
+        raw4h[col] = cross_last[col].iloc[0]
+        rawd1[col] = cross_last[col].iloc[0]
+
+    # 1h 核心特征供其他周期模型调用
+    common_1h_cols = [
+        "pct_chg1_1h",
+        "hv_14d_1h",
+        "hv_30d_1h",
+        "obv_delta_1h",
+        "upper_wick_ratio_1h",
+        "kurtosis_1h",
+        "bear_streak_1h",
+    ]
+    for col in common_1h_cols:
+        if col in scaled1h:
+            scaled4h[col] = scaled1h[col]
+            scaledd1[col] = scaled1h[col]
+            raw4h[col] = raw1h.get(col)
+            rawd1[col] = raw1h.get(col)
+
+    if "upper_wick_ratio_4h" in scaled4h:
+        scaledd1["upper_wick_ratio_4h"] = scaled4h["upper_wick_ratio_4h"]
+        rawd1["upper_wick_ratio_4h"] = raw4h.get("upper_wick_ratio_4h")
+
+    if "funding_rate_anom_d1" in scaledd1:
+        scaled1h["funding_rate_anom_d1"] = scaledd1["funding_rate_anom_d1"]
+        scaled4h["funding_rate_anom_d1"] = scaledd1["funding_rate_anom_d1"]
+        raw1h["funding_rate_anom_d1"] = rawd1.get("funding_rate_anom_d1")
+        raw4h["funding_rate_anom_d1"] = rawd1.get("funding_rate_anom_d1")
 
     return scaled1h, scaled4h, scaledd1, raw1h, raw4h, rawd1
 
