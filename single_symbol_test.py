@@ -48,11 +48,15 @@ intervals = ["1h", "4h", "1d"]
 dfs_raw = {}
 
 for itv in intervals:
-    dfs_raw[itv] = pd.read_sql(
-        f"SELECT * FROM klines WHERE symbol='{symbol}' AND `interval`='{itv}' ORDER BY open_time",
-        engine,
-        parse_dates=["open_time", "close_time"]
-    ).tail(HISTORY_LEN).reset_index(drop=True)
+    dfs_raw[itv] = (
+        pd.read_sql(
+            f"SELECT * FROM klines WHERE symbol='{symbol}' AND `interval`='{itv}' ORDER BY open_time",
+            engine,
+            parse_dates=["open_time", "close_time"],
+        )
+        .set_index("open_time")
+        .tail(HISTORY_LEN)
+    )
 
 # =================== 4. 计算原始 raw 特征 DataFrame ===================
 # calc_features_raw 会返回完整的指标，包括 'atr_pct_1h'、'rsi_slope_1h' 等 raw 值
