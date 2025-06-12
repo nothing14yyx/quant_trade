@@ -1,0 +1,544 @@
+{
+  "BTC": {
+    "open_x": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "high_x": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "low_x": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "close_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "volume_x": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "ema_diff_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "sma_10_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "pct_chg1_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "pct_chg3_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "pct_chg6_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "atr_pct_1h": {
+      "lower": 2.220446049250313e-16,
+      "upper": 2.220446049250313e-16,
+      "mean": 2.220446049250313e-16,
+      "std": 1e-06
+    },
+    "atr_chg_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "mfi_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "money_flow_ratio_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bb_width_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bb_width_chg_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "kc_perc_1h": {
+      "lower": 0.5,
+      "upper": 0.5,
+      "mean": 0.5,
+      "std": 1e-06
+    },
+    "kc_width_pct_chg_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "ichimoku_base_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "ichimoku_conversion_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "donchian_delta_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "vol_roc_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "vol_ma_ratio_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "vol_ma_ratio_long_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "buy_sell_ratio_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "hv_7d_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "hv_14d_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "hv_30d_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "long_upper_shadow_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "long_lower_shadow_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "vol_breakout_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bid_ask_spread_pct_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "skewness_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "kurtosis_1h": {
+      "lower": -3.0,
+      "upper": -3.0,
+      "mean": -3.0,
+      "std": 1e-06
+    },
+    "bull_streak_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bear_streak_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "macd_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "macd_signal_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "macd_hist_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "obv_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "obv_delta_1h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "supertrend_dir_1h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "open_y": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "high_y": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "low_y": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "close_4h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "volume_y": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "sma_10_4h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "pct_chg1_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "pct_chg3_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "pct_chg6_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "mfi_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "money_flow_ratio_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "vol_roc_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "vol_ma_ratio_4h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "buy_sell_ratio_4h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "hv_7d_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "hv_14d_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "hv_30d_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "long_upper_shadow_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "long_lower_shadow_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "vol_breakout_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bid_ask_spread_pct_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bull_streak_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bear_streak_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "obv_4h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "obv_delta_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "supertrend_dir_4h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "open_feat": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "high_feat": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "low_feat": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "close_d1": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "volume_feat": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "pct_chg1_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "buy_sell_ratio_d1": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "long_upper_shadow_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "long_lower_shadow_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "vol_breakout_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bid_ask_spread_pct_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bull_streak_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "bear_streak_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "obv_d1": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "obv_delta_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "supertrend_dir_d1": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "close_spread_1h_4h": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "close_spread_1h_d1": {
+      "lower": 0.0,
+      "upper": 0.0,
+      "mean": 0.0,
+      "std": 1e-06
+    },
+    "ma_ratio_1h_4h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "vol_ratio_1h_4h": {
+      "lower": 1.0,
+      "upper": 1.0,
+      "mean": 1.0,
+      "std": 1e-06
+    },
+    "hour_of_day": {
+      "lower": 0.0,
+      "upper": 23.0,
+      "mean": 10.3,
+      "std": 6.817380750803579
+    },
+    "day_of_week": {
+      "lower": 2.0,
+      "upper": 4.0,
+      "mean": 2.8,
+      "std": 0.7483324773547883
+    }
+  }
+}
