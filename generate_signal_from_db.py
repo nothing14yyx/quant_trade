@@ -57,18 +57,24 @@ def load_latest_klines(engine, symbol: str, interval: str, limit: int = 1000) ->
     return df.sort_values("open_time")
 
 
-def prepare_features(df: pd.DataFrame, period: str, params: dict, symbol: str) -> tuple[dict, dict]:
+def prepare_features(
+    df: pd.DataFrame,
+    period: str,
+    params: dict,
+    symbol: str,
+    offset: int = 0,
+) -> tuple[dict, dict]:
 
     """计算单周期特征并返回(缩放后的dict, 原始dict)"""
 
     feats = calc_features_raw(df.set_index("open_time"), period)
-    raw = feats.iloc[-1]
+    raw = feats.iloc[-1 - offset]
 
     # funding_rate 列默认无周期后缀，这里补充生成 funding_rate_{period}
     if "funding_rate" in feats.columns:
         feats[f"funding_rate_{period}"] = feats["funding_rate"]
 
-    last = feats.tail(1).copy()
+    last = feats.iloc[[-1 - offset]].copy()
     last["symbol"] = symbol
     last = apply_robust_z_with_params(last, params)
     scaled = last.drop(columns=["symbol"]).iloc[0]
@@ -83,7 +89,12 @@ def prepare_features(df: pd.DataFrame, period: str, params: dict, symbol: str) -
 
 
 
-def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict, dict, dict, dict, dict]:
+def prepare_all_features(
+    engine,
+    symbol: str,
+    params: dict,
+    offset: int = 0,
+) -> tuple[dict, dict, dict, dict, dict, dict]:
     """加载多周期K线并构造包含跨周期特征的字典"""
 
     df1h = load_latest_klines(engine, symbol, "1h")
@@ -112,15 +123,15 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
     merged["hour_of_day"] = merged["open_time"].dt.hour.astype(float)
     merged["day_of_week"] = merged["open_time"].dt.dayofweek.astype(float)
 
-    cross_last = merged.tail(1).copy()
+    cross_last = merged.iloc[[-1 - offset]].copy()
     cross_last["symbol"] = symbol
     cross_scaled = apply_robust_z_with_params(cross_last, params).drop(columns=["symbol"]).iloc[0]
 
     cross_cols = [c for c in cross_last.columns if any(x in c for x in ["_1h_4h", "_1h_d1", "_4h_d1", "hour_of_day", "day_of_week"])]
 
-    scaled1h, raw1h = prepare_features(df1h, "1h", params, symbol)
-    scaled4h, raw4h = prepare_features(df4h, "4h", params, symbol)
-    scaledd1, rawd1 = prepare_features(dfd1, "d1", params, symbol)
+    scaled1h, raw1h = prepare_features(df1h, "1h", params, symbol, offset)
+    scaled4h, raw4h = prepare_features(df4h, "4h", params, symbol, offset)
+    scaledd1, rawd1 = prepare_features(dfd1, "d1", params, symbol, offset)
 
     # 短周期动量指标
     if not df5m.empty:
@@ -129,12 +140,14 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
             chg5 = f5m["pct_chg1_5m"].shift(1)
             f5m["mom_5m_roll1h"] = chg5.rolling(12, min_periods=1).mean()
             f5m["mom_5m_roll1h_std"] = chg5.rolling(12, min_periods=1).std()
-            last5 = f5m.tail(1).copy()
-            last5["symbol"] = symbol
-            s5 = apply_robust_z_with_params(last5, params).drop(columns=["symbol"]).iloc[0]
-            for c in ["mom_5m_roll1h", "mom_5m_roll1h_std"]:
-                scaled1h[c] = s5.get(c)
-                raw1h[c] = last5[c].iloc[0]
+            idx5 = -1 - offset * 12
+            if abs(idx5) <= len(f5m):
+                last5 = f5m.iloc[[idx5]].copy()
+                last5["symbol"] = symbol
+                s5 = apply_robust_z_with_params(last5, params).drop(columns=["symbol"]).iloc[0]
+                for c in ["mom_5m_roll1h", "mom_5m_roll1h_std"]:
+                    scaled1h[c] = s5.get(c)
+                    raw1h[c] = last5[c].iloc[0]
 
     if not df15m.empty:
         f15m = calc_features_raw(df15m.set_index("open_time"), "15m")
@@ -142,12 +155,14 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
             chg15 = f15m["pct_chg1_15m"].shift(1)
             f15m["mom_15m_roll1h"] = chg15.rolling(4, min_periods=1).mean()
             f15m["mom_15m_roll1h_std"] = chg15.rolling(4, min_periods=1).std()
-            last15 = f15m.tail(1).copy()
-            last15["symbol"] = symbol
-            s15 = apply_robust_z_with_params(last15, params).drop(columns=["symbol"]).iloc[0]
-            for c in ["mom_15m_roll1h", "mom_15m_roll1h_std"]:
-                scaled1h[c] = s15.get(c)
-                raw1h[c] = last15[c].iloc[0]
+            idx15 = -1 - offset * 4
+            if abs(idx15) <= len(f15m):
+                last15 = f15m.iloc[[idx15]].copy()
+                last15["symbol"] = symbol
+                s15 = apply_robust_z_with_params(last15, params).drop(columns=["symbol"]).iloc[0]
+                for c in ["mom_15m_roll1h", "mom_15m_roll1h_std"]:
+                    scaled1h[c] = s15.get(c)
+                    raw1h[c] = last15[c].iloc[0]
 
     for col in cross_cols:
         scaled1h[col] = cross_scaled[col]
@@ -338,15 +353,10 @@ def main(symbol: str = "BTCUSDT"):
 
     params = load_scaler_params_from_json(cfg["feature_engineering"]["scaler_path"])
 
-    feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = prepare_all_features(engine, symbol, params)
-
     global_metrics = load_global_metrics(engine, symbol)
     oi = load_latest_open_interest(engine, symbol)
     order_imb = load_order_book_imbalance(engine, symbol)
     categories = load_symbol_categories(engine)
-
-    if order_imb is not None:
-        raw1h["bid_ask_imbalance"] = order_imb
 
     sg = RobustSignalGenerator(
         model_paths=cfg["models"],
@@ -356,21 +366,35 @@ def main(symbol: str = "BTCUSDT"):
     )
     sg.set_symbol_categories(categories)
 
-    signal = sg.generate_signal(
-        feats1h,
-        feats4h,
-        featsd1,
-        raw_features_1h=raw1h,
-        raw_features_4h=raw4h,
-        raw_features_d1=rawd1,
-        global_metrics=global_metrics,
-        open_interest=oi,
-        order_book_imbalance=order_imb,
-        symbol=symbol,
-    )
+    results = []
+    latest_signal = None
+    for idx in range(len(recent)):
+        feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = prepare_all_features(engine, symbol, params, idx)
+        if order_imb is not None and idx == 0:
+            raw1h["bid_ask_imbalance"] = order_imb
+        sig = sg.generate_signal(
+            feats1h,
+            feats4h,
+            featsd1,
+            raw_features_1h=raw1h,
+            raw_features_4h=raw4h,
+            raw_features_d1=rawd1,
+            global_metrics=global_metrics,
+            open_interest=oi,
+            order_book_imbalance=order_imb if idx == 0 else None,
+            symbol=symbol,
+        )
+        if idx == 0:
+            latest_signal = sig
+        r = {
+            "open_time": recent.iloc[-1 - idx]["open_time"],
+            "close": recent.iloc[-1 - idx]["close"],
+            "score": sig.get("score"),
+        }
+        results.append(r)
 
-
-    logging.info("最新交易信号:\n%s", signal)
+    logging.info("最新交易信号:\n%s", latest_signal)
+    print(pd.DataFrame(results).to_string(index=False))
 
 
 
