@@ -57,6 +57,8 @@ def calc_cross_features(
         else:
             df.reset_index(inplace=True)
             df.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
+        # 确保 open_time 为 datetime 类型，避免与 Timedelta 运算时报错
+        df["open_time"] = pd.to_datetime(df["open_time"], errors="coerce")
 
     f1h = f1h.rename(columns={"close": "close_1h"})
     f4h = f4h.rename(columns={"close": "close_4h"})
