@@ -100,12 +100,11 @@ engine = create_engine(
 # 2. 实例化 DataLoader（用于同步行情）
 loader = DataLoader(config_path=str(CONFIG_PATH))
 
-# 3. 读取 feature_cols.txt，为 RobustSignalGenerator 构造时保留旧特征列表
-with open("data/merged/feature_cols.txt", "r", encoding="utf-8") as f:
-    all_cols = [line.strip() for line in f if line.strip()]
-feature_cols_1h = [c for c in all_cols if c.endswith("_1h")]
-feature_cols_4h = [c for c in all_cols if c.endswith("_4h")]
-feature_cols_d1 = [c for c in all_cols if c.endswith("_d1")]
+# 3. 直接从 config.yaml 读取训练时的特征列表
+# 在 single_symbol_test.py 中也是通过这种方式确保包含交叉或无后缀的列
+feature_cols_1h = cfg["feature_cols"]["1h"]
+feature_cols_4h = cfg["feature_cols"]["4h"]
+feature_cols_d1 = cfg["feature_cols"]["1d"]
 
 # 4. 初始化 RobustSignalGenerator（使用模型路径与旧特征列表）
 model_paths = {
