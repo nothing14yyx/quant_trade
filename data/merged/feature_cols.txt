@@ -56,6 +56,18 @@ body_ratio_4h
 body_ratio_4h_isnan
 body_ratio_d1
 body_ratio_d1_isnan
+btc_correlation_1h_1h
+btc_correlation_1h_1h_isnan
+btc_correlation_1h_4h
+btc_correlation_1h_4h_isnan
+btc_correlation_1h_d1
+btc_correlation_1h_d1_isnan
+eth_correlation_1h_1h
+eth_correlation_1h_1h_isnan
+eth_correlation_1h_4h
+eth_correlation_1h_4h_isnan
+eth_correlation_1h_d1
+eth_correlation_1h_d1_isnan
 boll_perc_1h
 boll_perc_1h_isnan
 boll_perc_4h
@@ -137,6 +149,8 @@ ema_diff_4h_isnan
 ema_diff_d1
 ema_diff_d1_isnan
 fg_index
+fg_index_d1
+fg_index_d1_isnan
 fg_index_feat
 fg_index_feat_isnan
 fg_index_isnan
