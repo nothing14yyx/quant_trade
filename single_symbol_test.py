@@ -136,7 +136,7 @@ for idx in range(-N, 0):
 
     # --- 6.5 打印结果，方便比对 ---
     print("="*60)
-    print(f"时间 (1h): {dfs_raw['1h']['open_time'].iloc[idx]}")
+    print(f"时间 (1h): {dfs_raw['1h'].index[idx]}")
     print("Feat 1h (最后一行)：", feat_1h)
     print("Feat 4h (最后一行)：", feat_4h)
     print("Feat d1 (最后一行)：", feat_d1)
