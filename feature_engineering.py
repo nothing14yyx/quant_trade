@@ -263,9 +263,6 @@ class FeatureEngineer:
             "target_up",
             "target_down",
         ] + FUTURE_COLS
-        df_all.drop(
-            columns=[c for c in FUTURE_COLS if c in df_all.columns], inplace=True
-        )
         base_cols_exist = [c for c in base_cols if c in df_all.columns]
         other_cols = [c for c in df_all.columns if c not in base_cols_exist]
         df_all = df_all[base_cols_exist + other_cols]
@@ -316,9 +313,6 @@ class FeatureEngineer:
         df_final, feat_cols_all = self._add_missing_flags(df_scaled, feat_cols_all)
         # 同步更新全局特征列表，确保后续批次字段一致
         self.feature_cols_all = feat_cols_all
-        df_final.drop(
-            columns=[c for c in FUTURE_COLS if c in df_final.columns], inplace=True
-        )
 
         final_other_cols = [c for c in df_final.columns if c not in base_cols]
         return df_final, final_other_cols
