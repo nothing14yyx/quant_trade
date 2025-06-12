@@ -68,7 +68,20 @@ def np_encoder(obj):
         return float(obj)
     if isinstance(obj, np.bool_):
         return bool(obj)
+    if isinstance(obj, (datetime, pd.Timestamp)):
+        return obj.isoformat()
+    if obj is None or (isinstance(obj, float) and np.isnan(obj)):
+        return None
     return obj
+
+
+def sanitize(obj):
+    """Recursively convert objects to JSON-serializable types."""
+    if isinstance(obj, dict):
+        return {k: sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize(v) for v in obj]
+    return np_encoder(obj)
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 # ———————— 程序开头：全局初始化 ————————
@@ -547,15 +560,17 @@ def main_loop(interval_sec: int = 60):
                 "take_profit": result.get("take_profit"),
                 "stop_loss": result.get("stop_loss"),
                 "indicators": json.dumps(
-                    copy.deepcopy({
-                        "feat_1h": feat_1h,
-                        "feat_4h": feat_4h,
-                        "feat_d1": feat_d1,
-                        "raw_feat_1h": raw_feat_1h,
-                        "raw_feat_4h": raw_feat_4h,
-                        "raw_feat_d1": raw_feat_d1,
-                        **(result.get("details") or {}),
-                    }),
+                    sanitize(
+                        {
+                            "feat_1h": feat_1h,
+                            "feat_4h": feat_4h,
+                            "feat_d1": feat_d1,
+                            "raw_feat_1h": raw_feat_1h,
+                            "raw_feat_4h": raw_feat_4h,
+                            "raw_feat_d1": raw_feat_d1,
+                            **(result.get("details") or {}),
+                        }
+                    ),
                     default=np_encoder,
                 ),
             }
