@@ -8,7 +8,7 @@ import yaml
 from sqlalchemy import create_engine
 
 from robust_signal_generator import RobustSignalGenerator
-from utils.helper import calc_features_raw
+from utils.helper import calc_features_raw, calc_order_book_features
 
 from feature_engineering import calc_cross_features
 
@@ -44,12 +44,12 @@ def connect_mysql(cfg):
     return create_engine(url)
 
 
-def load_latest_klines(engine, symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
+def load_latest_klines(engine, symbol: str, interval: str, limit: int = 1000) -> pd.DataFrame:
     """从数据库加载指定周期的最新K线并返回DataFrame"""
 
     query = (
         "SELECT open_time, open, high, low, close, volume, fg_index, funding_rate, "
-        "taker_buy_base, cg_price, cg_market_cap, cg_total_volume "
+        "taker_buy_base,taker_buy_quote, cg_price, cg_market_cap, cg_total_volume "
         f"FROM klines WHERE symbol='{symbol}' AND `interval`='{interval}' "
         f"ORDER BY open_time DESC LIMIT {limit}"
     )
