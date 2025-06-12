@@ -312,11 +312,12 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     # ======== CoinGecko 衍生特征 ========
     if "cg_price" in df:
         cg_price = pd.to_numeric(df["cg_price"], errors="coerce")
-        assign_safe(feats, f"price_diff_cg_{period}", feats["close"] - cg_price)
+        orig_close = pd.to_numeric(df["close"], errors="coerce")
+        assign_safe(feats, f"price_diff_cg_{period}", orig_close - cg_price)
         assign_safe(
             feats,
             f"price_ratio_cg_{period}",
-            feats["close"] / cg_price.replace(0, np.nan),
+            orig_close / cg_price.replace(0, np.nan),
         )
 
     if "cg_market_cap" in df:
