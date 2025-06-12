@@ -42,6 +42,82 @@ FUTURE_COLS = [
 ]
 
 
+def calc_cross_features(
+    df1h: pd.DataFrame, df4h: pd.DataFrame, df1d: pd.DataFrame
+) -> pd.DataFrame:
+    """生成跨周期特征并返回合并后的 DataFrame."""
+
+    f1h = df1h.copy()
+    f4h = df4h.copy()
+    f1d = df1d.copy()
+
+    for df in (f1h, f4h, f1d):
+        df.reset_index(inplace=True)
+        df.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
+
+    f1h = f1h.rename(columns={"close": "close_1h"})
+    f4h = f4h.rename(columns={"close": "close_4h"})
+    f1d = f1d.rename(columns={"close": "close_d1"})
+
+    f4h["close_time_4h"] = (
+        f4h["open_time"] + pd.Timedelta(hours=4) - pd.Timedelta(seconds=1)
+    )
+    f1d["close_time_d1"] = (
+        f1d["open_time"] + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    )
+    f4h = f4h.drop(columns=["open_time"])
+    f1d = f1d.drop(columns=["open_time"])
+
+    merged = pd.merge_asof(
+        f1h.sort_values("open_time"),
+        f4h.sort_values("close_time_4h"),
+        left_on="open_time",
+        right_on="close_time_4h",
+        direction="backward",
+    )
+    merged = pd.merge_asof(
+        merged.sort_values("open_time"),
+        f1d.sort_values("close_time_d1"),
+        left_on="open_time",
+        right_on="close_time_d1",
+        direction="backward",
+    )
+
+    merged["close_spread_1h_4h"] = merged["close_1h"] - merged["close_4h"]
+    merged["close_spread_1h_d1"] = merged["close_1h"] - merged["close_d1"]
+    merged["ma_ratio_1h_4h"] = merged["sma_10_1h"] / merged["sma_10_4h"].replace(
+        0, np.nan
+    )
+    merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(
+        0, np.nan
+    )
+    merged["ma_ratio_4h_d1"] = merged["sma_10_4h"] / merged["sma_10_d1"].replace(
+        0, np.nan
+    )
+    merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged["atr_pct_4h"].replace(
+        0, np.nan
+    )
+    merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged["bb_width_4h"].replace(
+        0, np.nan
+    )
+    merged["rsi_diff_1h_4h"] = merged["rsi_1h"] - merged["rsi_4h"]
+    merged["rsi_diff_1h_d1"] = merged["rsi_1h"] - merged["rsi_d1"]
+    merged["rsi_diff_4h_d1"] = merged["rsi_4h"] - merged["rsi_d1"]
+    merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
+    merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
+    merged["macd_hist_4h_mul_bb_width_1h"] = merged["macd_hist_4h"] * merged["bb_width_1h"]
+    merged["rsi_1h_mul_vol_ma_ratio_4h"] = merged["rsi_1h"] * merged["vol_ma_ratio_4h"]
+    merged["macd_hist_1h_mul_bb_width_4h"] = merged["macd_hist_1h"] * merged["bb_width_4h"]
+    merged["vol_ratio_1h_4h"] = merged["vol_ma_ratio_1h"] / merged["vol_ma_ratio_4h"].replace(
+        0, np.nan
+    )
+    merged["vol_ratio_4h_d1"] = merged["vol_ma_ratio_4h"] / merged["vol_ma_ratio_d1"].replace(
+        0, np.nan
+    )
+
+    return merged
+
+
 class FeatureEngineer:
     """多周期特征工程生成器 (1h → 4h → 1d)。
 
@@ -395,29 +471,7 @@ class FeatureEngineer:
                 direction="backward",
             )
 
-        f4h["close_time_4h"] = (
-            f4h["open_time"] + pd.Timedelta(hours=4) - pd.Timedelta(seconds=1)
-        )
-        f1d["close_time_d1"] = (
-            f1d["open_time"] + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-        )
-        f4h = f4h.drop(columns=["open_time"])
-        f1d = f1d.drop(columns=["open_time"])
-
-        merged = pd.merge_asof(
-            f1h.sort_values("open_time"),
-            f4h.sort_values("close_time_4h"),
-            left_on="open_time",
-            right_on="close_time_4h",
-            direction="backward",
-        )
-        merged = pd.merge_asof(
-            merged.sort_values("open_time"),
-            f1d.sort_values("close_time_d1"),
-            left_on="open_time",
-            right_on="close_time_d1",
-            direction="backward",
-        )
+        merged = calc_cross_features(f1h, f4h, f1d)
         if f5m is not None:
             merged = pd.merge_asof(
                 merged.sort_values("open_time"),
@@ -432,44 +486,6 @@ class FeatureEngineer:
                 on="open_time",
                 direction="backward",
             )
-
-        merged["close_spread_1h_4h"] = merged["close_1h"] - merged["close_4h"]
-        merged["close_spread_1h_d1"] = merged["close_1h"] - merged["close_d1"]
-        merged["ma_ratio_1h_4h"] = merged["sma_10_1h"] / merged["sma_10_4h"].replace(
-            0, np.nan
-        )
-        merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(
-            0, np.nan
-        )
-        merged["ma_ratio_4h_d1"] = merged["sma_10_4h"] / merged["sma_10_d1"].replace(
-            0, np.nan
-        )
-        merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged[
-            "atr_pct_4h"
-        ].replace(0, np.nan)
-        merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged[
-            "bb_width_4h"
-        ].replace(0, np.nan)
-        merged["rsi_diff_1h_4h"] = merged["rsi_1h"] - merged["rsi_4h"]
-        merged["rsi_diff_1h_d1"] = merged["rsi_1h"] - merged["rsi_d1"]
-        merged["rsi_diff_4h_d1"] = merged["rsi_4h"] - merged["rsi_d1"]
-        merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
-        merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
-        merged["macd_hist_4h_mul_bb_width_1h"] = (
-            merged["macd_hist_4h"] * merged["bb_width_1h"]
-        )
-        merged["rsi_1h_mul_vol_ma_ratio_4h"] = (
-            merged["rsi_1h"] * merged["vol_ma_ratio_4h"]
-        )
-        merged["macd_hist_1h_mul_bb_width_4h"] = (
-            merged["macd_hist_1h"] * merged["bb_width_4h"]
-        )
-        merged["vol_ratio_1h_4h"] = merged["vol_ma_ratio_1h"] / merged[
-            "vol_ma_ratio_4h"
-        ].replace(0, np.nan)
-        merged["vol_ratio_4h_d1"] = merged["vol_ma_ratio_4h"] / merged[
-            "vol_ma_ratio_d1"
-        ].replace(0, np.nan)
 
         raw = df_1h.reset_index()
         out = raw.merge(
