@@ -26,7 +26,10 @@ def apply_health_check_df(df: pd.DataFrame, abs_clip: dict = None, zero_cols: li
     """向量化执行 ``health_check``，并生成 ``_isnan`` 标志列。"""
 
     zero_cols = zero_cols or []
-    processed = df.clip(-1e4, 1e4)
+    # 仅对数值列执行 clip，避免时间列或字符串列报错
+    processed = df.copy()
+    num_cols = processed.select_dtypes(include="number").columns
+    processed[num_cols] = processed[num_cols].clip(-1e4, 1e4)
     flags_df = processed.isna().astype(int)
     flags_df.columns = [f"{c}_isnan" for c in processed.columns]
     if zero_cols:
