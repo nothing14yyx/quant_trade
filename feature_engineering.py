@@ -218,17 +218,16 @@ class FeatureEngineer:
 
         missing_ratio = df[feat_cols].isna().mean()
 
+        # ----- 先为所有特征生成缺失标记 -----
+        flags_df = df[feat_cols].isna().astype(int)
+        flags_df.columns = [f"{col}_isnan" for col in feat_cols]
+
         # ----- 删除缺失率 ≥95% 的列 -----
         drop_cols = missing_ratio[missing_ratio >= 0.95].index.tolist()
         if drop_cols:
             df = df.drop(columns=drop_cols)
             feat_cols = [c for c in feat_cols if c not in drop_cols]
             missing_ratio = missing_ratio.drop(drop_cols)
-
-        flag_cols = [c for c in feat_cols if 0 < missing_ratio[c] < 0.95]
-
-        flags_df = df[flag_cols].isna().astype(int)
-        flags_df.columns = [f"{col}_isnan" for col in flag_cols]
 
         df_filled = df.copy()
         if "open_time" in df_filled.columns:
