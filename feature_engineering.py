@@ -271,8 +271,11 @@ class FeatureEngineer:
             numeric_cols = [
                 c
                 for c in other_cols
-                if pd.api.types.is_float_dtype(df_all[c])
-                or pd.api.types.is_integer_dtype(df_all[c])
+                if (
+                    pd.api.types.is_float_dtype(df_all[c])
+                    or pd.api.types.is_integer_dtype(df_all[c])
+                )
+                and c != "bid_ask_imbalance"
             ]
             self.feature_cols_all = numeric_cols.copy()
 
@@ -284,6 +287,7 @@ class FeatureEngineer:
                 pd.api.types.is_float_dtype(df_all[c])
                 or pd.api.types.is_integer_dtype(df_all[c])
             )
+            and c != "bid_ask_imbalance"
         ]
         feat_cols_all = [c for c in feat_cols_all if df_all[c].notna().any()]
 
