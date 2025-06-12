@@ -16,6 +16,9 @@ from utils.robust_scaler import (
     load_scaler_params_from_json,
     apply_robust_z_with_params,
 )
+from data_loader import compute_vix_proxy
+from sqlalchemy import text
+
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
@@ -42,8 +45,11 @@ def connect_mysql(cfg):
 
 
 def load_latest_klines(engine, symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
+    """从数据库加载指定周期的最新K线并返回DataFrame"""
+
     query = (
-        "SELECT open_time, open, high, low, close, volume, fg_index, funding_rate "
+        "SELECT open_time, open, high, low, close, volume, fg_index, funding_rate, "
+        "taker_buy_base, cg_price, cg_market_cap, cg_total_volume "
         f"FROM klines WHERE symbol='{symbol}' AND `interval`='{interval}' "
         f"ORDER BY open_time DESC LIMIT {limit}"
     )
@@ -99,6 +105,123 @@ def prepare_all_features(engine, symbol: str, params: dict) -> tuple[dict, dict,
     return scaled1h, scaled4h, scaledd1, raw1h, raw4h, rawd1
 
 
+def load_latest_open_interest(engine, symbol: str) -> dict | None:
+    """获取最新两条持仓量数据并计算变化率和 vix_proxy"""
+
+    q = text(
+        "SELECT timestamp, open_interest FROM open_interest "
+        "WHERE symbol=:s ORDER BY timestamp DESC LIMIT 2"
+    )
+    df = pd.read_sql(q, engine, params={"s": symbol}, parse_dates=["timestamp"])
+    if df.empty:
+        return None
+    latest = df.iloc[0]
+    if len(df) > 1 and df.iloc[1]["open_interest"]:
+        prev = df.iloc[1]
+        prev_val = prev["open_interest"]
+        oi_chg = (latest["open_interest"] - prev_val) / prev_val if prev_val else None
+    else:
+        oi_chg = None
+
+    fr_q = text(
+        "SELECT fundingRate FROM funding_rate "
+        "WHERE symbol=:s ORDER BY fundingTime DESC LIMIT 1"
+    )
+    fr_df = pd.read_sql(fr_q, engine, params={"s": symbol})
+    funding_rate = float(fr_df["fundingRate"].iloc[0]) if not fr_df.empty else None
+    vix_p = compute_vix_proxy(funding_rate, oi_chg)
+    return {
+        "timestamp": latest["timestamp"],
+        "open_interest": float(latest["open_interest"]),
+        "oi_chg": float(oi_chg) if oi_chg is not None else None,
+        "vix_proxy": float(vix_p) if vix_p is not None else None,
+    }
+
+
+def load_order_book_imbalance(engine, symbol: str) -> float | None:
+    """读取最新的 order_book 快照计算盘口失衡值"""
+
+    q = text(
+        "SELECT timestamp, bids, asks FROM order_book "
+        "WHERE symbol=:s ORDER BY timestamp DESC LIMIT 1"
+    )
+    df = pd.read_sql(q, engine, params={"s": symbol})
+    if df.empty:
+        return None
+    feats = calc_order_book_features(df)
+    val = feats["bid_ask_imbalance"].iloc[0]
+    return float(val) if pd.notnull(val) else None
+
+
+def load_hot_sector(engine) -> dict | None:
+    """获取当前热门板块及强度"""
+
+    q = (
+        "SELECT id, name, market_cap, market_cap_change_24h, volume_24h, top_3_coins "
+        "FROM cg_category_stats "
+        "WHERE updated_at = (SELECT MAX(updated_at) FROM cg_category_stats)"
+    )
+    df = pd.read_sql(q, engine)
+    df = df.dropna(subset=["name", "volume_24h"])
+    if df.empty:
+        return None
+    df["volume_24h"] = pd.to_numeric(df["volume_24h"], errors="coerce")
+    df = df.dropna(subset=["volume_24h"])
+    if df.empty:
+        return None
+    total = df["volume_24h"].sum()
+    df = df.sort_values("volume_24h", ascending=False)
+    top = df.iloc[0]
+    strength = float(top["volume_24h"]) / total if total else None
+    return {"hot_sector": top["name"], "hot_sector_strength": strength}
+
+
+def load_global_metrics(engine) -> dict | None:
+    """返回最新的 CoinGecko 全局指标及变化率"""
+
+    q = (
+        "SELECT timestamp, total_market_cap, total_volume, btc_dominance, eth_dominance "
+        "FROM cg_global_metrics ORDER BY timestamp DESC LIMIT 2"
+    )
+    df = pd.read_sql(q, engine, parse_dates=["timestamp"])
+    if df.empty:
+        return None
+    latest = df.iloc[0]
+    if len(df) > 1:
+        prev = df.iloc[1]
+        pct = lambda cur, prev_val: (cur - prev_val) / prev_val if prev_val else None
+        btc_dom_chg = pct(latest["btc_dominance"], prev["btc_dominance"])
+        mcap_growth = pct(latest["total_market_cap"], prev["total_market_cap"])
+        vol_chg = pct(latest["total_volume"], prev["total_volume"])
+    else:
+        btc_dom_chg = mcap_growth = vol_chg = None
+
+    metrics = {
+        "timestamp": latest["timestamp"],
+        "btc_dom_chg": float(btc_dom_chg) if btc_dom_chg is not None else None,
+        "mcap_growth": float(mcap_growth) if mcap_growth is not None else None,
+        "vol_chg": float(vol_chg) if vol_chg is not None else None,
+        "btc_dominance": float(latest["btc_dominance"]),
+        "total_market_cap": float(latest["total_market_cap"]),
+        "total_volume": float(latest["total_volume"]),
+        "eth_dominance": float(latest["eth_dominance"]),
+    }
+    oi = load_latest_open_interest(engine, "BTCUSDT")
+    if oi and oi.get("vix_proxy") is not None:
+        metrics["vix_proxy"] = oi["vix_proxy"]
+    hot = load_hot_sector(engine)
+    if hot:
+        metrics.update(hot)
+    return metrics
+
+
+def load_symbol_categories(engine) -> dict:
+    """读取币种与所属板块的映射"""
+    df = pd.read_sql("SELECT symbol, categories FROM cg_coin_categories", engine)
+    mapping = {r["symbol"].upper(): r["categories"] for _, r in df.iterrows()}
+    return mapping
+
+
 
 def main(symbol: str = "BTCUSDT"):
     cfg = load_config()
@@ -106,9 +229,12 @@ def main(symbol: str = "BTCUSDT"):
 
     params = load_scaler_params_from_json(cfg["feature_engineering"]["scaler_path"])
 
-
     feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = prepare_all_features(engine, symbol, params)
 
+    global_metrics = load_global_metrics(engine)
+    oi = load_latest_open_interest(engine, symbol)
+    order_imb = load_order_book_imbalance(engine, symbol)
+    categories = load_symbol_categories(engine)
 
     sg = RobustSignalGenerator(
         model_paths=cfg["models"],
@@ -116,6 +242,7 @@ def main(symbol: str = "BTCUSDT"):
         feature_cols_4h=cfg.get("feature_cols", {}).get("4h", []),
         feature_cols_d1=cfg.get("feature_cols", {}).get("1d", []),
     )
+    sg.set_symbol_categories(categories)
 
     signal = sg.generate_signal(
         feats1h,
@@ -124,6 +251,9 @@ def main(symbol: str = "BTCUSDT"):
         raw_features_1h=raw1h,
         raw_features_4h=raw4h,
         raw_features_d1=rawd1,
+        global_metrics=global_metrics,
+        open_interest=oi,
+        order_book_imbalance=order_imb,
         symbol=symbol,
     )
 
