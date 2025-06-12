@@ -14,6 +14,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from utils.helper import calc_features_raw
+from feature_engineering import calc_cross_features
 from utils.robust_scaler import load_scaler_params_from_json, apply_robust_z_with_params
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
@@ -416,39 +417,37 @@ def main_loop(interval_sec: int = 60):
             if raw_1h.empty or raw_4h.empty or raw_d1.empty:
                 return None
 
-            last_raw_1h = raw_1h.iloc[[-1]]
-            last_raw_4h = raw_4h.iloc[[-1]]
-            last_raw_d1 = raw_d1.iloc[[-1]]
+            cross_df = calc_cross_features(raw_1h, raw_4h, raw_d1)
+            merged = (
+                df_1h.reset_index()
+                .merge(cross_df, on="open_time", how="left", suffixes=("", "_feat"))
+            )
+            merged["symbol"] = sym
+            merged["hour_of_day"] = merged["open_time"].dt.hour.astype(float)
+            merged["day_of_week"] = merged["open_time"].dt.dayofweek.astype(float)
 
-            scaled_1h = apply_robust_z_with_params(last_raw_1h, SCALER_PARAMS)
-            scaled_4h = apply_robust_z_with_params(last_raw_4h, SCALER_PARAMS)
-            scaled_d1 = apply_robust_z_with_params(last_raw_d1, SCALER_PARAMS)
+            last_raw = merged.iloc[[-1]]
+            last_scaled = apply_robust_z_with_params(last_raw.copy(), SCALER_PARAMS)
+            proc = apply_health_check_df(
+                last_scaled,
+                abs_clip={"atr_pct_1h": (0, 0.2), "atr_pct_4h": (0, 0.2), "atr_pct_d1": (0, 0.2)},
+            )
 
-            proc_1h = apply_health_check_df(scaled_1h, abs_clip={"atr_pct_1h": (0, 0.2)})
-            proc_4h = apply_health_check_df(scaled_4h, abs_clip={"atr_pct_4h": (0, 0.2)})
-            proc_d1 = apply_health_check_df(scaled_d1, abs_clip={"atr_pct_d1": (0, 0.2)})
+            row_scaled = proc.iloc[0]
+            row_raw = last_raw.iloc[0]
 
-
-            feat_1h = proc_1h.iloc[0].to_dict()
-            feat_4h = proc_4h.iloc[0].to_dict()
-            feat_d1 = proc_d1.iloc[0].to_dict()
-
-            raw_feat_1h = last_raw_1h.iloc[0].to_dict()
-            raw_feat_4h = last_raw_4h.iloc[0].to_dict()
-            raw_feat_d1 = last_raw_d1.iloc[0].to_dict()
-
-            ob_imb = loader.get_latest_order_book_imbalance(sym)
-            raw_feat_1h["bid_ask_imbalance"] = ob_imb
-
-            feat_1h = health_check(feat_1h, abs_clip={"atr_pct_1h": (0, 0.2)})
-            feat_4h = health_check(feat_4h, abs_clip={"atr_pct_4h": (0, 0.2)})
-            feat_d1 = health_check(feat_d1, abs_clip={"atr_pct_d1": (0, 0.2)})
-
+            feat_1h = {c: row_scaled[c] for c in feature_cols_1h if c in row_scaled}
+            feat_4h = {c: row_scaled[c] for c in feature_cols_4h if c in row_scaled}
+            feat_d1 = {c: row_scaled[c] for c in feature_cols_d1 if c in row_scaled}
 
             price_4h = df_4h["close"].iloc[-1]
-            feat_1h["close"] = df_1h["close"].iloc[-1]
+            feat_1h["close"] = row_raw["close"]
             feat_4h["price"] = price_4h
-            feat_d1["close"] = df_d1["close"].iloc[-1]
+            feat_d1["close"] = row_raw["close"]
+
+            raw_dict = row_raw.to_dict()
+            ob_imb = loader.get_latest_order_book_imbalance(sym)
+            raw_dict["bid_ask_imbalance"] = ob_imb
 
             gm = loader.get_latest_cg_global_metrics()
             oi = loader.get_latest_open_interest(sym)
@@ -458,9 +457,9 @@ def main_loop(interval_sec: int = 60):
                 feat_1h,
                 feat_4h,
                 feat_d1,
-                raw_features_1h=raw_feat_1h,
-                raw_features_4h=raw_feat_4h,
-                raw_features_d1=raw_feat_d1,
+                raw_features_1h=raw_dict,
+                raw_features_4h=raw_dict,
+                raw_features_d1=raw_dict,
                 global_metrics=gm,
                 open_interest=oi,
                 order_book_imbalance=ob,
@@ -474,9 +473,9 @@ def main_loop(interval_sec: int = 60):
                 feat_4h,
                 feat_d1,
                 price_4h,
-                raw_feat_1h,
-                raw_feat_4h,
-                raw_feat_d1,
+                raw_dict,
+                raw_dict,
+                raw_dict,
             )
 
         # 6. 先计算融合分数 (使用多线程提高速度)
