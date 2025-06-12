@@ -1,20 +1,25 @@
 import argparse
-import yaml
+from pathlib import Path
+
 import pandas as pd
+import yaml
+
 from data_loader import DataLoader
 from robust_signal_generator import RobustSignalGenerator
 
-
 DEFAULT_SYMBOL = "BTCUSDT"
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-def load_config(path: str = "utils/config.yaml"):
-    with open(path, "r", encoding="utf-8") as f:
+def load_config(path: Path | str = BASE_DIR / "utils" / "config.yaml"):
+    path = Path(path)
+    with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-def load_feature_cols(path: str = "utils/selected_features.yaml"):
-    with open(path, "r", encoding="utf-8") as f:
+def load_feature_cols(path: Path | str = BASE_DIR / "utils" / "selected_features.yaml"):
+    path = Path(path)
+    with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -77,4 +82,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     symbol = args.symbol.upper() if args.symbol else DEFAULT_SYMBOL
     main(symbol)
-
