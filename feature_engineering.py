@@ -20,7 +20,10 @@ from joblib import Parallel, delayed
 from sqlalchemy import create_engine
 
 # 不再 import calc_features_full，而改为：
-from utils.helper import calc_features_raw, calc_order_book_features  # pylint: disable=import-error
+from utils.helper import (
+    calc_features_raw,
+    calc_order_book_features,
+)  # pylint: disable=import-error
 
 # Robust-z 参数持久化工具
 from utils.robust_scaler import (
@@ -70,13 +73,19 @@ class FeatureEngineer:
         # Feature-engineering 配置
         fe_cfg = self.cfg.get("feature_engineering", {})
         self.topn: int = int(fe_cfg.get("topn", 30))
-        self.feature_cols_path: Path = Path(fe_cfg.get("feature_cols_path", "data/merged/feature_cols.txt"))
-        self.merged_table_path: Path = Path(fe_cfg.get("merged_table_path", "data/merged/merged_table.csv"))
+        self.feature_cols_path: Path = Path(
+            fe_cfg.get("feature_cols_path", "data/merged/feature_cols.txt")
+        )
+        self.merged_table_path: Path = Path(
+            fe_cfg.get("merged_table_path", "data/merged/merged_table.csv")
+        )
 
         # Robust-z 模式：train 或 inference
         self.mode: str = fe_cfg.get("mode", "train")
         # 保存/加载剪裁+缩放参数的 JSON 路径
-        self.scaler_path: Path = Path(fe_cfg.get("scaler_path", "scalers/all_features_scaler.json"))
+        self.scaler_path: Path = Path(
+            fe_cfg.get("scaler_path", "scalers/all_features_scaler.json")
+        )
 
         # 从 feature_cols.txt 自动读取所有待标准化列；若文件不存在，先设为空列表
         if self.feature_cols_path.is_file():
@@ -119,10 +128,17 @@ class FeatureEngineer:
             fut_lo = close.shift(-1).rolling(n, min_periods=1).min()
 
             if threshold in (None, "auto"):
-                vol = (close.pct_change().abs().rolling(vol_window, min_periods=1).mean()) * 1.5
+                vol = (
+                    close.pct_change().abs().rolling(vol_window, min_periods=1).mean()
+                ) * 1.5
                 th_up = th_down = vol
             elif threshold == "quantile":
-                th = close.pct_change().abs().rolling(vol_window, min_periods=1).quantile(0.8)
+                th = (
+                    close.pct_change()
+                    .abs()
+                    .rolling(vol_window, min_periods=1)
+                    .quantile(0.8)
+                )
                 th_up = th_down = th
             elif threshold == "balanced":
                 chg_up = fut_hi / close - 1
@@ -138,9 +154,15 @@ class FeatureEngineer:
             g["target_down"] = (down_ret <= th_down).astype(float)
             if n_bins and n_bins > 1:
                 bins_up = np.quantile(up_ret.dropna(), np.linspace(0, 1, n_bins + 1))
-                bins_down = np.quantile(down_ret.dropna(), np.linspace(0, 1, n_bins + 1))
-                g["target_up_multi"] = pd.cut(up_ret, bins=bins_up, labels=False, include_lowest=True)
-                g["target_down_multi"] = pd.cut(down_ret, bins=bins_down, labels=False, include_lowest=True)
+                bins_down = np.quantile(
+                    down_ret.dropna(), np.linspace(0, 1, n_bins + 1)
+                )
+                g["target_up_multi"] = pd.cut(
+                    up_ret, bins=bins_up, labels=False, include_lowest=True
+                )
+                g["target_down_multi"] = pd.cut(
+                    down_ret, bins=bins_down, labels=False, include_lowest=True
+                )
             g["future_volatility"] = close.pct_change().rolling(n).std().shift(-n)
             g["future_max_rise"] = fut_hi / close - 1
             g["future_max_drawdown"] = fut_lo / close - 1
@@ -152,7 +174,9 @@ class FeatureEngineer:
 
         return pd.concat(results).sort_index()
 
-    def get_symbols(self, intervals: tuple[str, str, str] = ("1h", "4h", "1d")) -> List[str]:
+    def get_symbols(
+        self, intervals: tuple[str, str, str] = ("1h", "4h", "1d")
+    ) -> List[str]:
         """返回同时拥有 intervals 三周期数据的 symbol 列表。"""
         symbol_sets: list[set[str]] = []
         for itv in intervals:
@@ -166,8 +190,15 @@ class FeatureEngineer:
 
     def load_klines_db(self, symbol: str, interval: str) -> Optional[pd.DataFrame]:
         """读取指定 symbol/interval 的 K 线，若无数据返回 None。"""
-        sql = "SELECT * FROM klines WHERE symbol=%s AND `interval`=%s ORDER BY open_time"
-        df = pd.read_sql(sql, self.engine, parse_dates=["open_time", "close_time"], params=(symbol, interval))
+        sql = (
+            "SELECT * FROM klines WHERE symbol=%s AND `interval`=%s ORDER BY open_time"
+        )
+        df = pd.read_sql(
+            sql,
+            self.engine,
+            parse_dates=["open_time", "close_time"],
+            params=(symbol, interval),
+        )
         if df.empty:
             return None
         return df.set_index("open_time").sort_index()
@@ -180,7 +211,9 @@ class FeatureEngineer:
             return None
         return df
 
-    def _add_missing_flags(self, df: pd.DataFrame, feat_cols: list) -> tuple[pd.DataFrame, list]:
+    def _add_missing_flags(
+        self, df: pd.DataFrame, feat_cols: list
+    ) -> tuple[pd.DataFrame, list]:
         """Forward fill, drop极稀疏列, 并追加缺失标记。"""
 
         missing_ratio = df[feat_cols].isna().mean()
@@ -209,7 +242,9 @@ class FeatureEngineer:
         df_out = pd.concat([df_filled, flags_df], axis=1)
         return df_out, feat_cols
 
-    def _finalize_batch(self, dfs: list[pd.DataFrame]) -> tuple[pd.DataFrame, list[str]]:
+    def _finalize_batch(
+        self, dfs: list[pd.DataFrame]
+    ) -> tuple[pd.DataFrame, list[str]]:
         df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
 
         base_cols = [
@@ -228,7 +263,9 @@ class FeatureEngineer:
             "target_up",
             "target_down",
         ] + FUTURE_COLS
-        df_all.drop(columns=[c for c in FUTURE_COLS if c in df_all.columns], inplace=True)
+        df_all.drop(
+            columns=[c for c in FUTURE_COLS if c in df_all.columns], inplace=True
+        )
         base_cols_exist = [c for c in base_cols if c in df_all.columns]
         other_cols = [c for c in df_all.columns if c not in base_cols_exist]
         df_all = df_all[base_cols_exist + other_cols]
@@ -237,7 +274,8 @@ class FeatureEngineer:
             numeric_cols = [
                 c
                 for c in other_cols
-                if pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c])
+                if pd.api.types.is_float_dtype(df_all[c])
+                or pd.api.types.is_integer_dtype(df_all[c])
             ]
             self.feature_cols_all = numeric_cols.copy()
 
@@ -245,8 +283,12 @@ class FeatureEngineer:
             c
             for c in self.feature_cols_all
             if c in df_all.columns
-            and (pd.api.types.is_float_dtype(df_all[c]) or pd.api.types.is_integer_dtype(df_all[c]))
+            and (
+                pd.api.types.is_float_dtype(df_all[c])
+                or pd.api.types.is_integer_dtype(df_all[c])
+            )
         ]
+        feat_cols_all = [c for c in feat_cols_all if df_all[c].notna().any()]
 
         if self.mode == "train":
             scaler_params = {}
@@ -274,7 +316,9 @@ class FeatureEngineer:
         df_final, feat_cols_all = self._add_missing_flags(df_scaled, feat_cols_all)
         # 同步更新全局特征列表，确保后续批次字段一致
         self.feature_cols_all = feat_cols_all
-        df_final.drop(columns=[c for c in FUTURE_COLS if c in df_final.columns], inplace=True)
+        df_final.drop(
+            columns=[c for c in FUTURE_COLS if c in df_final.columns], inplace=True
+        )
 
         final_other_cols = [c for c in df_final.columns if c not in base_cols]
         return df_final, final_other_cols
@@ -354,8 +398,12 @@ class FeatureEngineer:
                 direction="backward",
             )
 
-        f4h["close_time_4h"] = f4h["open_time"] + pd.Timedelta(hours=4) - pd.Timedelta(seconds=1)
-        f1d["close_time_d1"] = f1d["open_time"] + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        f4h["close_time_4h"] = (
+            f4h["open_time"] + pd.Timedelta(hours=4) - pd.Timedelta(seconds=1)
+        )
+        f1d["close_time_d1"] = (
+            f1d["open_time"] + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        )
         f4h = f4h.drop(columns=["open_time"])
         f1d = f1d.drop(columns=["open_time"])
 
@@ -390,21 +438,41 @@ class FeatureEngineer:
 
         merged["close_spread_1h_4h"] = merged["close_1h"] - merged["close_4h"]
         merged["close_spread_1h_d1"] = merged["close_1h"] - merged["close_d1"]
-        merged["ma_ratio_1h_4h"] = merged["sma_10_1h"] / merged["sma_10_4h"].replace(0, np.nan)
-        merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(0, np.nan)
-        merged["ma_ratio_4h_d1"] = merged["sma_10_4h"] / merged["sma_10_d1"].replace(0, np.nan)
-        merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged["atr_pct_4h"].replace(0, np.nan)
-        merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged["bb_width_4h"].replace(0, np.nan)
+        merged["ma_ratio_1h_4h"] = merged["sma_10_1h"] / merged["sma_10_4h"].replace(
+            0, np.nan
+        )
+        merged["ma_ratio_1h_d1"] = merged["sma_10_1h"] / merged["sma_10_d1"].replace(
+            0, np.nan
+        )
+        merged["ma_ratio_4h_d1"] = merged["sma_10_4h"] / merged["sma_10_d1"].replace(
+            0, np.nan
+        )
+        merged["atr_pct_ratio_1h_4h"] = merged["atr_pct_1h"] / merged[
+            "atr_pct_4h"
+        ].replace(0, np.nan)
+        merged["bb_width_ratio_1h_4h"] = merged["bb_width_1h"] / merged[
+            "bb_width_4h"
+        ].replace(0, np.nan)
         merged["rsi_diff_1h_4h"] = merged["rsi_1h"] - merged["rsi_4h"]
         merged["rsi_diff_1h_d1"] = merged["rsi_1h"] - merged["rsi_d1"]
         merged["rsi_diff_4h_d1"] = merged["rsi_4h"] - merged["rsi_d1"]
         merged["macd_hist_diff_1h_4h"] = merged["macd_hist_1h"] - merged["macd_hist_4h"]
         merged["macd_hist_diff_1h_d1"] = merged["macd_hist_1h"] - merged["macd_hist_d1"]
-        merged["macd_hist_4h_mul_bb_width_1h"] = merged["macd_hist_4h"] * merged["bb_width_1h"]
-        merged["rsi_1h_mul_vol_ma_ratio_4h"] = merged["rsi_1h"] * merged["vol_ma_ratio_4h"]
-        merged["macd_hist_1h_mul_bb_width_4h"] = merged["macd_hist_1h"] * merged["bb_width_4h"]
-        merged["vol_ratio_1h_4h"] = merged["vol_ma_ratio_1h"] / merged["vol_ma_ratio_4h"].replace(0, np.nan)
-        merged["vol_ratio_4h_d1"] = merged["vol_ma_ratio_4h"] / merged["vol_ma_ratio_d1"].replace(0, np.nan)
+        merged["macd_hist_4h_mul_bb_width_1h"] = (
+            merged["macd_hist_4h"] * merged["bb_width_1h"]
+        )
+        merged["rsi_1h_mul_vol_ma_ratio_4h"] = (
+            merged["rsi_1h"] * merged["vol_ma_ratio_4h"]
+        )
+        merged["macd_hist_1h_mul_bb_width_4h"] = (
+            merged["macd_hist_1h"] * merged["bb_width_4h"]
+        )
+        merged["vol_ratio_1h_4h"] = merged["vol_ma_ratio_1h"] / merged[
+            "vol_ma_ratio_4h"
+        ].replace(0, np.nan)
+        merged["vol_ratio_4h_d1"] = merged["vol_ma_ratio_4h"] / merged[
+            "vol_ma_ratio_d1"
+        ].replace(0, np.nan)
 
         raw = df_1h.reset_index()
         out = raw.merge(
@@ -442,10 +510,14 @@ class FeatureEngineer:
         append = False
         if n_jobs > 1:
             results = Parallel(n_jobs=n_jobs)(
-                delayed(self._calc_symbol_features)(sym) for sym in tqdm(symbols, desc="Calc features")
+                delayed(self._calc_symbol_features)(sym)
+                for sym in tqdm(symbols, desc="Calc features")
             )
         else:
-            results = [self._calc_symbol_features(sym) for sym in tqdm(symbols, desc="Calc features")]
+            results = [
+                self._calc_symbol_features(sym)
+                for sym in tqdm(symbols, desc="Calc features")
+            ]
 
         for out in results:
             if out is None:
@@ -469,7 +541,9 @@ class FeatureEngineer:
             all_dfs = []
             append = True
         elif not (batch_size and batch_size > 0):
-            df_all = pd.concat(all_dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
+            df_all = pd.concat(all_dfs, ignore_index=True).replace(
+                [np.inf, -np.inf], np.nan
+            )
             df_final, other_cols = self._finalize_batch([df_all])
             self._write_output(df_final, save_to_db, append=False)
             final_cols.update(other_cols)
@@ -477,7 +551,9 @@ class FeatureEngineer:
             append = True
 
         self.feature_cols_path.parent.mkdir(parents=True, exist_ok=True)
-        self.feature_cols_path.write_text("\n".join(sorted(final_cols)), encoding="utf-8")
+        self.feature_cols_path.write_text(
+            "\n".join(sorted(final_cols)), encoding="utf-8"
+        )
         print(f"✅ feature_cols 保存至 {self.feature_cols_path}")
 
 
