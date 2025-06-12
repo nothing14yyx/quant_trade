@@ -594,3 +594,5 @@ TRUNCATE TABLE live_top10_signals;
 
 
 SHOW COLUMNS FROM features LIKE 'funding_rate_isnan';
+
+select * from klines
