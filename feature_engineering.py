@@ -52,8 +52,11 @@ def calc_cross_features(
     f1d = df1d.copy()
 
     for df in (f1h, f4h, f1d):
-        df.reset_index(inplace=True)
-        df.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
+        if "open_time" in df.columns:
+            df.reset_index(drop=True, inplace=True)
+        else:
+            df.reset_index(inplace=True)
+            df.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
 
     f1h = f1h.rename(columns={"close": "close_1h"})
     f4h = f4h.rename(columns={"close": "close_4h"})
