@@ -176,8 +176,8 @@ def load_hot_sector(engine) -> dict | None:
     return {"hot_sector": top["name"], "hot_sector_strength": strength}
 
 
-def load_global_metrics(engine) -> dict | None:
-    """返回最新的 CoinGecko 全局指标及变化率"""
+def load_global_metrics(engine, symbol: str | None = None) -> dict | None:
+    """返回最新的 CoinGecko 全局指标及变化率，并可按币种给出板块相关性"""
 
     q = (
         "SELECT timestamp, total_market_cap, total_volume, btc_dominance, eth_dominance "
@@ -212,6 +212,18 @@ def load_global_metrics(engine) -> dict | None:
     hot = load_hot_sector(engine)
     if hot:
         metrics.update(hot)
+        if symbol is not None:
+            q = text(
+                "SELECT categories FROM cg_coin_categories WHERE symbol=:s"
+            )
+            df_cat = pd.read_sql(q, engine, params={"s": symbol})
+            if not df_cat.empty:
+                cats = df_cat["categories"].iloc[0]
+                if isinstance(cats, str) and cats:
+                    arr = [c.strip() for c in cats.split(",") if c.strip()]
+                    metrics["sector_corr"] = (
+                        1.0 if hot["hot_sector"] in arr else 0.0
+                    )
     return metrics
 
 
@@ -231,7 +243,7 @@ def main(symbol: str = "BTCUSDT"):
 
     feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = prepare_all_features(engine, symbol, params)
 
-    global_metrics = load_global_metrics(engine)
+    global_metrics = load_global_metrics(engine, symbol)
     oi = load_latest_open_interest(engine, symbol)
     order_imb = load_order_book_imbalance(engine, symbol)
     categories = load_symbol_categories(engine)
