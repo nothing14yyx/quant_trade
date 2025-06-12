@@ -8,7 +8,12 @@ from pathlib import Path
 from sqlalchemy import create_engine
 import numpy as np
 
-from feature_engineering import calc_features_raw, apply_robust_z_with_params, load_scaler_params_from_json
+from feature_engineering import (
+    calc_features_raw,
+    apply_robust_z_with_params,
+    load_scaler_params_from_json,
+    calc_cross_features,
+)
 from robust_signal_generator import RobustSignalGenerator
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
@@ -51,11 +56,17 @@ for itv in intervals:
 
 # =================== 4. 计算原始 raw 特征 DataFrame ===================
 # calc_features_raw 会返回完整的指标，包括 'atr_pct_1h'、'rsi_slope_1h' 等 raw 值
+_f1h = calc_features_raw(dfs_raw["1h"], "1h")
+_f4h = calc_features_raw(dfs_raw["4h"], "4h")
+_fd1 = calc_features_raw(dfs_raw["1d"], "d1")
 raw_feats = {
-    "1h": calc_features_raw(dfs_raw["1h"], "1h").reset_index(drop=True),
-    "4h": calc_features_raw(dfs_raw["4h"], "4h").reset_index(drop=True),
-    "1d": calc_features_raw(dfs_raw["1d"], "d1").reset_index(drop=True),
+    "1h": _f1h.reset_index(drop=True),
+    "4h": _f4h.reset_index(drop=True),
+    "1d": _fd1.reset_index(drop=True),
 }
+
+# 计算跨周期特征，供调试或后续分析
+cross_feats = calc_cross_features(_f1h, _f4h, _fd1)
 
 for df in raw_feats.values():
     df["symbol"] = symbol
