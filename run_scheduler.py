@@ -26,7 +26,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 
 def _to_builtin(v):
-    """Convert numpy scalar types to builtin Python types."""
+    """Convert numpy scalar types to builtin Python types and handle NaN."""
+    try:
+        if np.isnan(v):
+            return None
+    except Exception:
+        pass
+
     if isinstance(v, (np.bool_, np.integer)):
         return int(v)
     if isinstance(v, np.floating):
