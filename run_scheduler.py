@@ -203,6 +203,7 @@ class Scheduler:
                 ),
                 results,
             )
+        logging.info("[generate_signals] wrote %s rows to live_full_data", len(results))
         # filter out entries without a trading signal before ranking
         filtered = [r for r in results if r.get("signal")]
         filtered.sort(key=lambda x: abs(x.get("score") or 0), reverse=True)
@@ -216,6 +217,7 @@ class Scheduler:
                 ),
                 top10,
             )
+        logging.info("[generate_signals] wrote %s rows to live_top10_signals", len(top10))
 
     def schedule_next(self):
         next_run = (datetime.now(UTC) + timedelta(minutes=1)).replace(
