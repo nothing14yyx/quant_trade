@@ -51,6 +51,16 @@ class Scheduler:
         self.symbols = []
         self.next_symbols_refresh = datetime.now(UTC)
 
+    def initial_sync(self):
+        """启动时检查并更新所有关键数据，然后生成一次交易信号"""
+        self.symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
+        intervals = ["5m", "15m", "1h", "4h", "1d"]
+        for iv in intervals:
+            self.safe_call(self.update_klines, self.symbols, iv)
+        self.safe_call(self.update_oi_and_order_book, self.symbols)
+        self.safe_call(self.update_daily_data, self.symbols)
+        self.safe_call(self.generate_signals, self.symbols)
+        
     def safe_call(self, func, *args, **kwargs):
         """Execute func with error logging."""
         try:
@@ -222,6 +232,7 @@ class Scheduler:
         self.schedule_next()
 
     def run(self):
+        self.initial_sync()
         self.schedule_next()
         while True:
             self.scheduler.run(blocking=False)
@@ -231,7 +242,6 @@ class Scheduler:
                 time.sleep(max(sleep_secs, 0))
             else:
                 time.sleep(1)
-
 
 
 if __name__ == "__main__":
