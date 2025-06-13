@@ -580,6 +580,7 @@ CREATE TABLE `live_top10_signals` (
     PRIMARY KEY (`symbol`, `time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+
 TRUNCATE TABLE klines;
 TRUNCATE TABLE sentiment;
 TRUNCATE TABLE funding_rate;

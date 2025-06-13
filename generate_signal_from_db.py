@@ -343,13 +343,13 @@ def load_symbol_categories(engine) -> dict:
 
 
 
-def main(symbol: str = "BTCUSDT"):
+def main(symbol: str = "ETHUSDT"):
     cfg = load_config()
     engine = connect_mysql(cfg)
 
     # 打印最近20条1h K线及其收盘价
     recent = load_latest_klines(engine, symbol, "1h", limit=20)
-    logging.info("最近20条1h K线:\n%s", recent[["open_time", "close"]].to_string(index=False))
+    # logging.info("最近20条1h K线:\n%s", recent[["open_time", "close"]].to_string(index=False))
 
     params = load_scaler_params_from_json(cfg["feature_engineering"]["scaler_path"])
 
@@ -402,7 +402,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="从数据库获取数据生成交易信号")
-    parser.add_argument("--symbol", default="BTCUSDT", help="交易对，如 BTCUSDT")
+    parser.add_argument("--symbol", default="SOLUSDT", help="交易对，如 BTCUSDT")
     args = parser.parse_args()
     main(args.symbol)
 
