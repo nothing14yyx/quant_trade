@@ -198,7 +198,7 @@ class Scheduler:
             conn.execute(
                 text(
                     "REPLACE INTO live_full_data "
-                    "(symbol,time,price,signal,score,pos,take_profit,stop_loss,indicators) "
+                    "(`symbol`,`time`,`price`,`signal`,`score`,`pos`,`take_profit`,`stop_loss`,`indicators`) "
                     "VALUES (:symbol,:time,:price,:signal,:score,:pos,:take_profit,:stop_loss,:indicators)"
                 ),
                 results,
@@ -209,7 +209,7 @@ class Scheduler:
             conn.execute(
                 text(
                     "REPLACE INTO live_top10_signals "
-                    "(symbol,time,price,signal,score,pos,take_profit,stop_loss,indicators) "
+                    "(`symbol`,`time`,`price`,`signal`,`score`,`pos`,`take_profit`,`stop_loss`,`indicators`) "
                     "VALUES (:symbol,:time,:price,:signal,:score,:pos,:take_profit,:stop_loss,:indicators)"
                 ),
                 top10,
