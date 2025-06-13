@@ -17,3 +17,8 @@ def test_json_dumps_default():
     data = {"flag": np.bool_(False), "num": np.int64(5), "flt": np.float64(0.7)}
     dumped = json.dumps(data, default=_to_builtin)
     assert dumped == json.dumps({"flag": 0, "num": 5, "flt": 0.7})
+
+
+def test_json_nan_conversion():
+    dumped = json.dumps({"val": np.nan}, default=_to_builtin)
+    assert dumped == "{\"val\": null}"
