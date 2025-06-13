@@ -60,7 +60,7 @@ class Scheduler:
         self.safe_call(self.update_oi_and_order_book, self.symbols)
         self.safe_call(self.update_daily_data, self.symbols)
         self.safe_call(self.generate_signals, self.symbols)
-
+        
     def safe_call(self, func, *args, **kwargs):
         """Execute func with error logging."""
         try:
