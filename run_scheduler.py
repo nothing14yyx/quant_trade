@@ -42,6 +42,31 @@ class Scheduler:
         )
         categories = load_symbol_categories(self.engine)
         self.sg.set_symbol_categories(categories)
+        # 调度器与线程池，用于更精确和并发地执行任务
+        import sched
+        from concurrent.futures import ThreadPoolExecutor
+
+        self.scheduler = sched.scheduler(time.time, time.sleep)
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.symbols = []
+        self.next_symbols_refresh = datetime.now(UTC)
+
+    def initial_sync(self):
+        """启动时检查并更新所有关键数据，然后生成一次交易信号"""
+        self.symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
+        intervals = ["5m", "15m", "1h", "4h", "1d"]
+        for iv in intervals:
+            self.safe_call(self.update_klines, self.symbols, iv)
+        self.safe_call(self.update_oi_and_order_book, self.symbols)
+        self.safe_call(self.update_daily_data, self.symbols)
+        self.safe_call(self.generate_signals, self.symbols)
+
+    def safe_call(self, func, *args, **kwargs):
+        """Execute func with error logging."""
+        try:
+            func(*args, **kwargs)
+        except Exception as e:
+            logging.exception("%s failed: %s", func.__name__, e)
 
     def update_klines(self, symbols, interval):
         for sym in symbols:
@@ -49,6 +74,17 @@ class Scheduler:
                 self.dl.incremental_update_klines(sym, interval)
             except Exception as e:
                 logging.exception("update %s %s failed: %s", sym, interval, e)
+
+    def update_oi_and_order_book(self, symbols):
+        for sym in symbols:
+            try:
+                self.dl.update_open_interest(sym)
+            except Exception as e:
+                logging.exception("update open interest %s failed: %s", sym, e)
+            try:
+                self.dl.update_order_book(sym)
+            except Exception as e:
+                logging.exception("update order book %s failed: %s", sym, e)
 
     def update_daily_data(self, symbols):
         try:
@@ -131,29 +167,81 @@ class Scheduler:
                 top10,
             )
 
+    def schedule_next(self):
+        next_run = (datetime.now(UTC) + timedelta(minutes=1)).replace(
+            second=0, microsecond=0
+        )
+        self.scheduler.enterabs(next_run.timestamp(), 1, self.dispatch_tasks)
+
+    def dispatch_tasks(self):
+        now = datetime.now(UTC)
+        if now >= self.next_symbols_refresh:
+            self.symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
+            self.next_symbols_refresh = now + timedelta(hours=1)
+
+        minute = now.minute
+        tasks = []
+        if minute % 5 == 0 and minute != 0:
+            tasks.append(
+                self.executor.submit(
+                    self.safe_call, self.update_oi_and_order_book, self.symbols
+                )
+            )
+        if minute % 15 == 0 and minute != 0:
+            tasks.append(
+                self.executor.submit(self.safe_call, self.update_klines, self.symbols, "5m")
+            )
+        if minute % 30 == 0 and minute != 0:
+            tasks.append(
+                self.executor.submit(self.safe_call, self.update_klines, self.symbols, "15m")
+            )
+        if minute == 0:
+            tasks.append(
+                self.executor.submit(
+                    self.safe_call, self.update_oi_and_order_book, self.symbols
+                )
+            )
+            tasks.append(
+                self.executor.submit(self.safe_call, self.update_klines, self.symbols, "1h")
+            )
+            if now.hour % 4 == 0:
+                tasks.append(
+                    self.executor.submit(
+                        self.safe_call, self.update_klines, self.symbols, "4h"
+                    )
+                )
+            if now.hour == 0:
+                tasks.append(
+                    self.executor.submit(
+                        self.safe_call, self.update_klines, self.symbols, "1d"
+                    )
+                )
+                tasks.append(
+                    self.executor.submit(self.safe_call, self.update_daily_data, self.symbols)
+                )
+            tasks.append(
+                self.executor.submit(self.safe_call, self.generate_signals, self.symbols)
+            )
+
+        for f in tasks:
+            try:
+                f.result()
+            except Exception as e:
+                logging.exception("task failed: %s", e)
+
+        self.schedule_next()
+
     def run(self):
-        next_symbols_refresh = datetime.now(UTC)
-        symbols = []
+        self.initial_sync()
+        self.schedule_next()
         while True:
-            now = datetime.now(UTC)
-            if now >= next_symbols_refresh:
-                symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
-                next_symbols_refresh = now + timedelta(hours=1)
-            minute = now.minute
-            if minute % 15 == 0:
-                self.update_klines(symbols, "5m")
-            if minute % 30 == 0:
-                self.update_klines(symbols, "15m")
-            if minute == 0:
-                self.update_klines(symbols, "1h")
-                if now.hour % 4 == 0:
-                    self.update_klines(symbols, "4h")
-                if now.hour == 0:
-                    self.update_klines(symbols, "1d")
-                    self.update_daily_data(symbols)
-                self.generate_signals(symbols)
-            # sleep until next minute
-            time.sleep(60 - datetime.now(UTC).second)
+            self.scheduler.run(blocking=False)
+            if self.scheduler.queue:
+                next_time = self.scheduler.queue[0].time
+                sleep_secs = next_time - time.time()
+                time.sleep(max(sleep_secs, 0))
+            else:
+                time.sleep(1)
 
 
 if __name__ == "__main__":
