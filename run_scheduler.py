@@ -50,6 +50,17 @@ class Scheduler:
             except Exception as e:
                 logging.exception("update %s %s failed: %s", sym, interval, e)
 
+    def update_oi_and_order_book(self, symbols):
+        for sym in symbols:
+            try:
+                self.dl.update_open_interest(sym)
+            except Exception as e:
+                logging.exception("update open interest %s failed: %s", sym, e)
+            try:
+                self.dl.update_order_book(sym)
+            except Exception as e:
+                logging.exception("update order book %s failed: %s", sym, e)
+
     def update_daily_data(self, symbols):
         try:
             self.dl.update_sentiment()
@@ -140,6 +151,8 @@ class Scheduler:
                 symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
                 next_symbols_refresh = now + timedelta(hours=1)
             minute = now.minute
+            if minute % 5 == 0:
+                self.update_oi_and_order_book(symbols)
             if minute % 15 == 0:
                 self.update_klines(symbols, "5m")
             if minute % 30 == 0:
@@ -151,6 +164,8 @@ class Scheduler:
                 if now.hour == 0:
                     self.update_klines(symbols, "1d")
                     self.update_daily_data(symbols)
+                # refresh latest open interest and order book before generating signals
+                self.update_oi_and_order_book(symbols)
                 self.generate_signals(symbols)
             # sleep until next minute
             time.sleep(60 - datetime.now(UTC).second)
