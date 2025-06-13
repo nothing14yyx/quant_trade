@@ -2,6 +2,7 @@
 """Simple scheduler for periodic data sync and signal generation."""
 
 import json
+import math
 import logging
 import time
 from datetime import datetime, timedelta, UTC
@@ -38,6 +39,32 @@ def _to_builtin(v):
     if isinstance(v, np.floating):
         return float(v)
     return v
+
+
+_json_dumps_orig = json.dumps
+
+
+def _dumps_with_nan(obj, *args, **kwargs):
+    """Helper to encode NaN as null when default=_to_builtin."""
+    if kwargs.get("default") is _to_builtin:
+        kwargs.setdefault("allow_nan", False)
+        try:
+            return _json_dumps_orig(obj, *args, **kwargs)
+        except ValueError:
+            def _replace(o):
+                if isinstance(o, float) and math.isnan(o):
+                    return None
+                elif isinstance(o, dict):
+                    return {k: _replace(v) for k, v in o.items()}
+                elif isinstance(o, (list, tuple)):
+                    return [ _replace(v) for v in o ]
+                return o
+            obj = _replace(obj)
+            return _json_dumps_orig(obj, *args, **kwargs)
+    return _json_dumps_orig(obj, *args, **kwargs)
+
+
+json.dumps = _dumps_with_nan
 
 
 class Scheduler:
