@@ -103,6 +103,8 @@ class Scheduler:
         for iv in intervals:
             self.safe_call(self.update_klines, self.symbols, iv)
         self.safe_call(self.update_oi_and_order_book, self.symbols)
+        # 启动时同步资金费率
+        self.safe_call(self.update_funding_rates, self.symbols)
         self.safe_call(self.update_daily_data, self.symbols)
         self.safe_call(self.update_ic_scores_from_db)
         self.safe_call(self.generate_signals, self.symbols)
@@ -131,6 +133,13 @@ class Scheduler:
                 self.dl.update_order_book(sym)
             except Exception as e:
                 logging.exception("update order book %s failed: %s", sym, e)
+
+    def update_funding_rates(self, symbols):
+        for sym in symbols:
+            try:
+                self.dl.update_funding_rate(sym)
+            except Exception as e:
+                logging.exception("update funding rate %s failed: %s", sym, e)
 
     def update_daily_data(self, symbols):
         try:
@@ -284,6 +293,11 @@ class Scheduler:
                 tasks.append(
                     self.executor.submit(
                         self.safe_call, self.update_klines, self.symbols, "4h"
+                    )
+                )
+                tasks.append(
+                    self.executor.submit(
+                        self.safe_call, self.update_funding_rates, self.symbols
                     )
                 )
             if now.hour == 0:
