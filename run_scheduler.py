@@ -6,6 +6,7 @@ import math
 import logging
 import time
 from datetime import datetime, timedelta, UTC
+import pandas as pd
 import numpy as np
 
 from data_loader import DataLoader
@@ -93,6 +94,7 @@ class Scheduler:
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.symbols = []
         self.next_symbols_refresh = datetime.now(UTC)
+        self.ic_update_limit = cfg.get("ic_update_rows", 1000)
 
     def initial_sync(self):
         """启动时检查并更新所有关键数据，然后生成一次交易信号"""
@@ -102,6 +104,7 @@ class Scheduler:
             self.safe_call(self.update_klines, self.symbols, iv)
         self.safe_call(self.update_oi_and_order_book, self.symbols)
         self.safe_call(self.update_daily_data, self.symbols)
+        self.safe_call(self.update_ic_scores_from_db)
         self.safe_call(self.generate_signals, self.symbols)
         
     def safe_call(self, func, *args, **kwargs):
@@ -141,6 +144,27 @@ class Scheduler:
             self.dl.update_cg_category_stats()
         except Exception as e:
             logging.exception("update coingecko failed: %s", e)
+
+    def update_ic_scores_from_db(self):
+        """Load recent features and update factor IC scores."""
+        try:
+            query = text(
+                "SELECT * FROM features ORDER BY open_time DESC LIMIT :n"
+            )
+            df = pd.read_sql(
+                query,
+                self.engine,
+                params={"n": self.ic_update_limit},
+                parse_dates=["open_time", "close_time"],
+            )
+            if df.empty:
+                logging.warning("update_ic_scores_from_db: no data returned")
+                return
+            df = df.sort_values("open_time")
+            self.sg.update_ic_scores(df)
+            logging.info("[update_ic_scores] %s", self.sg.current_weights)
+        except Exception as e:
+            logging.exception("update_ic_scores_from_db failed: %s", e)
 
     def generate_signals(self, symbols):
         logging.info("generating signals for %s symbols", len(symbols))
@@ -270,6 +294,9 @@ class Scheduler:
                 )
                 tasks.append(
                     self.executor.submit(self.safe_call, self.update_daily_data, self.symbols)
+                )
+                tasks.append(
+                    self.executor.submit(self.safe_call, self.update_ic_scores_from_db)
                 )
             tasks.append(
                 self.executor.submit(self.safe_call, self.generate_signals, self.symbols)
