@@ -42,6 +42,21 @@ class Scheduler:
         )
         categories = load_symbol_categories(self.engine)
         self.sg.set_symbol_categories(categories)
+        # 调度器与线程池，用于更精确和并发地执行任务
+        import sched
+        from concurrent.futures import ThreadPoolExecutor
+
+        self.scheduler = sched.scheduler(time.time, time.sleep)
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.symbols = []
+        self.next_symbols_refresh = datetime.now(UTC)
+
+    def safe_call(self, func, *args, **kwargs):
+        """Execute func with error logging."""
+        try:
+            func(*args, **kwargs)
+        except Exception as e:
+            logging.exception("%s failed: %s", func.__name__, e)
 
     def update_klines(self, symbols, interval):
         for sym in symbols:
@@ -142,33 +157,81 @@ class Scheduler:
                 top10,
             )
 
+    def schedule_next(self):
+        next_run = (datetime.now(UTC) + timedelta(minutes=1)).replace(
+            second=0, microsecond=0
+        )
+        self.scheduler.enterabs(next_run.timestamp(), 1, self.dispatch_tasks)
+
+    def dispatch_tasks(self):
+        now = datetime.now(UTC)
+        if now >= self.next_symbols_refresh:
+            self.symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
+            self.next_symbols_refresh = now + timedelta(hours=1)
+
+        minute = now.minute
+        tasks = []
+        if minute % 5 == 0 and minute != 0:
+            tasks.append(
+                self.executor.submit(
+                    self.safe_call, self.update_oi_and_order_book, self.symbols
+                )
+            )
+        if minute % 15 == 0 and minute != 0:
+            tasks.append(
+                self.executor.submit(self.safe_call, self.update_klines, self.symbols, "5m")
+            )
+        if minute % 30 == 0 and minute != 0:
+            tasks.append(
+                self.executor.submit(self.safe_call, self.update_klines, self.symbols, "15m")
+            )
+        if minute == 0:
+            tasks.append(
+                self.executor.submit(
+                    self.safe_call, self.update_oi_and_order_book, self.symbols
+                )
+            )
+            tasks.append(
+                self.executor.submit(self.safe_call, self.update_klines, self.symbols, "1h")
+            )
+            if now.hour % 4 == 0:
+                tasks.append(
+                    self.executor.submit(
+                        self.safe_call, self.update_klines, self.symbols, "4h"
+                    )
+                )
+            if now.hour == 0:
+                tasks.append(
+                    self.executor.submit(
+                        self.safe_call, self.update_klines, self.symbols, "1d"
+                    )
+                )
+                tasks.append(
+                    self.executor.submit(self.safe_call, self.update_daily_data, self.symbols)
+                )
+            tasks.append(
+                self.executor.submit(self.safe_call, self.generate_signals, self.symbols)
+            )
+
+        for f in tasks:
+            try:
+                f.result()
+            except Exception as e:
+                logging.exception("task failed: %s", e)
+
+        self.schedule_next()
+
     def run(self):
-        next_symbols_refresh = datetime.now(UTC)
-        symbols = []
+        self.schedule_next()
         while True:
-            now = datetime.now(UTC)
-            if now >= next_symbols_refresh:
-                symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
-                next_symbols_refresh = now + timedelta(hours=1)
-            minute = now.minute
-            if minute % 5 == 0:
-                self.update_oi_and_order_book(symbols)
-            if minute % 15 == 0:
-                self.update_klines(symbols, "5m")
-            if minute % 30 == 0:
-                self.update_klines(symbols, "15m")
-            if minute == 0:
-                self.update_klines(symbols, "1h")
-                if now.hour % 4 == 0:
-                    self.update_klines(symbols, "4h")
-                if now.hour == 0:
-                    self.update_klines(symbols, "1d")
-                    self.update_daily_data(symbols)
-                # refresh latest open interest and order book before generating signals
-                self.update_oi_and_order_book(symbols)
-                self.generate_signals(symbols)
-            # sleep until next minute
-            time.sleep(60 - datetime.now(UTC).second)
+            self.scheduler.run(blocking=False)
+            if self.scheduler.queue:
+                next_time = self.scheduler.queue[0].time
+                sleep_secs = next_time - time.time()
+                time.sleep(max(sleep_secs, 0))
+            else:
+                time.sleep(1)
+
 
 
 if __name__ == "__main__":
