@@ -593,6 +593,7 @@ TRUNCATE TABLE features;
 TRUNCATE TABLE live_full_data;
 TRUNCATE TABLE live_top10_signals;
 
+DELETE FROM live_top10_signals WHERE symbol = 'BUSDT';
 
 SHOW COLUMNS FROM features LIKE 'funding_rate_isnan';
 
