@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta, UTC
+import numpy as np
 
 from data_loader import DataLoader
 from feature_engineering import FeatureEngineer
@@ -22,6 +23,15 @@ from robust_signal_generator import RobustSignalGenerator
 from sqlalchemy import text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+
+def _to_builtin(v):
+    """Convert numpy scalar types to builtin Python types."""
+    if isinstance(v, (np.bool_, np.integer)):
+        return int(v)
+    if isinstance(v, np.floating):
+        return float(v)
+    return v
 
 
 class Scheduler:
@@ -123,6 +133,9 @@ class Scheduler:
                     order_book_imbalance=order_imb,
                     symbol=sym,
                 )
+                raw1h = {k: _to_builtin(v) for k, v in raw1h.items()}
+                raw4h = {k: _to_builtin(v) for k, v in raw4h.items()}
+                rawd1 = {k: _to_builtin(v) for k, v in rawd1.items()}
                 data = {
                     "symbol": sym,
                     "time": now,
@@ -138,7 +151,8 @@ class Scheduler:
                             "feat_4h": raw4h,
                             "feat_d1": rawd1,
                             "details": sig.get("details"),
-                        }
+                        },
+                        default=_to_builtin,
                     ),
                 }
                 results.append(data)
