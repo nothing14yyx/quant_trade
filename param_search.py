@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
 from tqdm import tqdm
+import optuna
 
 from robust_signal_generator import RobustSignalGenerator
 from backtester import (
@@ -153,16 +154,12 @@ def run_single_backtest(
     return df_res["ret"].mean(), df_res["sharpe"].mean()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, default=None, help="只取最近 N 行数据")
-    args = parser.parse_args()
-
+def run_param_search(rows: int | None = None, method: str = "grid", trials: int = 30) -> None:
     cfg = load_config()
     engine = connect_mysql(cfg)
     df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time", "close_time"])
-    if args.rows:
-        df = df.tail(args.rows)
+    if rows:
+        df = df.tail(rows)
 
     # 预先加载模型并实例化一次信号生成器
     sg = RobustSignalGenerator(
@@ -172,44 +169,90 @@ def main() -> None:
         feature_cols_d1=FEATURE_COLS_D1,
     )
     cached_ic = precompute_ic_scores(df, sg)
-
-    param_grid = {
-        "history_window": [300, 500],
-        "th_base": [0.10, 0.12],
-        "ai_w": [0.15, 0.25],
-        "trend_w": [0.2, 0.3],
-    }
-    grid = ParameterGrid(param_grid)
-    best = None
-    best_metric = -np.inf
-
-    for params in tqdm(grid, desc="Grid Search"):
-        base_weights = {
-            "ai": params["ai_w"],
-            "trend": params["trend_w"],
-            "momentum": 0.2,
-            "volatility": 0.2,
-            "volume": 0.1,
-            "sentiment": 0.05,
-            "funding": 0.05,
+    if method == "grid":
+        param_grid = {
+            "history_window": [300, 500],
+            "th_base": [0.10, 0.12],
+            "ai_w": [0.15, 0.25],
+            "trend_w": [0.2, 0.3],
         }
-        th_params = {"base": params["th_base"], "min_thres": 0.06, "max_thres": 0.25}
-        tot_ret, sharpe = run_single_backtest(
-            df,
-            base_weights,
-            params["history_window"],
-            th_params,
-            cached_ic,
-            sg,
-        )
-        metric = sharpe if not np.isnan(sharpe) else -np.inf
-        if metric > best_metric:
-            best_metric = metric
-            best = params
-        print(f"params={params} -> total_ret={tot_ret:.4f}, sharpe={sharpe:.4f}")
+        grid = ParameterGrid(param_grid)
+        best = None
+        best_metric = -np.inf
 
-    print("best params:", best, "best_sharpe:", best_metric)
+        for params in tqdm(grid, desc="Grid Search"):
+            base_weights = {
+                "ai": params["ai_w"],
+                "trend": params["trend_w"],
+                "momentum": 0.2,
+                "volatility": 0.2,
+                "volume": 0.1,
+                "sentiment": 0.05,
+                "funding": 0.05,
+            }
+            th_params = {
+                "base": params["th_base"],
+                "min_thres": 0.06,
+                "max_thres": 0.25,
+            }
+            tot_ret, sharpe = run_single_backtest(
+                df,
+                base_weights,
+                params["history_window"],
+                th_params,
+                cached_ic,
+                sg,
+            )
+            metric = sharpe if not np.isnan(sharpe) else -np.inf
+            if metric > best_metric:
+                best_metric = metric
+                best = params
+            print(
+                f"params={params} -> total_ret={tot_ret:.4f}, sharpe={sharpe:.4f}"
+            )
+
+        print("best params:", best, "best_sharpe:", best_metric)
+    else:
+        def objective(trial: optuna.Trial) -> float:
+            base_weights = {
+                "ai": trial.suggest_float("ai_w", 0.1, 0.3),
+                "trend": trial.suggest_float("trend_w", 0.1, 0.3),
+                "momentum": trial.suggest_float("momentum_w", 0.1, 0.3),
+                "volatility": 0.2,
+                "volume": 0.1,
+                "sentiment": 0.05,
+                "funding": 0.05,
+            }
+            th_params = {
+                "base": trial.suggest_float("th_base", 0.06, 0.15),
+                "min_thres": trial.suggest_float("min_thres", 0.05, 0.1),
+                "max_thres": trial.suggest_float("max_thres", 0.2, 0.3),
+            }
+            history_window = trial.suggest_int("history_window", 300, 800)
+            _, sharpe = run_single_backtest(
+                df, base_weights, history_window, th_params, cached_ic, sg
+            )
+            return sharpe if not np.isnan(sharpe) else -np.inf
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=trials, show_progress_bar=True)
+
+        print("best params:", study.best_params, "best_sharpe:", study.best_value)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rows", type=int, default=None, help="只取最近 N 行数据")
+    parser.add_argument(
+        "--method",
+        choices=["grid", "optuna"],
+        default="grid",
+        help="搜索方式: grid 或 optuna",
+    )
+    parser.add_argument("--trials", type=int, default=30, help="Optuna 试验次数")
+    args = parser.parse_args()
+    run_param_search(rows=args.rows, method=args.method, trials=args.trials)
 
 
 if __name__ == "__main__":
-    main()
+    run_param_search()
