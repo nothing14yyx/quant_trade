@@ -154,6 +154,7 @@ def run_single_backtest(
     return df_res["ret"].mean(), df_res["sharpe"].mean()
 
 
+
 def run_param_search(rows: int | None = None, method: str = "grid", trials: int = 30) -> None:
     cfg = load_config()
     engine = connect_mysql(cfg)
@@ -252,6 +253,7 @@ def main() -> None:
     parser.add_argument("--trials", type=int, default=30, help="Optuna 试验次数")
     args = parser.parse_args()
     run_param_search(rows=args.rows, method=args.method, trials=args.trials)
+
 
 
 if __name__ == "__main__":
