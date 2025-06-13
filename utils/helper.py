@@ -89,9 +89,15 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
 
     assign_safe(feats, f"ema_diff_{period}", ema_short_s - ema_long_s)
     assign_safe(feats, f"sma_10_{period}", _safe_ta(ta.sma, feats["close"], length=10, index=df.index))
-    feats[f"pct_chg1_{period}"] = feats["close"].pct_change(fill_method=None)
-    feats[f"pct_chg3_{period}"] = feats["close"].pct_change(3, fill_method=None)
-    feats[f"pct_chg6_{period}"] = feats["close"].pct_change(6, fill_method=None)
+    feats[f"pct_chg1_{period}"] = (
+        feats["close"].pct_change(fill_method=None).fillna(0)
+    )
+    feats[f"pct_chg3_{period}"] = (
+        feats["close"].pct_change(3, fill_method=None).fillna(0)
+    )
+    feats[f"pct_chg6_{period}"] = (
+        feats["close"].pct_change(6, fill_method=None).fillna(0)
+    )
     assign_safe(feats, f"rsi_{period}", _safe_ta(ta.rsi, feats["close"], length=14, index=df.index))
     feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
     atr = _safe_ta(ta.atr, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
@@ -113,7 +119,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(
         feats, f"cci_{period}", _safe_ta(ta.cci, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
     )
-    feats[f"cci_delta_{period}"] = feats[f"cci_{period}"].diff()
+    feats[f"cci_delta_{period}"] = feats[f"cci_{period}"].diff().fillna(0)
     mfr, mfi = calc_mfi_np(
         feats["high"].values,
         feats["low"].values,
