@@ -120,5 +120,13 @@
   "SUSHIUSDT": "sushi",
   "USUALUSDT": "usual",
   "AUSDT": "solana",
-  "AXSUSDT": "axie-infinity"
+  "AXSUSDT": "axie-infinity",
+  "SQDUSDT": "subsquid",
+  "BMTUSDT": "bubblemaps",
+  "TAIKOUSDT": "taiko",
+  "MERLUSDT": "merlin-chain",
+  "POLUSDT": "polygon-ecosystem-token",
+  "ALGOUSDT": "algorand",
+  "KMNOUSDT": "kamino",
+  "AERGOUSDT": "aergo"
 }

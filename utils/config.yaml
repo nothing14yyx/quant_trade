@@ -60,97 +60,48 @@ database:
   uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
 
 feature_cols:
-  1h:
-    # —— 价格 / 动量 ——
-    - pct_chg1_1h                # 1h涨跌幅，最直观的价格动量
-
-    # —— 趋势 / 振荡 ——
-    - cci_delta_1h               # CCI变化率，捕捉趋势/拐点
-
-    # —— 波动率 ——
-    - hv_14d_1h                  # 14天历史波动率，衡量近期市场波动
-
-    # —— 成交量 / 资金流 ——
-    - obv_delta_1h               # OBV变化，量价关系
-
-    # —— K线结构/形态 ——
-    - upper_wick_ratio_1h        # 上影线比例，反映抛压/多空力量
-
-    # —— 周期互补 ——
-    - close_spread_1h_4h         # 1h与4h收盘价乖离幅度，周期对比
-
-    # —— 衍生/异常值 ——
-    - funding_rate_anom_d1       # 1d资金费率异常，捕捉极端风险
-
-    # —— 时序因子 ——
-    - hour_of_day                # 日内效应（或者day_of_week，二选一即可）
-
-    # —— 反转与极端 ——
-    - kurtosis_1h                # 1h偏度，衡量极端行情
-
-    # —— 趋势计数类 ——
-    - bear_streak_1h             # 1h连跌计数，反映趋势强度
+  1h:           # 样本量 ≈ 552k，Feat/样本 ≈ 1∶2750
+    - pct_chg1_1h           # 1.000
+    - bear_streak_1h        # 0.995
+    - pct_chg3_1h           # 0.990
+    - cci_delta_1h          # 0.985
+    - close_spread_1h_4h    # 0.975
+    - cci_1h                # 0.965
+    - atr_pct_ratio_1h_4h   # 0.955
+    - bull_streak_1h        # 0.945
+    - vol_ma_ratio_long_1h  # 0.940
+    - obv_delta_1h          # 0.935
+    - upper_wick_ratio_1h   # 0.930
+    - lower_wick_ratio_1h   # 0.910
+    - hour_of_day           # 0.925
+    - day_of_week           # 0.900
+    - vol_roc_1h            # 0.871
   4h:
-    # —— 价格 / 动量 ——
-    - pct_chg6_4h               # 4h周期累计涨跌幅，更能反映4h动量
+    - vol_ratio_1h_4h       # 0.706  跨周期量比
+    - atr_pct_ratio_1h_4h   # 0.915  跨周期波动率比
+    - rsi_slope_4h          # 0.900  中线趋势斜率
+    - vol_roc_4h            # 0.851  量能环比
+    - lower_wick_ratio_4h   # 0.940  买盘吸收
+    - atr_chg_4h            # 0.806  波动率动量
+    - pct_chg6_4h           # 0.935  6 根动量
+    - bb_width_ratio_1h_4h  # 0.786  跨周期布林带比
+    - upper_wick_ratio_4h   # 0.930  卖盘抛压
 
-    # —— 趋势 / 振荡 ——
-    - rsi_slope_4h              # 4h RSI斜率，反映趋势转折或持续
-
-    # —— 波动率 ——
-    - hv_14d_1h                 # 14天历史波动率（1h窗口，4h行情一般也适用）
-
-    # —— 成交量 / 资金流 ——
-    - vol_roc_4h                # 4h成交量变化，代表4h内资金异动
-
-    # —— K线结构/形态 ——
-    - upper_wick_ratio_4h       # 4h上影线，反映中线抛压或结构
-
-    # —— 周期互补 ——
-    - pct_chg1_1h               # 1h涨跌幅，和4h周期互补，防止只看一头
-
-    # —— 衍生/异常值 ——
-    - funding_rate_anom_d1      # 1d资金费率异常，捕捉极端行情/风险
-
-    # —— 时序因子 ——
-    - day_of_week               # 周内效应（或者hour_of_day，二选一，4h建议用day_of_week）
-
-    # —— 反转与极端 ——
-    - kurtosis_1h               # 1h偏度，补充极端行情过滤
-
-    # —— 趋势计数类 ——
-    - bear_streak_4h            # 4h连跌计数，衡量4h趋势强度
+    # ——— 新增 1h 高贡献因子 ———
+    - pct_chg1_1h           # 1.000  极短线动量
+    - bear_streak_1h        # 0.995  连跌动能
+    - cci_delta_1h          # 0.985  短期趋势斜率
   1d:
-    # —— 价格 / 动量 ——
-    - pct_chg1_1h                # 1h涨跌幅
-
-    # —— 趋势 / 振荡 ——
-    - macd_signal_d1             # 1d MACD信号
-
-    # —— 波动率 ——
-    - hv_30d_1h                  # 1h的30天历史波动率
-
-    # —— 成交量 / 资金流 ——
-    - obv_delta_1h               # 1h OBV变化
-
-    # —— K线结构/形态 ——
-    - upper_wick_ratio_1h        # 1h上影线比例
-
-    # —— 周期互补 ——
-    - upper_wick_ratio_4h        # 4h上影线比例
-
-    # —— 衍生指标/异常值 ——
-    - funding_rate_anom_d1       # 1d资金费率异常
-
-    # —— 时序因子 ——
-    - day_of_week                # 周内效应
-
-    # —— 反转与极端 ——
-    - kurtosis_1h                # 1h偏度
-
-    # —— 趋势计数类 ——
-    - bear_streak_1h             # 1h连跌计数
-
+    - fg_index_d1           # 0.960  恐惧-贪婪情绪
+    - cg_market_cap_roc_d1  # 0.955  宏观市值变化
+    - macd_signal_d1        # 0.930  长线趋势信号
+    - macd_hist_diff_1h_d1  # 0.910  日线与 1h MACD 差异
+    - kc_width_pct_chg_d1   # 0.866  Keltner 通道宽度变化
+    - hv_14d_d1             # 0.856  14 天历史波动率
+    - cg_total_volume_roc_d1 # 0.841  市值成交量变化
+    - pct_chg6_4h           # 0.935  4h 中期动量
+    - atr_pct_ratio_1h_4h   # 0.915  跨周期波动率比
+    - bear_streak_1h        # 0.995  1h 连跌动能
 
 train_settings:
   by_symbol: false
