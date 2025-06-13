@@ -181,6 +181,7 @@ def prepare_all_features(
         "upper_wick_ratio_1h",
         "kurtosis_1h",
         "bear_streak_1h",
+        "cci_delta_1h",  # 补充短期动量斜率
     ]
     for col in common_1h_cols:
         if col in scaled1h:
@@ -192,6 +193,10 @@ def prepare_all_features(
     if "upper_wick_ratio_4h" in scaled4h:
         scaledd1["upper_wick_ratio_4h"] = scaled4h["upper_wick_ratio_4h"]
         rawd1["upper_wick_ratio_4h"] = raw4h.get("upper_wick_ratio_4h")
+
+    if "pct_chg6_4h" in scaled4h:
+        scaledd1["pct_chg6_4h"] = scaled4h["pct_chg6_4h"]
+        rawd1["pct_chg6_4h"] = raw4h.get("pct_chg6_4h")
 
     if "funding_rate_anom_d1" in scaledd1:
         scaled1h["funding_rate_anom_d1"] = scaledd1["funding_rate_anom_d1"]
