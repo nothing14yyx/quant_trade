@@ -154,23 +154,13 @@ def run_single_backtest(
     return df_res["ret"].mean(), df_res["sharpe"].mean()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, default=None, help="只取最近 N 行数据")
-    parser.add_argument(
-        "--method",
-        choices=["grid", "optuna"],
-        default="grid",
-        help="搜索方式: grid 或 optuna",
-    )
-    parser.add_argument("--trials", type=int, default=30, help="Optuna 试验次数")
-    args = parser.parse_args()
 
+def run_param_search(rows: int | None = None, method: str = "grid", trials: int = 30) -> None:
     cfg = load_config()
     engine = connect_mysql(cfg)
     df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time", "close_time"])
-    if args.rows:
-        df = df.tail(args.rows)
+    if rows:
+        df = df.tail(rows)
 
     # 预先加载模型并实例化一次信号生成器
     sg = RobustSignalGenerator(
@@ -180,7 +170,7 @@ def main() -> None:
         feature_cols_d1=FEATURE_COLS_D1,
     )
     cached_ic = precompute_ic_scores(df, sg)
-    if args.method == "grid":
+    if method == "grid":
         param_grid = {
             "history_window": [300, 500],
             "th_base": [0.10, 0.12],
@@ -246,10 +236,25 @@ def main() -> None:
             return sharpe if not np.isnan(sharpe) else -np.inf
 
         study = optuna.create_study(direction="maximize")
-        study.optimize(objective, n_trials=args.trials, show_progress_bar=True)
+        study.optimize(objective, n_trials=trials, show_progress_bar=True)
 
         print("best params:", study.best_params, "best_sharpe:", study.best_value)
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rows", type=int, default=None, help="只取最近 N 行数据")
+    parser.add_argument(
+        "--method",
+        choices=["grid", "optuna"],
+        default="grid",
+        help="搜索方式: grid 或 optuna",
+    )
+    parser.add_argument("--trials", type=int, default=30, help="Optuna 试验次数")
+    args = parser.parse_args()
+    run_param_search(rows=args.rows, method=args.method, trials=args.trials)
+
+
+
 if __name__ == "__main__":
-    main()
+    run_param_search()
