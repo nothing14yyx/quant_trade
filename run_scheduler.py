@@ -295,6 +295,7 @@ class Scheduler:
                         self.safe_call, self.update_klines, self.symbols, "4h"
                     )
                 )
+            if now.hour % 8 == 0:
                 tasks.append(
                     self.executor.submit(
                         self.safe_call, self.update_funding_rates, self.symbols
