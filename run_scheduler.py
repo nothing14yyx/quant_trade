@@ -203,8 +203,10 @@ class Scheduler:
                 ),
                 results,
             )
-        results.sort(key=lambda x: abs(x.get("score") or 0), reverse=True)
-        top10 = results[:10]
+        # filter out entries without a trading signal before ranking
+        filtered = [r for r in results if r.get("signal")]
+        filtered.sort(key=lambda x: abs(x.get("score") or 0), reverse=True)
+        top10 = filtered[:10]
         with self.engine.begin() as conn:
             conn.execute(
                 text(
