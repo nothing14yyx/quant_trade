@@ -188,6 +188,7 @@ class Scheduler:
                         default=_to_builtin,
                     ),
                 }
+                data = {k: _to_builtin(v) for k, v in data.items()}
                 results.append(data)
             except Exception as e:
                 logging.exception("signal for %s failed: %s", sym, e)
