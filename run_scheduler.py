@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta, UTC
 
 from data_loader import DataLoader
+from feature_engineering import FeatureEngineer
 from generate_signal_from_db import (
     load_config,
     connect_mysql,
@@ -28,6 +29,7 @@ class Scheduler:
         cfg = load_config()
         self.cfg = cfg
         self.dl = DataLoader()
+        self.fe = FeatureEngineer()
         self.engine = connect_mysql(cfg)
         self.scaler_params = load_scaler_params_from_json(
             cfg["feature_engineering"]["scaler_path"]
@@ -135,7 +137,7 @@ class Scheduler:
         while True:
             now = datetime.now(UTC)
             if now >= next_symbols_refresh:
-                symbols = self.dl.get_top_symbols()
+                symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
                 next_symbols_refresh = now + timedelta(hours=1)
             minute = now.minute
             if minute % 15 == 0:
