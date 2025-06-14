@@ -92,7 +92,9 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         ema_long_s = feats["close"].ewm(span=50, adjust=False).mean()
 
     assign_safe(feats, f"ema_diff_{period}", ema_short_s - ema_long_s)
+    assign_safe(feats, f"sma_5_{period}", _safe_ta(ta.sma, feats["close"], length=5, index=df.index))
     assign_safe(feats, f"sma_10_{period}", _safe_ta(ta.sma, feats["close"], length=10, index=df.index))
+    assign_safe(feats, f"sma_20_{period}", _safe_ta(ta.sma, feats["close"], length=20, index=df.index))
     feats[f"pct_chg1_{period}"] = (
         feats["close"].pct_change(fill_method=None).fillna(0)
     )
