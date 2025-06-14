@@ -2,7 +2,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import json
 import numpy as np
-from run_scheduler import _to_builtin
+from run_scheduler import _to_builtin, safe_json_dumps
 
 
 def test_to_builtin_conversion():
@@ -15,12 +15,12 @@ def test_to_builtin_conversion():
 
 def test_json_dumps_default():
     data = {"flag": np.bool_(False), "num": np.int64(5), "flt": np.float64(0.7)}
-    dumped = json.dumps(data, default=_to_builtin)
+    dumped = safe_json_dumps(data)
     assert dumped == json.dumps({"flag": 0, "num": 5, "flt": 0.7})
 
 
 def test_json_nan_conversion():
-    dumped = json.dumps({"val": np.nan}, default=_to_builtin)
+    dumped = safe_json_dumps({"val": np.nan})
     assert dumped == "{\"val\": null}"
 
 def test_dict_nan_conversion():
