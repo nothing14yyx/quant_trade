@@ -71,6 +71,9 @@ class RobustSignalGenerator:
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         self.max_same_direction_rate = 0.85
 
+        # 保存上一次生成的信号，供滞后阈值逻辑使用
+        self._last_signal = 0
+
     def __getattr__(self, name):
         if name in {"eth_dom_history", "btc_dom_history", "oi_change_history", "history_scores"}:
             val = deque(maxlen=3000)
@@ -84,6 +87,9 @@ class RobustSignalGenerator:
             val = threading.Lock()
             setattr(self, name, val)
             return val
+        if name == "_last_signal":
+            setattr(self, name, 0)
+            return 0
         raise AttributeError(name)
 
     @staticmethod
@@ -390,7 +396,7 @@ class RobustSignalGenerator:
         if regime == "trend":
             thres += 0.02
         elif regime == "range":
-            thres -= 0.02
+            thres += 0.02
 
         return max(min_thres, min(max_thres, thres))
 
@@ -683,6 +689,7 @@ class RobustSignalGenerator:
             'oi_threshold': th_oi,
             'crowding_factor': crowding_factor,
             'short_momentum': short_mom,
+            'ob_imbalance': ob_imb,
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
@@ -721,10 +728,35 @@ class RobustSignalGenerator:
             regime=regime,
         )
 
+        base_th = th
+        details['regime'] = regime
+        details['base_threshold'] = base_th
+
+        if regime == "range" and consensus_dir == 0:
+            self._last_signal = 0
+            return {
+                'signal': 0,
+                'score': fused_score,
+                'position_size': 0.0,
+                'take_profit': None,
+                'stop_loss': None,
+                'details': details,
+            }
+
         if order_book_imbalance is not None:
             details['order_book_imbalance'] = float(order_book_imbalance)
 
-        if abs(fused_score) < th:
+        direction = 0
+        if abs(fused_score) >= base_th:
+            direction = int(np.sign(fused_score))
+
+        if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
+            flip_th = 1.5 * base_th
+            if abs(fused_score) < flip_th:
+                direction = self._last_signal
+
+        if direction == 0:
+            self._last_signal = 0
             return {
                 'signal': 0,
                 'score': fused_score,
@@ -750,6 +782,12 @@ class RobustSignalGenerator:
         abs_score = abs(fused_score)
         pos_size = 0.1 + 0.9 * min(abs_score, 1.0)
 
+        vol_ratio = raw_f1h.get('vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h'))
+        details['vol_ratio'] = vol_ratio
+        if regime == "range" and vol_ratio is not None and vol_ratio < 0.5:
+            direction = 0
+            pos_size = 0.0
+
         if oi_overheat:
             pos_size *= 0.7
 
@@ -764,6 +802,14 @@ class RobustSignalGenerator:
             max_dd = drawdowns.max() if len(drawdowns) else 0
             pos_size *= max(0.5, 1 - min(0.5, max_dd))
 
+        ob_mom = order_book_imbalance
+        if ob_mom is None:
+            ob_mom = raw1h.get('bid_ask_imbalance')
+        details['order_book_momentum'] = ob_mom
+        if ob_mom is not None and direction != 0 and np.sign(ob_mom) != direction:
+            direction = 0
+            pos_size = 0.0
+
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
         if raw_features_4h is not None and 'atr_pct_4h' in raw_features_4h:
@@ -771,11 +817,11 @@ class RobustSignalGenerator:
         else:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
         atr_abs = atr_pct_4h * price
-        direction = int(np.sign(fused_score)) if fused_score != 0 else 1
-        take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, direction)
+        tp_dir = direction if direction != 0 else 1
+        take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
         # ===== 14. 最终返回 =====
-        direction = int(np.sign(fused_score))  # 1 表示做多，-1 表示做空
+        self._last_signal = direction
         return {
             'signal': direction,
             'score': fused_score,
