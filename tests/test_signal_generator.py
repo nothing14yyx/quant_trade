@@ -443,3 +443,40 @@ def test_short_momentum_and_order_book():
     assert res['score'] > 0.5
     assert res['details']['short_momentum'] > 0
     assert res['details']['ob_imbalance'] > 0
+
+
+def test_ma_cross_logic_amplify():
+    rsg = make_dummy_rsg()
+    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_factor_scores = lambda f, p: {
+        'trend': 0,
+        'momentum': 0,
+        'volatility': 0,
+        'volume': 0,
+        'sentiment': 0,
+        'funding': 0,
+    }
+    rsg.combine_score = lambda ai, fs, weights=None: 0.5
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'sma_5_1h': 10.2,
+        'sma_20_1h': 10,
+        'ma_ratio_5_20': 1.02,
+        'sma_20_4h': 9,
+    }
+    feats_4h = {'atr_pct_4h': 0}
+    feats_d1 = {}
+
+    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h)
+    assert res['score'] > 0.5
+    assert res['details']['ma_cross'] == 1

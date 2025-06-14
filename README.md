@@ -13,6 +13,8 @@
 - **ModelTrainer**：使用 LightGBM 训练多周期预测模型。
 - **标签系统**：根据历史波动动态设定阈值，并额外提供未来波动率等辅助目标。
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
+-   新增 `ma_cross_logic`，会检查 `sma_5_1h` 与 `sma_20_1h` 的形态，
+    在多空信号一致时适度放大得分，方向相反时则削弱或保持观望。
 - **Backtester**：依据生成的信号回测策略表现。
 - **FeatureSelector**：综合 AUC、SHAP 与 Permutation Importance 评分，筛选去冗余的核心特征。
 

@@ -146,6 +146,47 @@ class RobustSignalGenerator:
             stop_loss   = price + sl_mult * atr
         return take_profit, stop_loss
 
+    def ma_cross_logic(self, features: dict) -> int:
+        """基于 MA5 与 MA20 的形态给出方向建议
+
+        参数 ``features`` 应包含 ``sma_5_1h``、``sma_20_1h``、``ma_ratio_5_20``，
+        如有 ``sma_20_4h`` 将用于判断 MA20 的斜率。
+        返回值：1 为多头，-1 为空头，0 表示无明确信号。
+        """
+        sma5 = features.get('sma_5_1h')
+        sma20 = features.get('sma_20_1h')
+        ratio = features.get('ma_ratio_5_20')
+        if sma5 is None or sma20 is None or ratio is None:
+            return 0
+
+        sma20_4h = features.get('sma_20_4h')
+        slope = None
+        if sma20_4h is not None and sma20_4h != 0:
+            slope = (sma20 - sma20_4h) / sma20_4h
+
+        flat = slope is None or abs(slope) < 0.001
+
+        if flat:
+            if ratio > 1:
+                return 1
+            if ratio < 1:
+                return -1
+            return 0
+
+        if slope > 0:
+            if ratio > 1.05:
+                return -1
+            if ratio >= 0.98:
+                return 1
+            return -1
+
+        if slope < 0:
+            if ratio < 1:
+                return -1
+            return -1
+
+        return 0
+
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
     def get_ai_score(self, features, model_dict):
         """
@@ -543,6 +584,15 @@ class RobustSignalGenerator:
         else:
             fused_score = score_1h
 
+        ma_dir = self.ma_cross_logic(raw_features_1h or features_1h)
+        if ma_dir != 0:
+            if np.sign(fused_score) == 0:
+                fused_score += 0.1 * ma_dir
+            elif np.sign(fused_score) == ma_dir:
+                fused_score *= 1.1
+            else:
+                fused_score *= 0.7
+
         # 根据外部指标微调 fused_score
         if global_metrics is not None:
             dom = global_metrics.get('btc_dom_chg')
@@ -690,6 +740,7 @@ class RobustSignalGenerator:
             'crowding_factor': crowding_factor,
             'short_momentum': short_mom,
             'ob_imbalance': ob_imb,
+            'ma_cross': ma_dir,
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
