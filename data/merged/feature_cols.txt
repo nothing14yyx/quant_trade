@@ -64,6 +64,7 @@ boll_perc_4h_isnan
 boll_perc_d1
 boll_perc_d1_isnan
 btc_close
+btc_close_isnan
 btc_correlation_1h_1h
 btc_correlation_1h_1h_isnan
 btc_correlation_1h_4h
@@ -143,6 +144,7 @@ ema_diff_4h_isnan
 ema_diff_d1
 ema_diff_d1_isnan
 eth_close
+eth_close_isnan
 eth_correlation_1h_1h
 eth_correlation_1h_1h_isnan
 eth_correlation_1h_4h
@@ -151,7 +153,9 @@ fg_index
 fg_index_d1
 fg_index_d1_isnan
 fg_index_d1_x
+fg_index_d1_x_isnan
 fg_index_d1_y
+fg_index_d1_y_isnan
 fg_index_feat
 fg_index_feat_isnan
 fg_index_isnan
