@@ -115,6 +115,7 @@ def calc_cross_features(
     merged["vol_ratio_4h_d1"] = merged["vol_ma_ratio_4h"] / merged["vol_ma_ratio_d1"].replace(
         0, np.nan
     )
+    merged["ma_ratio_5_20"] = merged["sma_5_1h"] / merged["sma_20_1h"].replace(0, np.nan)
 
     return merged
 
