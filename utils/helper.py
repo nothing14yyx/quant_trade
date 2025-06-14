@@ -1,9 +1,5 @@
 import numpy as np
 
-# Pandas TA expects numpy.NaN constant which was removed in newer numpy versions
-if not hasattr(np, "NaN"):
-    np.NaN = np.nan
-
 import pandas as pd
 import pandas_ta as ta
 import json
