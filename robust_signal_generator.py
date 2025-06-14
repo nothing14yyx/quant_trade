@@ -683,7 +683,6 @@ class RobustSignalGenerator:
             'oi_threshold': th_oi,
             'crowding_factor': crowding_factor,
             'short_momentum': short_mom,
-            'ob_imbalance': ob_imb,
         }
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
