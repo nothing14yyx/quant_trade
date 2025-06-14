@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from collections import Counter, deque
 import threading
+import logging
 pd.set_option('future.no_silent_downcasting', True)
 
 class RobustSignalGenerator:
@@ -207,7 +208,7 @@ class RobustSignalGenerator:
                 row_data[col] = [0]
                 missing_cols.append(col)
         if missing_cols:
-            print(f"[get_ai_score] 缺失特征列: {missing_cols}")
+            logging.warning("get_ai_score missing columns: %s", missing_cols)
         X_df = pd.DataFrame(row_data)
         # === 这里加一行，强制所有特征为 float 类型，防止 dtype 报错 ===
         X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
