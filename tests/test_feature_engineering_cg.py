@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pandas as pd
 import pytest
 from utils.helper import calc_features_raw
+from feature_engineering import calc_cross_features
 
 
 def test_calc_features_raw_with_cg():
@@ -77,4 +78,36 @@ def test_calc_features_raw_minutes():
     }, index=times15)
     feats15 = calc_features_raw(df15, '15m')
     assert 'pct_chg1_15m' in feats15
+
+
+def test_sma_and_ma_ratio():
+    times = pd.date_range('2020-01-01', periods=20, freq='h')
+    close = pd.Series(range(1, 21), index=times)
+    df = pd.DataFrame({
+        'open': close,
+        'high': close,
+        'low': close,
+        'close': close,
+        'volume': [1]*20,
+    }, index=times)
+
+    feats = calc_features_raw(df, '1h')
+    assert 'sma_5_1h' in feats
+    assert 'sma_20_1h' in feats
+
+    q = close.quantile([0.001, 0.999])
+    clipped = close.clip(q.loc[0.001], q.loc[0.999])
+    expected_sma5 = clipped.rolling(5).mean().iloc[-1]
+    expected_sma20 = clipped.rolling(20).mean().iloc[-1]
+    assert feats['sma_5_1h'].iloc[-1] == pytest.approx(expected_sma5)
+    assert feats['sma_20_1h'].iloc[-1] == pytest.approx(expected_sma20)
+
+    f1h = feats.copy()
+    f4h = calc_features_raw(df, '4h')
+    f1d = calc_features_raw(df, 'd1')
+    merged = calc_cross_features(f1h, f4h, f1d)
+
+    ratio = expected_sma5 / expected_sma20
+    assert 'ma_ratio_5_20' in merged
+    assert merged['ma_ratio_5_20'].iloc[-1] == pytest.approx(ratio)
 
