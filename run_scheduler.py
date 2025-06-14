@@ -65,7 +65,10 @@ def _dumps_with_nan(obj, *args, **kwargs):
     return _json_dumps_orig(obj, *args, **kwargs)
 
 
-json.dumps = _dumps_with_nan
+def safe_json_dumps(obj, *args, **kwargs):
+    """Serialize JSON while handling NaN and numpy types."""
+    kwargs.setdefault("default", _to_builtin)
+    return _dumps_with_nan(obj, *args, **kwargs)
 
 
 class Scheduler:
@@ -211,14 +214,13 @@ class Scheduler:
                     "pos": sig.get("position_size"),
                     "take_profit": sig.get("take_profit"),
                     "stop_loss": sig.get("stop_loss"),
-                    "indicators": json.dumps(
+                    "indicators": safe_json_dumps(
                         {
                             "feat_1h": raw1h,
                             "feat_4h": raw4h,
                             "feat_d1": rawd1,
                             "details": sig.get("details"),
                         },
-                        default=_to_builtin,
                     ),
                 }
                 data = {k: _to_builtin(v) for k, v in data.items()}
