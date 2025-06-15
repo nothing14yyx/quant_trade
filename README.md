@@ -66,6 +66,16 @@ pytest -q tests
 python backtester.py --recent-days 7
 ```
 
+回测中每笔交易的收益率计算为：
+
+```
+(exit_price - entry_price) * direction * position_size
+----------------------------------------------------- - 2 * fee_rate
+          entry_price * position_size
+```
+
+若 `position_size` 为 0，则该笔收益记为 0。
+
 从 v2.1 起，`feature_selector.py` 会在计算特征覆盖率和训练模型前，
 按 1h、4h、1d 等周期对数据下采样，只评估对应时间点的特征表现。
 同样地，`model_trainer.py` 在训练各周期模型时也会先过滤相应的
