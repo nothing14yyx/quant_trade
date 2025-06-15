@@ -157,6 +157,13 @@ class Scheduler:
         except Exception as e:
             logging.exception("update coingecko failed: %s", e)
 
+    def update_features(self):
+        """重新计算特征并写入数据库"""
+        try:
+            self.fe.merge_features(save_to_db=True, batch_size=1)
+        except Exception as e:
+            logging.exception("update_features failed: %s", e)
+
     def update_ic_scores_from_db(self):
         """Load recent features and update factor IC scores."""
         try:
@@ -304,17 +311,10 @@ class Scheduler:
                     )
                 )
             if now.hour == 0:
-                tasks.append(
-                    self.executor.submit(
-                        self.safe_call, self.update_klines, self.symbols, "1d"
-                    )
-                )
-                tasks.append(
-                    self.executor.submit(self.safe_call, self.update_daily_data, self.symbols)
-                )
-                tasks.append(
-                    self.executor.submit(self.safe_call, self.update_ic_scores_from_db)
-                )
+                self.safe_call(self.update_klines, self.symbols, "1d")
+                self.safe_call(self.update_daily_data, self.symbols)
+                self.safe_call(self.update_features)
+                self.safe_call(self.update_ic_scores_from_db)
             tasks.append(
                 self.executor.submit(self.safe_call, self.generate_signals, self.symbols)
             )
