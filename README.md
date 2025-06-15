@@ -59,6 +59,11 @@ pytest -q tests
 自 v2.4 起已移除 `depth_snapshot` 表，旧用户可直接删除该表后再运行脚本。
 
 通过 `python param_search.py --rows 10000`(可选) 调整信号权重。
+若希望同时优化 Δ-boost 参数，可加入 `--tune-delta`，例如：
+
+```bash
+python param_search.py --method optuna --tune-delta --trials 50
+```
 
 回测脚本 `backtester.py` 支持 `--recent-days N` 参数，可只回测最近 N 天的数据，例如：
 
