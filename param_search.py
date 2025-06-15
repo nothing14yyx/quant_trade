@@ -129,7 +129,12 @@ def run_single_backtest(
             f4 = {c: df_sym.at[i, c] for c in FEATURE_COLS_4H}
             fd = {c: df_sym.at[i, c] for c in FEATURE_COLS_D1}
             res = sg.generate_signal(f1, f4, fd)
-            signals.append({"open_time": df_sym.at[i, "open_time"], "signal": res["signal"], "score": res["score"]})
+            signals.append({
+                "open_time": df_sym.at[i, "open_time"],
+                "signal": res["signal"],
+                "score": res["score"],
+                "position_size": res.get("position_size", 1.0),
+            })
         sig_df = pd.DataFrame(signals)
         valid_idx = sig_df[sig_df["signal"] != 0].index + 1
         valid_idx = valid_idx[valid_idx < len(df_sym)]
@@ -138,8 +143,12 @@ def run_single_backtest(
             entry_price = df_sym.at[idx, "open"] * (1 + slippage * np.sign(sig_df.at[idx - 1, "signal"]))
             exit_price = df_sym.at[idx, "close"] * (1 - slippage * np.sign(sig_df.at[idx - 1, "signal"]))
             direction = sig_df.at[idx - 1, "signal"]
-            pnl = (exit_price - entry_price) * direction
-            ret = pnl / entry_price - 2 * fee_rate
+            pos_size = sig_df.at[idx - 1, "position_size"]
+            pnl = (exit_price - entry_price) * direction * pos_size
+            if pos_size:
+                ret = pnl / (entry_price * pos_size) - 2 * fee_rate
+            else:
+                ret = 0.0
             trades.append(ret)
         if trades:
             series = pd.Series(trades)

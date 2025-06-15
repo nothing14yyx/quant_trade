@@ -92,7 +92,10 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
 
         if exit_price is not None:
             pnl = (exit_price - entry_price) * direction * pos_size
-            ret = pnl / entry_price - 2 * fee_rate
+            if pos_size:
+                ret = pnl / (entry_price * pos_size) - 2 * fee_rate
+            else:
+                ret = 0.0
             holding_s = (exit_time - entry_time).total_seconds()
             trades.append({
                 'symbol': df_sym.at[i, 'symbol'],
@@ -113,7 +116,10 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
         exit_price = df_sym.at[len(df_sym)-1, 'close'] * (1 - slippage * direction)
         exit_time = df_sym.at[len(df_sym)-1, 'close_time']
         pnl = (exit_price - entry_price) * direction * pos_size
-        ret = pnl / entry_price - 2 * fee_rate
+        if pos_size:
+            ret = pnl / (entry_price * pos_size) - 2 * fee_rate
+        else:
+            ret = 0.0
         holding_s = (exit_time - entry_time).total_seconds()
         trades.append({
             'symbol': df_sym.at[len(df_sym)-1, 'symbol'],
