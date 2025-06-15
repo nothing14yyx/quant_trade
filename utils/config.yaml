@@ -109,3 +109,29 @@ train_settings:
   time_ranges: []
   ts_smote: true
 
+# Δ-boost 配置：关键指标与参数
+delta_boost:
+  core_keys:
+    "1h":
+      - rsi_1h
+      - macd_hist_1h
+      - ema_diff_1h
+      - atr_pct_1h
+      - vol_ma_ratio_1h
+      - funding_rate_1h
+    "4h":
+      - rsi_4h
+      - macd_hist_4h
+      - ema_diff_4h
+    d1:
+      - rsi_d1
+      - macd_hist_d1
+      - ema_diff_d1
+  params:
+    rsi: [5, 1.0, 0.05]
+    macd_hist: [0.002, 100.0, 0.05]
+    ema_diff: [0.001, 100.0, 0.03]
+    atr_pct: [0.002, 100.0, 0.03]
+    vol_ma_ratio: [0.2, 1.0, 0.03]
+    funding_rate: [0.0005, 10000, 0.03]
+

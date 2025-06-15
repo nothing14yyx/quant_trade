@@ -2,9 +2,14 @@ import joblib
 import numpy as np
 import pandas as pd
 from collections import Counter, deque
+from pathlib import Path
+import yaml
 import threading
 import logging
 pd.set_option('future.no_silent_downcasting', True)
+
+# 默认配置路径
+CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
 # 当订单簿动量与信号方向相反且超过该阈值时取消信号
 ORDER_BOOK_MOM_THRESHOLD = 0.02
@@ -22,9 +27,44 @@ class RobustSignalGenerator:
     - 支持动态阈值与极端行情防护
     - 可通过 :func:`update_ic_scores` 读取历史数据并计算因子 IC
       用于动态调整权重
+    - Δ-boost 逻辑现已参数化，可通过 config 或 core_keys / delta_params 定制。
     """
 
-    def __init__(self, model_paths, *, feature_cols_1h, feature_cols_4h, feature_cols_d1, history_window=3000, symbol_categories=None):
+    DEFAULT_CORE_KEYS = {
+        "1h": [
+            "rsi_1h",
+            "macd_hist_1h",
+            "ema_diff_1h",
+            "atr_pct_1h",
+            "vol_ma_ratio_1h",
+            "funding_rate_1h",
+        ],
+        "4h": ["rsi_4h", "macd_hist_4h", "ema_diff_4h"],
+        "d1": ["rsi_d1", "macd_hist_d1", "ema_diff_d1"],
+    }
+
+    DELTA_PARAMS = {
+        "rsi": (5, 1.0, 0.05),
+        "macd_hist": (0.002, 100.0, 0.05),
+        "ema_diff": (0.001, 100.0, 0.03),
+        "atr_pct": (0.002, 100.0, 0.03),
+        "vol_ma_ratio": (0.2, 1.0, 0.03),
+        "funding_rate": (0.0005, 10000, 0.03),
+    }
+
+    def __init__(
+        self,
+        model_paths,
+        *,
+        feature_cols_1h,
+        feature_cols_4h,
+        feature_cols_d1,
+        history_window=3000,
+        symbol_categories=None,
+        config_path=CONFIG_PATH,
+        core_keys=None,
+        delta_params=None,
+    ):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         for period, path_dict in model_paths.items():
@@ -42,6 +82,17 @@ class RobustSignalGenerator:
         self.feature_cols_1h = feature_cols_1h
         self.feature_cols_4h = feature_cols_4h
         self.feature_cols_d1 = feature_cols_d1
+
+        cfg = {}
+        path = Path(config_path)
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parent / path
+        if path.is_file():
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+        db_cfg = cfg.get("delta_boost", {})
+        self.core_keys = core_keys or db_cfg.get("core_keys", self.DEFAULT_CORE_KEYS)
+        self.delta_params = delta_params or db_cfg.get("params", self.DELTA_PARAMS)
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         _base_weights = {
@@ -119,6 +170,12 @@ class RobustSignalGenerator:
             val = {p: None for p in ("1h", "4h", "d1")}
             setattr(self, name, val)
             return val
+        if name == "core_keys":
+            setattr(self, name, self.DEFAULT_CORE_KEYS.copy())
+            return getattr(self, name)
+        if name == "delta_params":
+            setattr(self, name, self.DELTA_PARAMS.copy())
+            return getattr(self, name)
         raise AttributeError(name)
 
 
@@ -168,35 +225,33 @@ class RobustSignalGenerator:
             stop_loss = price + sl_mult * atr
         return float(take_profit), float(stop_loss)
 
-    @staticmethod
-    def _calc_deltas(curr: dict, prev: dict, keys: list, scale: float = 1.0) -> dict:
-        """返回 {f"{k}_delta": (curr[k] - prev[k]) * scale}；若 prev 为 None 则全 0."""
+    def _calc_deltas(self, curr: dict, prev: dict, keys: list) -> dict:
+        """根据配置计算关键指标变化量"""
         deltas = {}
         if prev is None:
-            for k in keys:
-                deltas[f"{k}_delta"] = 0.0
-            return deltas
-
+            return {f"{k}_delta": 0.0 for k in keys}
         for k in keys:
-            c_val = curr.get(k, 0)
-            p_val = prev.get(k, 0)
-            if c_val is None or p_val is None:
-                deltas[f"{k}_delta"] = 0.0
-            else:
-                deltas[f"{k}_delta"] = (c_val - p_val) * scale
+            base = k.split("_", 1)[0]
+            th, scale, _ = self.delta_params.get(base, (0, 1, 0))
+            delta_raw = curr.get(k, 0) - prev.get(k, 0)
+            deltas[f"{k}_delta"] = (
+                delta_raw * scale if abs(delta_raw) >= th else 0.0
+            )
         return deltas
 
-    @staticmethod
-    def _apply_delta_boost(score: float, deltas: dict) -> float:
+    def _apply_delta_boost(self, score: float, deltas: dict) -> float:
         """根据指标变化量对得分进行微调"""
-        mom_boost = 0.0
-        if deltas.get("rsi_1h_delta", 0) > 5 and np.sign(score) == 1:
-            mom_boost += 0.05
-        if deltas.get("rsi_1h_delta", 0) < -5 and np.sign(score) == -1:
-            mom_boost += 0.05
-        if deltas.get("macd_hist_1h_delta", 0) * score > 0:
-            mom_boost += 0.05
-        return score * (1 + mom_boost)
+        boost = 0.0
+        for k, val in deltas.items():
+            if val == 0:
+                continue
+            base = k.split("_", 2)[0]
+            _, _, inc = self.delta_params.get(base, (0, 1, 0))
+            if val * score > 0:
+                boost += inc
+            else:
+                boost -= inc
+        return score * (1 + boost)
 
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> int:
         """根据1h MA5 与 MA20 判断多空方向"""
@@ -596,11 +651,17 @@ class RobustSignalGenerator:
         raw_f4h = raw_features_4h or features_4h
         raw_fd1 = raw_features_d1 or features_d1
 
-        CORE_KEYS = [
-            "rsi_1h", "macd_hist_1h", "ema_diff_1h",
-            "atr_pct_1h", "vol_ma_ratio_1h", "funding_rate_1h",
-        ]
-        deltas_1h = self._calc_deltas(raw_f1h, self._prev_raw["1h"], CORE_KEYS)
+        deltas = {
+            "1h": self._calc_deltas(
+                raw_f1h, self._prev_raw["1h"], self.core_keys["1h"]
+            ),
+            "4h": self._calc_deltas(
+                raw_f4h, self._prev_raw["4h"], self.core_keys["4h"]
+            ),
+            "d1": self._calc_deltas(
+                raw_fd1, self._prev_raw["d1"], self.core_keys["d1"]
+            ),
+        }
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores = {}
@@ -629,8 +690,10 @@ class RobustSignalGenerator:
         score_4h = self.combine_score(ai_scores['4h'], fs['4h'], weights)
         score_d1 = self.combine_score(ai_scores['d1'], fs['d1'], weights)
 
-        # 根据关键指标的变化量微调 1h 得分
-        score_1h = self._apply_delta_boost(score_1h, deltas_1h)
+        # 根据关键指标的变化量微调各周期得分
+        score_1h = self._apply_delta_boost(score_1h, deltas["1h"])
+        score_4h = self._apply_delta_boost(score_4h, deltas["4h"])
+        score_d1 = self._apply_delta_boost(score_d1, deltas["d1"])
 
         # ===== 5. 判断 4h 强确认条件 =====
         strong_confirm = (
