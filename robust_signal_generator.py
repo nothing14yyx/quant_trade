@@ -667,6 +667,7 @@ class RobustSignalGenerator:
                     logging.debug(
                         "funding bias opposes supertrend on 1h %.3f -> %.3f",
                         pre, scores['1h']
+
                     )
                 elif p == '4h':
                     pre = scores['4h']
@@ -698,6 +699,10 @@ class RobustSignalGenerator:
                     rsi_diff,
                 )
             strong_confirm = False
+
+        # ensure scores remain within [-1, 1] after adjustments
+        for p in scores:
+            scores[p] = float(np.clip(scores[p], -1, 1))
 
         score_1h, score_4h, score_d1 = scores['1h'], scores['4h'], scores['d1']
 
