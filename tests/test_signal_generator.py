@@ -115,7 +115,7 @@ def test_generate_signal_raw_atr():
     }
     rsg.ic_scores = {k: 1 for k in rsg.base_weights}
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, m: 0.9
+    rsg.get_ai_score = lambda f, up, down: 0.9
     rsg.get_factor_scores = lambda f, p: {
         'trend': 1,
         'momentum': 1,
@@ -157,7 +157,7 @@ def test_factor_scores_use_raw_features():
                 'sentiment': 0, 'funding': 0}
 
     rsg.get_factor_scores = fake_get_factor_scores
-    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_ai_score = lambda f, up, down: 0
     rsg.combine_score = lambda ai, fs, weights=None: 0
     rsg.dynamic_weight_update = lambda: rsg.base_weights
     rsg.models = {
@@ -296,7 +296,7 @@ def test_combine_score_weight_names():
 def test_generate_signal_with_external_metrics():
     base = make_dummy_rsg()
     for r in (base,):
-        r.get_ai_score = lambda f, m: 0
+        r.get_ai_score = lambda f, up, down: 0
         r.get_factor_scores = lambda f, p: {
             'trend': 0,
             'momentum': 0,
@@ -343,7 +343,7 @@ def test_generate_signal_with_external_metrics():
 
 def test_hot_sector_influence():
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -376,7 +376,7 @@ def test_hot_sector_influence():
 
 def test_eth_dominance_influence():
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -410,7 +410,7 @@ def test_eth_dominance_influence():
 
 def test_short_momentum_and_order_book():
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -447,7 +447,7 @@ def test_short_momentum_and_order_book():
 
 def test_ma_cross_logic_amplify():
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -469,9 +469,9 @@ def test_ma_cross_logic_amplify():
         'atr_pct_1h': 0,
         'adx_1h': 0,
         'funding_rate_1h': 0,
-        'sma_5_1h': 10.2,
+        'sma_5_1h': 10.3,
         'sma_20_1h': 10,
-        'ma_ratio_5_20': 1.02,
+        'ma_ratio_5_20': 1.03,
         'sma_20_4h': 9,
     }
     feats_4h = {'atr_pct_4h': 0}

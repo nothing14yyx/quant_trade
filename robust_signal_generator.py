@@ -59,7 +59,8 @@ class RobustSignalGenerator:
         self.current_weights = self.base_weights.copy()
 
         # 多线程访问历史数据时的互斥锁
-        self._lock = threading.Lock()
+        # 使用 RLock 以便在部分函数中嵌套调用
+        self._lock = threading.RLock()
 
         # 初始化各因子对应的IC分数（均设为1，后续可动态更新）
         self.ic_scores = {k: 1 for k in self.base_weights.keys()}
@@ -96,9 +97,15 @@ class RobustSignalGenerator:
             setattr(self, name, val)
             return val
         if name == "_lock":
-            val = threading.Lock()
+            val = threading.RLock()
             setattr(self, name, val)
             return val
+        if name == "_equity_drawdown":
+            setattr(self, name, 0.0)
+            return 0.0
+        if name == "_last_score":
+            setattr(self, name, 0.0)
+            return 0.0
         if name == "_last_signal":
             setattr(self, name, 0)
             return 0
@@ -148,8 +155,8 @@ class RobustSignalGenerator:
         """
         if price is None or price <= 0:
             return None, None            # 价格异常直接放弃
-        if atr == 0:
-            return None, None
+        if atr is None or atr == 0:
+            atr = 0.005 * price
 
         # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
         tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
@@ -157,11 +164,11 @@ class RobustSignalGenerator:
 
         if direction == 1:
             take_profit = price + tp_mult * atr
-            stop_loss   = price - sl_mult * atr
+            stop_loss = price - sl_mult * atr
         else:
             take_profit = price - tp_mult * atr
-            stop_loss   = price + sl_mult * atr
-        return take_profit, stop_loss
+            stop_loss = price + sl_mult * atr
+        return float(take_profit), float(stop_loss)
 
     def ma_cross_logic(self, features: dict) -> int:
         """基于 MA5 与 MA20 的形态给出方向建议
@@ -181,55 +188,51 @@ class RobustSignalGenerator:
         if sma20_4h is not None and sma20_4h != 0:
             slope = (sma20 - sma20_4h) / sma20_4h
 
-        flat = slope is None or abs(slope) < 0.001
+        if slope is None:
+            slope = 0.0
 
-        if flat:
-            if ratio > 1:
-                return 1
-            if ratio < 1:
-                return -1
-            return 0
-
-        if slope > 0:
-            if ratio > 1.05:
-                return 1
-            if ratio >= 0.98:
-                return 1
+        if ratio > 1.02 and slope > 0:
+            return 1
+        if ratio < 0.98 and slope < 0:
             return -1
-
-        if slope < 0:
-            if ratio < 1:
-                return -1
-            return -1
-
         return 0
 
+    def get_position_size(self, score, base=0.1, coeff=0.9):
+        """根据当前得分及策略回撤计算仓位大小"""
+        drawdown = getattr(self, "_equity_drawdown", 0.0)
+        if not 0 <= drawdown <= 1:
+            drawdown = 0.0
+        pos = base + coeff * min(abs(score), 1.0) * (1 - drawdown)
+        return float(np.clip(pos, 0.0, 1.0))
+
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
-    def get_ai_score(self, features, model_dict):
-        """
-        features: 当前币种的特征字典（key: 列名，value: 数值）
-        model_dict: 形如 {"model": LGBMClassifier, "features": [...训练时列...]}
+    def get_ai_score(self, features, model_up, model_down):
+        """根据上下两个方向模型的概率输出计算 AI 得分"""
 
-        返回：AI 置信度映射到 [-1,1] 的综合得分
-        """
-        lgb_model = model_dict["model"]
-        train_cols = model_dict["features"]
+        def _build_df(model_dict):
+            cols = model_dict["features"]
+            row = {}
+            missing = []
+            for c in cols:
+                val = features.get(c, np.nan)
+                row[c] = [val]
+                if c not in features:
+                    missing.append(c)
+            if missing:
+                logging.warning("get_ai_score missing columns: %s", missing)
+            df = pd.DataFrame(row)
+            return df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
 
-        row_data = {}
-        missing_cols = []
-        for col in train_cols:
-            value = features.get(col, np.nan)   # LightGBM 自动处理 NaN
-            row_data[col] = [value]
-            if col not in features:
-                missing_cols.append(col)
-        if missing_cols:
-            logging.warning("get_ai_score missing columns: %s", missing_cols)
-        X_df = pd.DataFrame(row_data)
-        # === 这里加一行，强制所有特征为 float 类型，防止 dtype 报错 ===
-        X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-
-        proba_up = lgb_model.predict_proba(X_df)[0][1]
-        return self._score_from_proba(proba_up)
+        X_up = _build_df(model_up)
+        X_down = _build_df(model_down)
+        prob_up = model_up["model"].predict_proba(X_up)[:, 1]
+        prob_down = model_down["model"].predict_proba(X_down)[:, 1]
+        denom = prob_up + prob_down
+        ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
+        ai_score = np.clip(ai_score, -1.0, 1.0)
+        if ai_score.size == 1:
+            return float(ai_score[0])
+        return ai_score
 
     def get_vol_prediction(self, features, model_dict):
         """根据回归模型预测未来波动率"""
@@ -371,28 +374,34 @@ class RobustSignalGenerator:
 
     def dynamic_weight_update(self, halflife=50):
         """根据因子IC的指数加权均值更新权重"""
-        if not hasattr(self, "ic_history"):
-            self.ic_history = {k: deque(maxlen=3000) for k in self.base_weights}
+        with self._lock:
+            if not hasattr(self, "ic_history"):
+                self.ic_history = {k: deque(maxlen=3000) for k in self.base_weights}
 
-        ic_avg = []
-        decay = np.log(0.5) / float(halflife)
-        for k in self.ic_scores.keys():
-            hist = self.ic_history.get(k)
-            if hist:
-                arr = np.array(hist, dtype=float)
-                weights = np.exp(decay * np.arange(len(arr))[::-1])
-                weights /= weights.sum()
-                ic_avg.append(float(np.nansum(arr * weights)))
+            ic_avg = []
+            decay = np.log(0.5) / float(halflife)
+            for k in self.ic_scores.keys():
+                hist = self.ic_history.get(k)
+                if hist:
+                    arr = np.array(hist, dtype=float)
+                    weights = np.exp(decay * np.arange(len(arr))[::-1])
+                    weights /= weights.sum()
+                    ic_avg.append(float(np.nansum(arr * weights)))
+                else:
+                    ic_avg.append(self.ic_scores[k])
+
+            mag = np.abs(ic_avg)
+            w = softmax(mag)
+            w *= np.sign(ic_avg)
+            w = np.clip(w, 0, None)
+            total = w.sum()
+            if total == 0:
+                w = np.ones_like(w) / len(w)
             else:
-                ic_avg.append(self.ic_scores[k])
+                w /= total
 
-        # 用绝对值决定大小，再用原符号恢复方向
-        mag = np.abs(ic_avg)
-        w = softmax(mag)
-        w *= np.sign(ic_avg)      # 带方向
-
-        self.current_weights = dict(zip(self.ic_scores.keys(), w))
-        return self.current_weights
+            self.current_weights = dict(zip(self.ic_scores.keys(), w))
+            return self.current_weights
 
     def dynamic_threshold(
         self,
@@ -551,9 +560,7 @@ class RobustSignalGenerator:
         ai_scores = {}
         vol_preds = {}
         for p, feats in [('1h', features_1h), ('4h', features_4h), ('d1', features_d1)]:
-            score_up = self.get_ai_score(feats, self.models[p]['up'])
-            score_down = self.get_ai_score(feats, self.models[p]['down'])
-            ai_scores[p] = 0.5 * (score_up - score_down)
+            ai_scores[p] = self.get_ai_score(feats, self.models[p]['up'], self.models[p]['down'])
             if 'vol' in self.models[p]:
                 vol_preds[p] = self.get_vol_prediction(feats, self.models[p]['vol'])
             else:
@@ -569,7 +576,8 @@ class RobustSignalGenerator:
         }
 
         # ===== 3. 动态权重更新 =====
-        weights = self.dynamic_weight_update()
+        with self._lock:
+            weights = self.dynamic_weight_update()
 
         # ===== 4. 合并 AI 与多因子分数，得到各周期总分 =====
         score_1h = self.combine_score(ai_scores['1h'], fs['1h'], weights)
@@ -810,6 +818,7 @@ class RobustSignalGenerator:
 
         if regime == "range" and consensus_dir == 0:
             self._last_signal = 0
+            self._last_score = fused_score
             return {
                 'signal': 0,
                 'score': fused_score,
@@ -827,12 +836,14 @@ class RobustSignalGenerator:
             direction = int(np.sign(fused_score))
 
         if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
-            flip_th = 1.5 * base_th
+            last_score = getattr(self, '_last_score', 0.0)
+            flip_th = base_th + max(0.05, 0.5 * abs(last_score))
             if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
                 direction = self._last_signal
 
         if direction == 0:
             self._last_signal = 0
+            self._last_score = fused_score
             return {
                 'signal': 0,
                 'score': fused_score,
@@ -855,12 +866,16 @@ class RobustSignalGenerator:
                 }
 
         # ===== 12. 仓位大小按连续得分映射 =====
-        abs_score = abs(fused_score)
-        pos_size = 0.1 + 0.9 * min(abs_score, 1.0)
+        pos_size = self.get_position_size(fused_score)
 
         vol_ratio = raw_f1h.get('vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h'))
         details['vol_ratio'] = vol_ratio
-        if regime == "range" and vol_ratio is not None and vol_ratio < 0.5:
+        if (
+            regime == "range"
+            and vol_ratio is not None
+            and vol_ratio < 0.3
+            and abs(fused_score) < base_th + 0.02
+        ):
             direction = 0
             pos_size = 0.0
 
@@ -871,12 +886,6 @@ class RobustSignalGenerator:
         if vol_p is not None:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
 
-        if self.history_scores:
-            cum = np.cumsum(self.history_scores)
-            running_max = np.maximum.accumulate(cum)
-            drawdowns = running_max - cum
-            max_dd = drawdowns.max() if len(drawdowns) else 0
-            pos_size *= max(0.5, 1 - min(0.5, max_dd))
 
         ob_mom = order_book_imbalance
         if ob_mom is None:
@@ -895,13 +904,12 @@ class RobustSignalGenerator:
         else:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
         atr_abs = max(atr_1h, atr_pct_4h) * price
-        if atr_abs == 0:
-            return None, None
         tp_dir = direction if direction != 0 else 1
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
         # ===== 14. 最终返回 =====
         self._last_signal = direction
+        self._last_score = fused_score
         return {
             'signal': direction,
             'score': fused_score,
