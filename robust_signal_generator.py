@@ -393,17 +393,17 @@ class RobustSignalGenerator:
                 else:
                     ic_avg.append(self.ic_scores[k])
 
-            mag = np.abs(ic_avg)
-            w = softmax(mag)
-            w *= np.sign(ic_avg)
-            w = np.clip(w, 0, None)
-            total = w.sum()
-            if total == 0:
-                w = np.ones_like(w) / len(w)
-            else:
-                w /= total
+            raw = {}
+            for k, ic_val in zip(self.ic_scores.keys(), ic_avg):
+                base_w = self.base_weights.get(k, 0)
+                if ic_val < 0:
+                    w = base_w * max(0.0, 1 - abs(ic_val))
+                else:
+                    w = base_w * (1 + ic_val)
+                raw[k] = max(0.0, w)
 
-            self.current_weights = dict(zip(self.ic_scores.keys(), w))
+            total = sum(raw.values()) or 1.0
+            self.current_weights = {k: v / total for k, v in raw.items()}
             return self.current_weights
 
     def dynamic_threshold(
@@ -579,8 +579,7 @@ class RobustSignalGenerator:
         }
 
         # ===== 3. 动态权重更新 =====
-        with self._lock:
-            weights = self.dynamic_weight_update()
+        weights = self.dynamic_weight_update()
 
         # ===== 4. 合并 AI 与多因子分数，得到各周期总分 =====
         score_1h = self.combine_score(ai_scores['1h'], fs['1h'], weights)
