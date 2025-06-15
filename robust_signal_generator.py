@@ -239,9 +239,12 @@ class RobustSignalGenerator:
         输出：一个 dict，包含6个子因子得分。
         """
 
+        # 去除重复字段，避免两次写入同名特征
+        dedup_row = {k: v for k, v in features.items()}
+
         def safe(key: str, default=0):
             """如果值缺失或为 NaN，返回 default。"""
-            v = features.get(key, default)
+            v = dedup_row.get(key, default)
             if v is None:
                 return default
             if isinstance(v, (float, int)) and pd.isna(v):
@@ -631,7 +634,7 @@ class RobustSignalGenerator:
         vol_ratio_1h = raw1h.get('vol_ma_ratio_1h')
         vol_roc_1h = raw1h.get('vol_roc_1h')
         if (vol_ratio_1h is not None and vol_ratio_1h < 0.8) or (
-            vol_roc_1h is not None and vol_roc_1h < -0.2
+            vol_roc_1h is not None and vol_roc_1h < -20
         ):
             old = scores['1h']
             scores['1h'] -= 0.15
@@ -644,7 +647,7 @@ class RobustSignalGenerator:
             vol_ratio_4h = raw4h.get('vol_ma_ratio_4h')
             vol_roc_4h = raw4h.get('vol_roc_4h')
             if (vol_ratio_4h is not None and vol_ratio_4h < 0.8) or (
-                vol_roc_4h is not None and vol_roc_4h < -0.1
+                vol_roc_4h is not None and vol_roc_4h < -10
             ):
                 old = scores['4h']
                 scores['4h'] -= 0.15
@@ -709,6 +712,8 @@ class RobustSignalGenerator:
                 fused_score *= 1.10
         else:
             fused_score = score_1h
+
+        fused_score = float(np.clip(fused_score, -1, 1))
 
         prev_ma20 = (raw_features_1h or features_1h).get('sma_20_1h_prev')
         ma_dir = self.ma_cross_logic(raw_features_1h or features_1h, prev_ma20)
