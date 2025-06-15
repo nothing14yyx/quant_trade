@@ -508,7 +508,7 @@ def test_dynamic_threshold_regime():
 def test_order_book_momentum_threshold():
     """小幅盘口差异不应取消已生成的信号"""
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
