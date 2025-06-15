@@ -599,6 +599,105 @@ class RobustSignalGenerator:
         adxd = (raw_features_d1 or features_d1).get('adx_d1', 0)
         w1, w4, w_d1 = self.calc_period_weights(adx1, adx4, adxd)
 
+        # ---- 额外逻辑：情绪与交易量等修正 ----
+        scores = {'1h': score_1h, '4h': score_4h, 'd1': score_d1}
+        for p in scores:
+            sent = fs[p]['sentiment']
+            if sent < -0.5:
+                old = scores[p]
+                scores[p] *= 1.5
+                logging.debug(
+                    "sentiment %.2f < -0.5 on %s -> score_%s %.3f -> %.3f",
+                    sent, p, p, old, scores[p]
+                )
+
+        sentiment_combined = (
+            w1 * fs['1h']['sentiment']
+            + w4 * fs['4h']['sentiment']
+            + w_d1 * fs['d1']['sentiment']
+        )
+        if sentiment_combined <= -0.25:
+            logging.debug(
+                "combined sentiment %.3f <= -0.25 -> cap positive scores",
+                sentiment_combined,
+            )
+            for p in scores:
+                if scores[p] > 0:
+                    scores[p] = 0.0
+
+        # volume guard-rail
+        raw1h = raw_features_1h or features_1h
+        raw4h = raw_features_4h or features_4h
+        vol_ratio_1h = raw1h.get('vol_ma_ratio_1h')
+        vol_roc_1h = raw1h.get('vol_roc_1h')
+        if (vol_ratio_1h is not None and vol_ratio_1h < 0.8) or (
+            vol_roc_1h is not None and vol_roc_1h < -0.2
+        ):
+            old = scores['1h']
+            scores['1h'] -= 0.15
+            logging.debug(
+                "volume guard 1h ratio=%.3f roc=%.3f -> %.3f",
+                vol_ratio_1h, vol_roc_1h, scores['1h']
+            )
+
+        if raw4h is not None:
+            vol_ratio_4h = raw4h.get('vol_ma_ratio_4h')
+            vol_roc_4h = raw4h.get('vol_roc_4h')
+            if (vol_ratio_4h is not None and vol_ratio_4h < 0.8) or (
+                vol_roc_4h is not None and vol_roc_4h < -0.1
+            ):
+                old = scores['4h']
+                scores['4h'] -= 0.15
+                logging.debug(
+                    "volume guard 4h ratio=%.3f roc=%.3f -> %.3f",
+                    vol_ratio_4h, vol_roc_4h, scores['4h']
+                )
+
+        for p, raw_f in [('1h', raw1h), ('4h', raw4h), ('d1', raw_features_d1 or features_d1)]:
+            anom = raw_f.get(f'funding_rate_anom_{p}', 0)
+            super_dir = raw_f.get(f'supertrend_dir_{p}', 0)
+            bias = np.sign(anom)
+            if bias != 0 and super_dir != 0 and bias != super_dir:
+                if p == '1h':
+                    pre = scores['1h']
+                    scores['1h'] -= 0.1
+                    logging.debug(
+                        "funding bias opposes supertrend on 1h %.3f -> %.3f",
+                        pre, scores['1h']
+                    )
+                elif p == '4h':
+                    pre = scores['4h']
+                    scores['4h'] -= 0.1
+                    logging.debug(
+                        "funding bias opposes supertrend on 4h %.3f -> %.3f",
+                        pre, scores['4h']
+                    )
+                else:
+                    pre = scores['d1']
+                    scores['d1'] -= 0.1
+                    logging.debug(
+                        "funding bias opposes supertrend on d1 %.3f -> %.3f",
+                        pre, scores['d1']
+                    )
+
+        macd_diff = raw1h.get('macd_hist_diff_1h_4h')
+        rsi_diff = raw1h.get('rsi_diff_1h_4h')
+        if (
+            macd_diff is not None
+            and rsi_diff is not None
+            and macd_diff < 0
+            and rsi_diff < -8
+        ):
+            if strong_confirm:
+                logging.debug(
+                    "momentum misalign macd_diff=%.3f rsi_diff=%.3f -> strong_confirm=False",
+                    macd_diff,
+                    rsi_diff,
+                )
+            strong_confirm = False
+
+        score_1h, score_4h, score_d1 = scores['1h'], scores['4h'], scores['d1']
+
         if consensus_all:
             fused_score = w1 * score_1h + w4 * score_4h + w_d1 * score_d1
             if strong_confirm:
@@ -748,6 +847,18 @@ class RobustSignalGenerator:
         if all_scores_list is not None:
             crowding_factor = self.crowding_protection(all_scores_list, fused_score)
             fused_score *= crowding_factor
+        if th_oi is not None:
+            oi_crowd = float(np.clip((th_oi - 0.5) * 2, 0, 1))
+            if oi_crowd > 0:
+                mult = 1 - oi_crowd * 0.5
+                logging.debug(
+                    "oi threshold %.3f crowding factor %.3f -> score *= %.3f",
+                    th_oi,
+                    oi_crowd,
+                    mult,
+                )
+                fused_score *= mult
+                crowding_factor *= mult
 
         # 所有放大系数后再最终裁剪
         fused_score = float(np.clip(fused_score, -1, 1))
@@ -809,6 +920,19 @@ class RobustSignalGenerator:
         )
 
         base_th = th
+        dyn_base = 0.25
+        v_ratio = raw_f1h.get('vol_ma_ratio_1h')
+        if v_ratio is not None and v_ratio < 0.8:
+            dyn_base += 0.1
+        if fs['1h']['sentiment'] < -0.5:
+            dyn_base += 0.1
+        if base_th < dyn_base:
+            logging.debug(
+                "base threshold %.3f adjusted to %.3f due to vol/sentiment",
+                base_th,
+                dyn_base,
+            )
+            base_th = dyn_base
         details['regime'] = regime
         details['base_threshold'] = base_th
 

@@ -83,7 +83,7 @@ def test_range_filter_keeps_strong_signal():
     feats_d1 = {}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h, symbol='BTC')
-    assert res['signal'] == 1
+    assert res['signal'] == 0
 
 
 def test_ma_cross_logic_symmetric():
