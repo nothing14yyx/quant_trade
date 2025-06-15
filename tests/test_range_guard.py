@@ -20,6 +20,7 @@ def make_rsg():
     }
     r.ic_scores = {k: 1 for k in r.base_weights}
     r.current_weights = r.base_weights.copy()
+    r._prev_raw = {p: None for p in ("1h", "4h", "d1")}
     return r
 
 
