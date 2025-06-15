@@ -146,6 +146,11 @@ class RobustSignalGenerator:
         :param sl_mult: 止损倍数
         :return: (take_profit, stop_loss)
         """
+        if price is None or price <= 0:
+            return None, None            # 价格异常直接放弃
+        if atr == 0:
+            return None, None
+
         # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
         tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
         sl_mult = float(np.clip(sl_mult, 0.5, 2.0))
@@ -213,10 +218,9 @@ class RobustSignalGenerator:
         row_data = {}
         missing_cols = []
         for col in train_cols:
-            if col in features:
-                row_data[col] = [features[col]]
-            else:
-                row_data[col] = [0]
+            value = features.get(col, np.nan)   # LightGBM 自动处理 NaN
+            row_data[col] = [value]
+            if col not in features:
                 missing_cols.append(col)
         if missing_cols:
             logging.warning("get_ai_score missing columns: %s", missing_cols)
@@ -382,8 +386,10 @@ class RobustSignalGenerator:
             else:
                 ic_avg.append(self.ic_scores[k])
 
-        ic_arr = np.array([v if v >= 0 else -abs(v) for v in ic_avg])
-        w = softmax(ic_arr)
+        # 用绝对值决定大小，再用原符号恢复方向
+        mag = np.abs(ic_avg)
+        w = softmax(mag)
+        w *= np.sign(ic_avg)      # 带方向
 
         self.current_weights = dict(zip(self.ic_scores.keys(), w))
         return self.current_weights
@@ -733,18 +739,18 @@ class RobustSignalGenerator:
                 }
             }
 
-        # ===== 8. 把 fused_score 入历史，用于动态阈值计算 =====
-        fused_score = float(np.clip(fused_score, -1, 1))
-        with self._lock:
-            self.history_scores.append(fused_score)
-
-        # ===== 9. 极端行情保护 =====
+        # ===== 8. 极端行情保护 =====
         crowding_factor = 1.0
         if all_scores_list is not None:
             crowding_factor = self.crowding_protection(all_scores_list, fused_score)
             fused_score *= crowding_factor
 
-        # ===== 10. 准备 details，用于回测与调试 =====
+        # 所有放大系数后再最终裁剪
+        fused_score = float(np.clip(fused_score, -1, 1))
+        with self._lock:
+            self.history_scores.append(fused_score)
+        
+        # ===== 9. 准备 details，用于回测与调试 =====
         details = {
             'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
             'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
@@ -822,7 +828,7 @@ class RobustSignalGenerator:
 
         if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
             flip_th = 1.5 * base_th
-            if abs(fused_score) < flip_th:
+            if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
                 direction = self._last_signal
 
         if direction == 0:
@@ -881,12 +887,16 @@ class RobustSignalGenerator:
             pos_size = 0.0
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
-        price = features_1h.get('close', 0)
+        price = features_1h.get('close')
+        if price is None or price <= 0:
+            return None, None            # 价格异常直接放弃
         if raw_features_4h is not None and 'atr_pct_4h' in raw_features_4h:
             atr_pct_4h = raw_features_4h['atr_pct_4h']
         else:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
         atr_abs = max(atr_1h, atr_pct_4h) * price
+        if atr_abs == 0:
+            return None, None
         tp_dir = direction if direction != 0 else 1
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
