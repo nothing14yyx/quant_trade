@@ -164,7 +164,12 @@ def run_single_backtest(
 
 
 
-def run_param_search(rows: int | None = None, method: str = "grid", trials: int = 30) -> None:
+def run_param_search(
+    rows: int | None = None,
+    method: str = "grid",
+    trials: int = 30,
+    tune_delta: bool = False,
+) -> None:
     cfg = load_config()
     engine = connect_mysql(cfg)
     df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time", "close_time"])
@@ -179,6 +184,7 @@ def run_param_search(rows: int | None = None, method: str = "grid", trials: int 
         feature_cols_d1=FEATURE_COLS_D1,
     )
     cached_ic = precompute_ic_scores(df, sg)
+    base_delta = sg.delta_params.copy()
     if method == "grid":
         param_grid = {
             "history_window": [300, 500],
@@ -186,6 +192,15 @@ def run_param_search(rows: int | None = None, method: str = "grid", trials: int 
             "ai_w": [0.15, 0.25],
             "trend_w": [0.2, 0.3],
         }
+        if tune_delta:
+            param_grid.update({
+                "rsi_inc": [0.03, 0.05],
+                "macd_hist_inc": [0.03, 0.05],
+                "ema_diff_inc": [0.02, 0.04],
+                "atr_pct_inc": [0.02, 0.04],
+                "vol_ma_ratio_inc": [0.02, 0.04],
+                "funding_rate_inc": [0.02, 0.04],
+            })
         grid = ParameterGrid(param_grid)
         best = None
         best_metric = -np.inf
@@ -205,13 +220,52 @@ def run_param_search(rows: int | None = None, method: str = "grid", trials: int 
                 "min_thres": 0.06,
                 "max_thres": 0.25,
             }
+            delta_params = base_delta.copy()
+            if tune_delta:
+                delta_params["rsi"] = (
+                    delta_params["rsi"][0],
+                    delta_params["rsi"][1],
+                    params["rsi_inc"],
+                )
+                delta_params["macd_hist"] = (
+                    delta_params["macd_hist"][0],
+                    delta_params["macd_hist"][1],
+                    params["macd_hist_inc"],
+                )
+                delta_params["ema_diff"] = (
+                    delta_params["ema_diff"][0],
+                    delta_params["ema_diff"][1],
+                    params["ema_diff_inc"],
+                )
+                delta_params["atr_pct"] = (
+                    delta_params["atr_pct"][0],
+                    delta_params["atr_pct"][1],
+                    params["atr_pct_inc"],
+                )
+                delta_params["vol_ma_ratio"] = (
+                    delta_params["vol_ma_ratio"][0],
+                    delta_params["vol_ma_ratio"][1],
+                    params["vol_ma_ratio_inc"],
+                )
+                delta_params["funding_rate"] = (
+                    delta_params["funding_rate"][0],
+                    delta_params["funding_rate"][1],
+                    params["funding_rate_inc"],
+                )
+            sg_iter = RobustSignalGenerator(
+                model_paths=convert_model_paths(MODEL_PATHS),
+                feature_cols_1h=FEATURE_COLS_1H,
+                feature_cols_4h=FEATURE_COLS_4H,
+                feature_cols_d1=FEATURE_COLS_D1,
+                delta_params=delta_params,
+            )
             tot_ret, sharpe = run_single_backtest(
                 df,
                 base_weights,
                 params["history_window"],
                 th_params,
                 cached_ic,
-                sg,
+                sg_iter,
             )
             metric = sharpe if not np.isnan(sharpe) else -np.inf
             if metric > best_metric:
@@ -239,8 +293,47 @@ def run_param_search(rows: int | None = None, method: str = "grid", trials: int 
                 "max_thres": trial.suggest_float("max_thres", 0.2, 0.3),
             }
             history_window = trial.suggest_int("history_window", 300, 800)
+            delta_params = base_delta.copy()
+            if tune_delta:
+                delta_params["rsi"] = (
+                    delta_params["rsi"][0],
+                    delta_params["rsi"][1],
+                    trial.suggest_float("rsi_inc", 0.02, 0.06),
+                )
+                delta_params["macd_hist"] = (
+                    delta_params["macd_hist"][0],
+                    delta_params["macd_hist"][1],
+                    trial.suggest_float("macd_hist_inc", 0.02, 0.06),
+                )
+                delta_params["ema_diff"] = (
+                    delta_params["ema_diff"][0],
+                    delta_params["ema_diff"][1],
+                    trial.suggest_float("ema_diff_inc", 0.02, 0.05),
+                )
+                delta_params["atr_pct"] = (
+                    delta_params["atr_pct"][0],
+                    delta_params["atr_pct"][1],
+                    trial.suggest_float("atr_pct_inc", 0.02, 0.05),
+                )
+                delta_params["vol_ma_ratio"] = (
+                    delta_params["vol_ma_ratio"][0],
+                    delta_params["vol_ma_ratio"][1],
+                    trial.suggest_float("vol_ma_ratio_inc", 0.02, 0.05),
+                )
+                delta_params["funding_rate"] = (
+                    delta_params["funding_rate"][0],
+                    delta_params["funding_rate"][1],
+                    trial.suggest_float("funding_rate_inc", 0.02, 0.05),
+                )
+            sg_iter = RobustSignalGenerator(
+                model_paths=convert_model_paths(MODEL_PATHS),
+                feature_cols_1h=FEATURE_COLS_1H,
+                feature_cols_4h=FEATURE_COLS_4H,
+                feature_cols_d1=FEATURE_COLS_D1,
+                delta_params=delta_params,
+            )
             _, sharpe = run_single_backtest(
-                df, base_weights, history_window, th_params, cached_ic, sg
+                df, base_weights, history_window, th_params, cached_ic, sg_iter
             )
             return sharpe if not np.isnan(sharpe) else -np.inf
 
@@ -260,8 +353,18 @@ def main() -> None:
         help="搜索方式: grid 或 optuna",
     )
     parser.add_argument("--trials", type=int, default=30, help="Optuna 试验次数")
+    parser.add_argument(
+        "--tune-delta",
+        action="store_true",
+        help="同时搜索 Δ 参数增益",
+    )
     args = parser.parse_args()
-    run_param_search(rows=args.rows, method=args.method, trials=args.trials)
+    run_param_search(
+        rows=args.rows,
+        method=args.method,
+        trials=args.trials,
+        tune_delta=args.tune_delta,
+    )
 
 
 
