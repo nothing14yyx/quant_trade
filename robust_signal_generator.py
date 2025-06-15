@@ -655,6 +655,16 @@ class RobustSignalGenerator:
                     "volume guard 4h ratio=%.3f roc=%.3f -> %.3f",
                     vol_ratio_4h, vol_roc_4h, scores['4h']
                 )
+        else:
+            vol_roc_4h = None
+
+        if vol_roc_1h is not None and vol_roc_1h > 100:
+            scores["1h"] -= 0.10
+        if vol_roc_4h is not None and vol_roc_4h > 50:
+            scores["4h"] -= 0.10
+        # 惩罚后再裁剪
+        for p in ("1h", "4h"):
+            scores[p] = float(np.clip(scores[p], -1, 1))
 
         for p, raw_f in [('1h', raw1h), ('4h', raw4h), ('d1', raw_features_d1 or features_d1)]:
             anom = raw_f.get(f'funding_rate_anom_{p}', 0)
@@ -936,6 +946,8 @@ class RobustSignalGenerator:
             dyn_base += 0.1
         if fs['1h']['sentiment'] < -0.5:
             dyn_base += 0.1
+        if regime == "range" and consensus_all == 0:
+            dyn_base += 0.05
         if base_th < dyn_base:
             logging.debug(
                 "base threshold %.3f adjusted to %.3f due to vol/sentiment",
@@ -1001,7 +1013,8 @@ class RobustSignalGenerator:
                 }
 
         # ===== 12. 仓位大小按连续得分映射 =====
-        pos_size = self.get_position_size(fused_score)
+        coeff = 0.6 if consensus_all == 0 else 0.9
+        pos_size = 0.1 + coeff * abs(fused_score)
 
         vol_ratio = raw_f1h.get('vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h'))
         details['vol_ratio'] = vol_ratio
@@ -1034,6 +1047,11 @@ class RobustSignalGenerator:
             )
             direction = 0
             pos_size = 0.0
+
+        if direction == 1 and scores["4h"] < -0.7:
+            direction, pos_size = 0, 0.0
+        elif direction == -1 and scores["4h"] > 0.7:
+            direction, pos_size = 0, 0.0
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
