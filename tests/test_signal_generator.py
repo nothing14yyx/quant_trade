@@ -230,9 +230,10 @@ def test_dynamic_weight_update(monkeypatch):
     rsg.update_ic_scores(df)
     weights = rsg.dynamic_weight_update()
 
+    base_arr = np.array(list(rsg.base_weights.values()))
     ic_arr = np.array(list(rsg.ic_scores.values()))
-    ex = np.exp(ic_arr - ic_arr.max())
-    expected = ex / ex.sum()
+    expected_raw = base_arr * (1 + ic_arr)
+    expected = expected_raw / expected_raw.sum()
 
     assert weights["ai"] == pytest.approx(expected[0])
     assert rsg.current_weights == weights
