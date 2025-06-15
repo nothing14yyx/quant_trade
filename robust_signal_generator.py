@@ -90,6 +90,9 @@ class RobustSignalGenerator:
         # 保存上一次生成的信号，供滞后阈值逻辑使用
         self._last_signal = 0
 
+        # 缓存上一周期的原始特征，便于计算指标变化量
+        self._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+
     def __getattr__(self, name):
         if name in {"eth_dom_history", "btc_dom_history", "oi_change_history", "history_scores"}:
             val = deque(maxlen=3000)
@@ -112,6 +115,10 @@ class RobustSignalGenerator:
         if name == "_last_signal":
             setattr(self, name, 0)
             return 0
+        if name == "_prev_raw":
+            val = {p: None for p in ("1h", "4h", "d1")}
+            setattr(self, name, val)
+            return val
         raise AttributeError(name)
 
 
@@ -160,6 +167,36 @@ class RobustSignalGenerator:
             take_profit = price - tp_mult * atr
             stop_loss = price + sl_mult * atr
         return float(take_profit), float(stop_loss)
+
+    @staticmethod
+    def _calc_deltas(curr: dict, prev: dict, keys: list, scale: float = 1.0) -> dict:
+        """返回 {f"{k}_delta": (curr[k] - prev[k]) * scale}；若 prev 为 None 则全 0."""
+        deltas = {}
+        if prev is None:
+            for k in keys:
+                deltas[f"{k}_delta"] = 0.0
+            return deltas
+
+        for k in keys:
+            c_val = curr.get(k, 0)
+            p_val = prev.get(k, 0)
+            if c_val is None or p_val is None:
+                deltas[f"{k}_delta"] = 0.0
+            else:
+                deltas[f"{k}_delta"] = (c_val - p_val) * scale
+        return deltas
+
+    @staticmethod
+    def _apply_delta_boost(score: float, deltas: dict) -> float:
+        """根据指标变化量对得分进行微调"""
+        mom_boost = 0.0
+        if deltas.get("rsi_1h_delta", 0) > 5 and np.sign(score) == 1:
+            mom_boost += 0.05
+        if deltas.get("rsi_1h_delta", 0) < -5 and np.sign(score) == -1:
+            mom_boost += 0.05
+        if deltas.get("macd_hist_1h_delta", 0) * score > 0:
+            mom_boost += 0.05
+        return score * (1 + mom_boost)
 
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> int:
         """根据1h MA5 与 MA20 判断多空方向"""
@@ -555,6 +592,16 @@ class RobustSignalGenerator:
             else (raw_features_1h or features_1h).get('bid_ask_imbalance')
         )
 
+        raw_f1h = raw_features_1h or features_1h
+        raw_f4h = raw_features_4h or features_4h
+        raw_fd1 = raw_features_d1 or features_d1
+
+        CORE_KEYS = [
+            "rsi_1h", "macd_hist_1h", "ema_diff_1h",
+            "atr_pct_1h", "vol_ma_ratio_1h", "funding_rate_1h",
+        ]
+        deltas_1h = self._calc_deltas(raw_f1h, self._prev_raw["1h"], CORE_KEYS)
+
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores = {}
         vol_preds = {}
@@ -581,6 +628,9 @@ class RobustSignalGenerator:
         score_1h = self.combine_score(ai_scores['1h'], fs['1h'], weights)
         score_4h = self.combine_score(ai_scores['4h'], fs['4h'], weights)
         score_d1 = self.combine_score(ai_scores['d1'], fs['d1'], weights)
+
+        # 根据关键指标的变化量微调 1h 得分
+        score_1h = self._apply_delta_boost(score_1h, deltas_1h)
 
         # ===== 5. 判断 4h 强确认条件 =====
         strong_confirm = (
@@ -843,6 +893,9 @@ class RobustSignalGenerator:
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
             logging.debug("Fused score NaN, returning 0 signal")
             self._last_score = fused_score
+            self._prev_raw["1h"] = raw_f1h
+            self._prev_raw["4h"] = raw_f4h
+            self._prev_raw["d1"] = raw_fd1
             return {
                 'signal': 0,
                 'score': float('nan'),
@@ -962,6 +1015,9 @@ class RobustSignalGenerator:
             logging.debug("Range regime without consensus -> no trade")
             self._last_signal = 0
             self._last_score = fused_score
+            self._prev_raw["1h"] = raw_f1h
+            self._prev_raw["4h"] = raw_f4h
+            self._prev_raw["d1"] = raw_fd1
             return {
                 'signal': 0,
                 'score': fused_score,
@@ -988,6 +1044,9 @@ class RobustSignalGenerator:
         if direction == 0:
             self._last_signal = 0
             self._last_score = fused_score
+            self._prev_raw["1h"] = raw_f1h
+            self._prev_raw["4h"] = raw_f4h
+            self._prev_raw["d1"] = raw_fd1
             return {
                 'signal': 0,
                 'score': fused_score,
@@ -1003,6 +1062,9 @@ class RobustSignalGenerator:
                 logging.debug("Order book imbalance opposes score: %.4f", ob_imb)
                 self._last_score = fused_score
                 self._last_signal = 0
+                self._prev_raw["1h"] = raw_f1h
+                self._prev_raw["4h"] = raw_f4h
+                self._prev_raw["d1"] = raw_fd1
                 return {
                     'signal': 0,
                     'score': fused_score,
@@ -1066,6 +1128,9 @@ class RobustSignalGenerator:
         # ===== 14. 最终返回 =====
         self._last_signal = direction
         self._last_score = fused_score
+        self._prev_raw["1h"] = raw_f1h
+        self._prev_raw["4h"] = raw_f4h
+        self._prev_raw["d1"] = raw_fd1
         return {
             'signal': direction,
             'score': fused_score,

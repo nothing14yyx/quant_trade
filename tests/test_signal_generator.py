@@ -25,6 +25,7 @@ def make_dummy_rsg():
     }
     rsg.ic_scores = {k: 1 for k in rsg.base_weights}
     rsg.current_weights = rsg.base_weights.copy()
+    rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
     return rsg
 
 
