@@ -114,10 +114,6 @@ class RobustSignalGenerator:
             return 0
         raise AttributeError(name)
 
-    @staticmethod
-    def _score_from_proba(p):
-        # 概率[0,1]映射到[-1,1]
-        return 2 * p - 1
 
     def get_dynamic_oi_threshold(self, pred_vol=None, base=0.5, quantile=0.9):
         """根据历史 OI 变化率及预测波动率自适应阈值"""
@@ -147,15 +143,7 @@ class RobustSignalGenerator:
 
 
     def compute_tp_sl(self, price, atr, direction, tp_mult=1.5, sl_mult=1.0):
-        """
-        计算止盈止损价格
-        :param price: 当前价格
-        :param atr:   ATR绝对值（如4h的ATR*close）
-        :param direction: 1=多头，-1=空头
-        :param tp_mult: 止盈倍数
-        :param sl_mult: 止损倍数
-        :return: (take_profit, stop_loss)
-        """
+        """计算止盈止损价格"""
         if price is None or price <= 0:
             return None, None            # 价格异常直接放弃
         if atr is None or atr == 0:
@@ -173,26 +161,20 @@ class RobustSignalGenerator:
             stop_loss = price + sl_mult * atr
         return float(take_profit), float(stop_loss)
 
-    def ma_cross_logic(self, features: dict) -> int:
-        """基于 MA5 与 MA20 的形态给出方向建议
+    def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> int:
+        """根据1h MA5 与 MA20 判断多空方向"""
 
-        参数 ``features`` 应包含 ``sma_5_1h``、``sma_20_1h``、``ma_ratio_5_20``，
-        如有 ``sma_20_4h`` 将用于判断 MA20 的斜率。
-        返回值：1 为多头，-1 为空头，0 表示无明确信号。
-        """
         sma5 = features.get('sma_5_1h')
         sma20 = features.get('sma_20_1h')
         ratio = features.get('ma_ratio_5_20')
         if sma5 is None or sma20 is None or ratio is None:
             return 0
 
-        sma20_4h = features.get('sma_20_4h')
-        slope = None
-        if sma20_4h is not None and sma20_4h != 0:
-            slope = (sma20 - sma20_4h) / sma20_4h
-
-        if slope is None:
-            slope = 0.0
+        slope = (
+            (sma20 - sma_20_1h_prev) / sma_20_1h_prev
+            if sma_20_1h_prev
+            else 0.0
+        )
 
         if ratio > 1.02 and slope > 0:
             return 1
@@ -387,7 +369,7 @@ class RobustSignalGenerator:
                 hist = self.ic_history.get(k)
                 if hist:
                     arr = np.array(hist, dtype=float)
-                    weights = np.exp(decay * np.arange(len(arr))[::-1])
+                    weights = np.exp(decay * np.arange(len(arr)))
                     weights /= weights.sum()
                     ic_avg.append(float(np.nansum(arr * weights)))
                 else:
@@ -519,9 +501,14 @@ class RobustSignalGenerator:
         return factor
 
     def apply_oi_overheat_protection(self, fused_score, oi_chg, th_oi):
-        """根据 OI 变化率判断是否过热"""
+        """根据 OI 变化率奖励或惩罚分数"""
         oi_overheat = False
-        if abs(oi_chg) > th_oi:
+        if th_oi is None:
+            return fused_score, oi_overheat
+        if abs(oi_chg) < th_oi:
+            fused_score *= 1 + 0.08 * oi_chg
+        else:
+            logging.debug("OI overheat detected: %.4f", oi_chg)
             fused_score *= 0.8
             oi_overheat = True
         return fused_score, oi_overheat
@@ -558,6 +545,12 @@ class RobustSignalGenerator:
         说明：若传入 raw_features_*，则多因子计算与动态阈值、止盈止损均使用原始数据，
               标准化后的 features_* 仅用于 AI 模型预测。
         """
+
+        ob_imb = (
+            order_book_imbalance
+            if order_book_imbalance is not None
+            else (raw_features_1h or features_1h).get('bid_ask_imbalance')
+        )
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores = {}
@@ -618,7 +611,8 @@ class RobustSignalGenerator:
         else:
             fused_score = score_1h
 
-        ma_dir = self.ma_cross_logic(raw_features_1h or features_1h)
+        prev_ma20 = (raw_features_1h or features_1h).get('sma_20_1h_prev')
+        ma_dir = self.ma_cross_logic(raw_features_1h or features_1h, prev_ma20)
         if ma_dir != 0:
             if np.sign(fused_score) == 0:
                 fused_score += 0.1 * ma_dir
@@ -697,7 +691,6 @@ class RobustSignalGenerator:
         if open_interest is not None:
             oi_chg = open_interest.get('oi_chg')
             if oi_chg is not None:
-                fused_score *= 1 + 0.1 * oi_chg
                 with self._lock:
                     self.oi_change_history.append(oi_chg)
                 th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_preds.get('1h'))
@@ -709,7 +702,6 @@ class RobustSignalGenerator:
         raw1h = raw_features_1h or features_1h
         mom5 = raw1h.get('mom_5m_roll1h')
         mom15 = raw1h.get('mom_15m_roll1h')
-        ob_imb = raw1h.get('bid_ask_imbalance')
 
         mom_vals = [v for v in (mom5, mom15) if v is not None]
         short_mom = float(np.nanmean(mom_vals)) if mom_vals else 0.0
@@ -730,6 +722,8 @@ class RobustSignalGenerator:
 
         # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
+            logging.debug("Fused score NaN, returning 0 signal")
+            self._last_score = fused_score
             return {
                 'signal': 0,
                 'score': float('nan'),
@@ -819,6 +813,7 @@ class RobustSignalGenerator:
         details['base_threshold'] = base_th
 
         if regime == "range" and consensus_dir == 0:
+            logging.debug("Range regime without consensus -> no trade")
             self._last_signal = 0
             self._last_score = fused_score
             return {
@@ -830,8 +825,8 @@ class RobustSignalGenerator:
                 'details': details,
             }
 
-        if order_book_imbalance is not None:
-            details['order_book_imbalance'] = float(order_book_imbalance)
+        if ob_imb is not None:
+            details['order_book_imbalance'] = float(ob_imb)
 
         direction = 0
         if abs(fused_score) >= base_th:
@@ -841,6 +836,7 @@ class RobustSignalGenerator:
             last_score = getattr(self, '_last_score', 0.0)
             flip_th = base_th + max(0.05, 0.5 * abs(last_score))
             if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
+                logging.debug("Flip prevented: last=%s current=%.3f", self._last_signal, fused_score)
                 direction = self._last_signal
 
         if direction == 0:
@@ -855,9 +851,12 @@ class RobustSignalGenerator:
                 'details': details
             }
 
-        if order_book_imbalance is not None:
-            details['order_book_imbalance'] = float(order_book_imbalance)
-            if abs(order_book_imbalance) > 0.1 and np.sign(order_book_imbalance) != np.sign(fused_score):
+        if ob_imb is not None:
+            details['order_book_imbalance'] = float(ob_imb)
+            if abs(ob_imb) > 0.1 and np.sign(ob_imb) != np.sign(fused_score):
+                logging.debug("Order book imbalance opposes score: %.4f", ob_imb)
+                self._last_score = fused_score
+                self._last_signal = 0
                 return {
                     'signal': 0,
                     'score': fused_score,
@@ -889,16 +888,16 @@ class RobustSignalGenerator:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
 
 
-        ob_mom = order_book_imbalance
-        if ob_mom is None:
-            ob_mom = raw1h.get('bid_ask_imbalance')
-        details['order_book_momentum'] = ob_mom
+        details['order_book_momentum'] = ob_imb
         if (
-            ob_mom is not None
+            ob_imb is not None
             and direction != 0
-            and abs(ob_mom) > ORDER_BOOK_MOM_THRESHOLD
-            and np.sign(ob_mom) != direction
+            and abs(ob_imb) > ORDER_BOOK_MOM_THRESHOLD
+            and np.sign(ob_imb) != direction
         ):
+            logging.debug(
+                "Direction canceled by order book imbalance %.4f", ob_imb
+            )
             direction = 0
             pos_size = 0.0
 
