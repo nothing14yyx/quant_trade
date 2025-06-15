@@ -165,17 +165,19 @@ def prepare_all_features(
                     raw1h[c] = last15[c].iloc[0]
 
     for col in cross_cols:
-        scaled1h[col] = cross_scaled[col]
-        raw1h[col] = cross_last[col].iloc[0]
-        scaled4h[col] = cross_scaled[col]
-        scaledd1[col] = cross_scaled[col]
-        raw4h[col] = cross_last[col].iloc[0]
-        rawd1[col] = cross_last[col].iloc[0]
+        if col not in scaled1h:
+            scaled1h[col] = cross_scaled[col]
+            raw1h[col] = cross_last[col].iloc[0]
+        if col not in scaled4h:
+            scaled4h[col] = cross_scaled[col]
+            raw4h[col] = cross_last[col].iloc[0]
+        if col not in scaledd1:
+            scaledd1[col] = cross_scaled[col]
+            rawd1[col] = cross_last[col].iloc[0]
 
     # 1h 核心特征供其他周期模型调用
     common_1h_cols = [
         "pct_chg1_1h",
-        "hv_14d_1h",
         "hv_30d_1h",
         "obv_delta_1h",
         "upper_wick_ratio_1h",
