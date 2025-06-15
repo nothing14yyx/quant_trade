@@ -503,3 +503,41 @@ def test_dynamic_threshold_regime():
     assert th_trend > base
     assert th_range < base
     assert th_trend > th_range
+
+
+def test_order_book_momentum_threshold():
+    """小幅盘口差异不应取消已生成的信号"""
+    rsg = make_dummy_rsg()
+    rsg.get_ai_score = lambda f, m: 0
+    rsg.get_factor_scores = lambda f, p: {
+        'trend': 0,
+        'momentum': 0,
+        'volatility': 0,
+        'volume': 0,
+        'sentiment': 0,
+        'funding': 0,
+    }
+    rsg.combine_score = lambda ai, fs, weights=None: 0.5
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {
+        '1h': {'up': None, 'down': None},
+        '4h': {'up': None, 'down': None},
+        'd1': {'up': None, 'down': None},
+    }
+
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0.05,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+    }
+    feats_4h = {'atr_pct_4h': 0}
+    feats_d1 = {}
+
+    res = rsg.generate_signal(
+        feats_1h, feats_4h, feats_d1, order_book_imbalance=-0.01
+    )
+    assert res['signal'] == 1
+

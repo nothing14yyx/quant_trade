@@ -6,6 +6,9 @@ import threading
 import logging
 pd.set_option('future.no_silent_downcasting', True)
 
+# 当订单簿动量与信号方向相反且超过该阈值时取消信号
+ORDER_BOOK_MOM_THRESHOLD = 0.02
+
 
 def softmax(x):
     """简单 softmax 实现"""
@@ -882,21 +885,22 @@ class RobustSignalGenerator:
         if ob_mom is None:
             ob_mom = raw1h.get('bid_ask_imbalance')
         details['order_book_momentum'] = ob_mom
-        if ob_mom is not None and direction != 0 and np.sign(ob_mom) != direction:
+        if (
+            ob_mom is not None
+            and direction != 0
+            and abs(ob_mom) > ORDER_BOOK_MOM_THRESHOLD
+            and np.sign(ob_mom) != direction
+        ):
             direction = 0
             pos_size = 0.0
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
-        price = features_1h.get('close')
-        if price is None or price <= 0:
-            return None, None            # 价格异常直接放弃
+        price = features_1h.get('close', 0)
         if raw_features_4h is not None and 'atr_pct_4h' in raw_features_4h:
             atr_pct_4h = raw_features_4h['atr_pct_4h']
         else:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
         atr_abs = max(atr_1h, atr_pct_4h) * price
-        if atr_abs == 0:
-            return None, None
         tp_dir = direction if direction != 0 else 1
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
