@@ -480,3 +480,26 @@ def test_ma_cross_logic_amplify():
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h)
     assert res['score'] > 0.5
     assert res['details']['ma_cross'] == 1
+
+
+def test_ma_cross_logic_overbought_threshold():
+    rsg = make_dummy_rsg()
+    feats = {
+        'sma_5_1h': 11.2,
+        'sma_20_1h': 10,
+        'ma_ratio_5_20': 1.12,
+        'sma_20_4h': 9,
+    }
+    assert rsg.ma_cross_logic(feats) == -1
+    feats['ma_ratio_5_20'] = 1.06
+    assert rsg.ma_cross_logic(feats) == 1
+
+
+def test_dynamic_threshold_regime():
+    rsg = make_dummy_rsg()
+    base = rsg.dynamic_threshold(0.02, 25)
+    th_trend = rsg.dynamic_threshold(0.02, 25, regime='trend')
+    th_range = rsg.dynamic_threshold(0.02, 25, regime='range')
+    assert th_trend > base
+    assert th_range < base
+    assert th_trend > th_range
