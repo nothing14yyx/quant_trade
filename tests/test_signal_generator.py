@@ -542,3 +542,137 @@ def test_order_book_momentum_threshold():
     )
     assert res['signal'] == 1
 
+
+def test_sentiment_reweight_and_guard():
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0
+
+    def fs_func(feats, period):
+        if period == '1h':
+            return {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0,
+                    'sentiment': -0.6, 'funding': 0}
+        if period == '4h':
+            return {'trend': 1, 'momentum': 0, 'volatility': 0, 'volume': 0,
+                    'sentiment': 0, 'funding': 0}
+        return {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0,
+                'sentiment': 0, 'funding': 0}
+
+    rsg.get_factor_scores = fs_func
+    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+
+    feats_1h = {'close': 100, 'atr_pct_1h': 0, 'adx_1h': 0,
+                'funding_rate_1h': 0, 'vol_ma_ratio_1h': 1.0}
+    feats_4h = {'atr_pct_4h': 0, 'adx_4h': 0}
+    feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
+
+    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
+    assert res['details']['score_1h'] == pytest.approx(-0.045)
+    assert res['details']['score_4h'] == 0
+
+
+def test_volume_and_funding_penalties():
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0
+
+    def fs_func(feats, period):
+        return {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0,
+                'sentiment': 0, 'funding': 0}
+
+    rsg.get_factor_scores = fs_func
+    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'vol_ma_ratio_1h': 0.7,
+        'vol_roc_1h': -0.25,
+        'supertrend_dir_1h': 1,
+        'funding_rate_anom_1h': -0.02,
+    }
+    feats_4h = {'atr_pct_4h': 0, 'adx_4h': 0}
+    feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
+
+    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
+    assert res['details']['score_1h'] == pytest.approx(-0.25)
+
+
+def test_momentum_alignment_disables_confirm():
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0
+
+    def fs_func(feats, period):
+        if period == '4h':
+            return {'trend': 1, 'momentum': 1, 'volatility': 1,
+                    'volume': 0, 'sentiment': 0, 'funding': 0}
+        return {'trend': 0, 'momentum': 0, 'volatility': 0,
+                'volume': 0, 'sentiment': 0, 'funding': 0}
+
+    rsg.get_factor_scores = fs_func
+    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'macd_hist_diff_1h_4h': -0.1,
+        'rsi_diff_1h_4h': -9,
+    }
+    feats_4h = {'atr_pct_4h': 0, 'adx_4h': 0}
+    feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
+
+    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
+    assert res['details']['strong_confirm'] is False
+
+
+def test_crowding_factor_and_dynamic_threshold():
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0
+
+    def fs_func(feats, period):
+        return {'trend': 0, 'momentum': 0, 'volatility': 0,
+                'volume': 0, 'sentiment': -0.6 if period == '1h' else 0,
+                'funding': 0}
+
+    rsg.get_factor_scores = fs_func
+    rsg.get_dynamic_oi_threshold = lambda pred_vol=None: 0.6
+    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'vol_ma_ratio_1h': 0.7,
+    }
+    feats_4h = {'atr_pct_4h': 0, 'adx_4h': 0}
+    feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
+
+    oi = {'oi_chg': 0}
+    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
+                              open_interest=oi)
+    assert res['details']['base_threshold'] == pytest.approx(0.45)
+    assert res['score'] == pytest.approx(res['details']['score_1h'] * 0.9)
+
