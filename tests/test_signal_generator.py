@@ -335,7 +335,7 @@ def test_generate_signal_with_external_metrics():
     result = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                                  global_metrics=gm, open_interest=oi, symbol="BTCUSDT")
     expected = 0.5
-    expected *= 1 + 0.1 * 0.1
+    expected *= 1 + 0.08 * 0.1
     expected *= 1 + 0.1 * 0.1
     expected *= 1 + 0.05 * 0.1
     expected *= 1 + 0.1 * 0.1
@@ -473,7 +473,7 @@ def test_ma_cross_logic_amplify():
         'sma_5_1h': 10.3,
         'sma_20_1h': 10,
         'ma_ratio_5_20': 1.03,
-        'sma_20_4h': 9,
+        'sma_20_1h_prev': 9.8,
     }
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
@@ -489,11 +489,11 @@ def test_ma_cross_logic_overbought_threshold():
         'sma_5_1h': 11.2,
         'sma_20_1h': 10,
         'ma_ratio_5_20': 1.12,
-        'sma_20_4h': 9,
+        'sma_20_1h_prev': 9.9,
     }
-    assert rsg.ma_cross_logic(feats) == 1
+    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == 1
     feats['ma_ratio_5_20'] = 1.06
-    assert rsg.ma_cross_logic(feats) == 1
+    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == 1
 
 
 def test_dynamic_threshold_regime():
