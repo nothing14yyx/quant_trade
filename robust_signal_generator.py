@@ -6,6 +6,13 @@ import threading
 import logging
 pd.set_option('future.no_silent_downcasting', True)
 
+
+def softmax(x):
+    """简单 softmax 实现"""
+    arr = np.array(x, dtype=float)
+    ex = np.exp(arr - np.nanmax(arr))
+    return ex / ex.sum()
+
 class RobustSignalGenerator:
     """多周期 AI + 多因子 融合信号生成器。
 
@@ -113,7 +120,7 @@ class RobustSignalGenerator:
 
     def detect_market_regime(self, adx1, adx4, adxd):
         """简易市场状态判别：根据平均ADX判断震荡或趋势"""
-        avg_adx = np.mean([adx1, adx4, adxd])
+        avg_adx = np.nanmean([adx1, adx4, adxd])
         return "trend" if avg_adx >= 25 else "range"
 
     def calc_period_weights(self, adx1, adx4, adxd):
@@ -179,8 +186,8 @@ class RobustSignalGenerator:
             return 0
 
         if slope > 0:
-            if ratio > 1.10:
-                return -1
+            if ratio > 1.05:
+                return 1
             if ratio >= 0.98:
                 return 1
             return -1
@@ -352,8 +359,9 @@ class RobustSignalGenerator:
         if not hasattr(self, "ic_history"):
             self.ic_history = {k: deque(maxlen=500) for k in self.base_weights}
 
-        for k, v in ic.items():
-            self.ic_history.setdefault(k, deque(maxlen=500)).append(v)
+        with self._lock:
+            for k, v in ic.items():
+                self.ic_history.setdefault(k, deque(maxlen=500)).append(v)
 
         return self.ic_scores
 
@@ -373,14 +381,9 @@ class RobustSignalGenerator:
                 ic_avg.append(float(np.nansum(arr * weights)))
             else:
                 ic_avg.append(self.ic_scores[k])
-        ic_arr = np.array([max(0, v) for v in ic_avg])
-        base_arr = np.array([self.base_weights[k] for k in self.ic_scores.keys()])
 
-        combined = ic_arr * base_arr
-        if combined.sum() > 0:
-            w = combined / combined.sum()
-        else:
-            w = base_arr / base_arr.sum()
+        ic_arr = np.array([v if v >= 0 else -abs(v) for v in ic_avg])
+        w = softmax(ic_arr)
 
         self.current_weights = dict(zip(self.ic_scores.keys(), w))
         return self.current_weights
@@ -480,8 +483,10 @@ class RobustSignalGenerator:
             return 1.0
 
         arr = np.array(list(scores) + [current_score], dtype=float)
-        signs = np.sign(arr[:-1])
+        signs = [s for s in np.sign(arr[:-1]) if s != 0]
         total = len(signs)
+        if total == 0:
+            return 1.0
         pos_counts = Counter(signs)
         dominant_dir, cnt = pos_counts.most_common(1)[0]
 
@@ -494,6 +499,14 @@ class RobustSignalGenerator:
             factor = min(factor, 0.7)
 
         return factor
+
+    def apply_oi_overheat_protection(self, fused_score, oi_chg, th_oi):
+        """根据 OI 变化率判断是否过热"""
+        oi_overheat = False
+        if abs(oi_chg) > th_oi:
+            fused_score *= 0.8
+            oi_overheat = True
+        return fused_score, oi_overheat
 
     def generate_signal(
         self,
@@ -672,9 +685,9 @@ class RobustSignalGenerator:
                 with self._lock:
                     self.oi_change_history.append(oi_chg)
                 th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_preds.get('1h'))
-                if oi_chg > th_oi:
-                    fused_score *= 0.8
-                    oi_overheat = True
+                fused_score, oi_overheat = self.apply_oi_overheat_protection(
+                    fused_score, oi_chg, th_oi
+                )
 
         # ===== 新指标：短周期动量与盘口失衡 =====
         raw1h = raw_features_1h or features_1h
@@ -721,6 +734,7 @@ class RobustSignalGenerator:
             }
 
         # ===== 8. 把 fused_score 入历史，用于动态阈值计算 =====
+        fused_score = float(np.clip(fused_score, -1, 1))
         with self._lock:
             self.history_scores.append(fused_score)
 
@@ -872,7 +886,7 @@ class RobustSignalGenerator:
             atr_pct_4h = raw_features_4h['atr_pct_4h']
         else:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
-        atr_abs = atr_pct_4h * price
+        atr_abs = max(atr_1h, atr_pct_4h) * price
         tp_dir = direction if direction != 0 else 1
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
