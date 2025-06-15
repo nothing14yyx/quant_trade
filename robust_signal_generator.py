@@ -34,15 +34,19 @@ class RobustSignalGenerator:
         self.feature_cols_d1 = feature_cols_d1
 
         # 静态因子权重（后续可由动态IC接口进行更新）
-        self.base_weights = {
+        _base_weights = {
             'ai': 0.15,
             'trend': 0.2,
             'momentum': 0.2,
             'volatility': 0.2,
             'volume': 0.1,
             'sentiment': 0.05,
-            'funding': 0.05
+            'funding': 0.05,
         }
+        total_w = sum(_base_weights.values())
+        if total_w <= 0:
+            total_w = 1.0
+        self.base_weights = {k: v / total_w for k, v in _base_weights.items()}
 
         # 当前权重，初始与 base_weights 相同
         self.current_weights = self.base_weights.copy()
@@ -175,7 +179,7 @@ class RobustSignalGenerator:
             return 0
 
         if slope > 0:
-            if ratio > 1.05:
+            if ratio > 1.10:
                 return -1
             if ratio >= 0.98:
                 return 1
@@ -438,7 +442,7 @@ class RobustSignalGenerator:
         if regime == "trend":
             thres += 0.02
         elif regime == "range":
-            thres += 0.02
+            thres -= 0.02
 
         return max(min_thres, min(max_thres, thres))
 
