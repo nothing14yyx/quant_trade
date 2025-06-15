@@ -30,6 +30,7 @@ def make_rsg():
     rsg._last_signal = 0
     rsg._last_score = 0.0
     rsg._lock = threading.RLock()
+    rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
     return rsg
 
 

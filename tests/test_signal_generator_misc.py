@@ -5,7 +5,9 @@ from robust_signal_generator import RobustSignalGenerator
 
 
 def make_rsg():
-    return RobustSignalGenerator.__new__(RobustSignalGenerator)
+    r = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    r._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+    return r
 
 
 def test_detect_market_regime():
