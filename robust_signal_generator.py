@@ -2,9 +2,14 @@ import joblib
 import numpy as np
 import pandas as pd
 from collections import Counter, deque
+from pathlib import Path
+import yaml
 import threading
 import logging
 pd.set_option('future.no_silent_downcasting', True)
+
+# 默认配置路径
+CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
 # 当订单簿动量与信号方向相反且超过该阈值时取消信号
 ORDER_BOOK_MOM_THRESHOLD = 0.02
@@ -22,7 +27,7 @@ class RobustSignalGenerator:
     - 支持动态阈值与极端行情防护
     - 可通过 :func:`update_ic_scores` 读取历史数据并计算因子 IC
       用于动态调整权重
-    - Δ-boost 逻辑现已参数化，可通过 core_keys / delta_params 定制。
+    - Δ-boost 逻辑现已参数化，可通过 config 或 core_keys / delta_params 定制。
     """
 
     DEFAULT_CORE_KEYS = {
@@ -56,6 +61,7 @@ class RobustSignalGenerator:
         feature_cols_d1,
         history_window=3000,
         symbol_categories=None,
+        config_path=CONFIG_PATH,
         core_keys=None,
         delta_params=None,
     ):
@@ -77,8 +83,16 @@ class RobustSignalGenerator:
         self.feature_cols_4h = feature_cols_4h
         self.feature_cols_d1 = feature_cols_d1
 
-        self.core_keys = core_keys or self.DEFAULT_CORE_KEYS
-        self.delta_params = delta_params or self.DELTA_PARAMS
+        cfg = {}
+        path = Path(config_path)
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parent / path
+        if path.is_file():
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+        db_cfg = cfg.get("delta_boost", {})
+        self.core_keys = core_keys or db_cfg.get("core_keys", self.DEFAULT_CORE_KEYS)
+        self.delta_params = delta_params or db_cfg.get("params", self.DELTA_PARAMS)
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         _base_weights = {
