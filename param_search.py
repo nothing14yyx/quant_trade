@@ -345,11 +345,11 @@ def run_param_search(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, default=None, help="只取最近 N 行数据")
+    parser.add_argument("--rows", type=int, default=1, help="只取最近 N 行数据")
     parser.add_argument(
         "--method",
         choices=["grid", "optuna"],
-        default="grid",
+        default="optuna",
         help="搜索方式: grid 或 optuna",
     )
     parser.add_argument("--trials", type=int, default=30, help="Optuna 试验次数")
