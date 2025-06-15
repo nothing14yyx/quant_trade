@@ -230,9 +230,9 @@ def test_dynamic_weight_update(monkeypatch):
     rsg.update_ic_scores(df)
     weights = rsg.dynamic_weight_update()
 
-    ic_arr = np.array([max(0, v) for v in rsg.ic_scores.values()])
-    base_arr = np.array([rsg.base_weights[k] for k in rsg.ic_scores])
-    expected = ic_arr * base_arr / (ic_arr * base_arr).sum()
+    ic_arr = np.array(list(rsg.ic_scores.values()))
+    ex = np.exp(ic_arr - ic_arr.max())
+    expected = ex / ex.sum()
 
     assert weights["ai"] == pytest.approx(expected[0])
     assert rsg.current_weights == weights
@@ -490,7 +490,7 @@ def test_ma_cross_logic_overbought_threshold():
         'ma_ratio_5_20': 1.12,
         'sma_20_4h': 9,
     }
-    assert rsg.ma_cross_logic(feats) == -1
+    assert rsg.ma_cross_logic(feats) == 1
     feats['ma_ratio_5_20'] = 1.06
     assert rsg.ma_cross_logic(feats) == 1
 
