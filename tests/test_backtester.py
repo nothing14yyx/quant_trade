@@ -1,6 +1,7 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pandas as pd
+import pytest
 from backtester import simulate_trades
 
 
@@ -90,3 +91,37 @@ def test_simulate_trades_reverse_signal_exit():
     assert t['entry_time'] == times[1]
     assert t['exit_time'] == times[3] + pd.Timedelta(hours=1)
     assert t['exit_price'] == 101
+
+
+def test_ret_and_win_rate_with_position_sizes():
+    times = pd.date_range('2020-01-01', periods=6, freq='h')
+    df_sym = pd.DataFrame({
+        'symbol': ['BTC'] * 6,
+        'open_time': times,
+        'close_time': times + pd.Timedelta(hours=1),
+        'open': [100, 100, 102, 103, 104, 99],
+        'high': [100, 103, 103, 105, 107, 100],
+        'low': [100, 99, 101, 102, 102, 98],
+        'close': [100, 102, 103, 104, 99, 100],
+    })
+
+    sig_df = pd.DataFrame({
+        'open_time': times[:-1],
+        'signal': [1, 0, -1, 0, 1],
+        'score': [0.5, 0.0, 0.5, 0.0, 0.5],
+        'position_size': [0.5, 0.0, 1.0, 0.0, 0.0],
+        'take_profit': [103, 0, 98, 0, 110],
+        'stop_loss': [90, 0, 106, 0, 90],
+    })
+
+    trades = simulate_trades(df_sym, sig_df, fee_rate=0, slippage=0)
+    assert trades['ret'].tolist() == [
+        pytest.approx(0.03),
+        pytest.approx(-3 / 103),
+        0.0,
+    ]
+
+    weights = trades['position_size']
+    win_mask = trades['ret'] > 0
+    win_rate = weights[win_mask].sum() / weights.sum()
+    assert win_rate == pytest.approx(1 / 3)
