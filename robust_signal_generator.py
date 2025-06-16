@@ -19,10 +19,11 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 # 退出信号滞后 bar 数默认值
 EXIT_LAG_BARS_DEFAULT = 1
 
-# AI 投票与仓位参数常量
-AI_DIR_EPS      = 0.02     # AI 方向阈值
-POS_K_RANGE     = 0.40     # 震荡市仓位乘数
-POS_K_TREND     = 0.60     # 趋势市仓位乘数
+# AI 投票与仓位参数默认值
+DEFAULT_AI_DIR_EPS = 0.02     # AI 方向阈值
+DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
+DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
+DEFAULT_LOW_BASE = 0.10       # 动态阈值下限
 
 
 def softmax(x):
@@ -171,6 +172,8 @@ class RobustSignalGenerator:
                 cfg = yaml.safe_load(f) or {}
         self.cfg = cfg
         self.signal_threshold_cfg = cfg.get("signal_threshold", {})
+        if "low_base" not in self.signal_threshold_cfg:
+            self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
         db_cfg = cfg.get("delta_boost", {})
         self.core_keys = core_keys or db_cfg.get("core_keys", self.DEFAULT_CORE_KEYS)
         self.delta_params = delta_params or db_cfg.get("params", self.DELTA_PARAMS)
@@ -180,6 +183,11 @@ class RobustSignalGenerator:
             "strong_min": vote_cfg.get("strong_min", self.VOTE_PARAMS["strong_min"]),
             "conf_min": vote_cfg.get("conf_min", self.VOTE_PARAMS["conf_min"]),
         }
+        self.ai_dir_eps = vote_cfg.get("ai_dir_eps", DEFAULT_AI_DIR_EPS)
+
+        pc_cfg = cfg.get("position_coeff", {})
+        self.pos_coeff_range = pc_cfg.get("range", DEFAULT_POS_K_RANGE)
+        self.pos_coeff_trend = pc_cfg.get("trend", DEFAULT_POS_K_TREND)
 
         self.sentiment_alpha = cfg.get("sentiment_alpha", 0.5)
         self.cap_positive_scale = cfg.get("cap_positive_scale", 0.7)
@@ -318,6 +326,24 @@ class RobustSignalGenerator:
         if name == "flip_coeff":
             setattr(self, name, 0.5)
             return 0.5
+        if name == "signal_threshold_cfg":
+            val = {
+                "base_th": 0.12,
+                "gamma": 0.05,
+                "min_pos": 0.10,
+                "low_base": DEFAULT_LOW_BASE,
+            }
+            setattr(self, name, val)
+            return val
+        if name == "ai_dir_eps":
+            setattr(self, name, DEFAULT_AI_DIR_EPS)
+            return DEFAULT_AI_DIR_EPS
+        if name == "pos_coeff_range":
+            setattr(self, name, DEFAULT_POS_K_RANGE)
+            return DEFAULT_POS_K_RANGE
+        if name == "pos_coeff_trend":
+            setattr(self, name, DEFAULT_POS_K_TREND)
+            return DEFAULT_POS_K_TREND
         raise AttributeError(name)
 
 
@@ -695,7 +721,7 @@ class RobustSignalGenerator:
         elif regime == "range":
             thres -= 0.02
 
-        low_base = 0.10
+        low_base = self.signal_threshold_cfg.get('low_base', DEFAULT_LOW_BASE)
         thres = max(thres, low_base)
 
         # 阈值已按波动动态计算，无上限封顶。
@@ -1301,8 +1327,8 @@ class RobustSignalGenerator:
         vol_breakout_val = raw_f1h.get('vol_breakout_1h')
         vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
 
-        ai_dir = 1 if ai_scores['1h'] > AI_DIR_EPS else \
-                 -1 if ai_scores['1h'] < -AI_DIR_EPS else 0
+        ai_dir = 1 if ai_scores['1h'] > self.ai_dir_eps else \
+                 -1 if ai_scores['1h'] < -self.ai_dir_eps else 0
 
         vote = 4 * ob_dir + 2 * short_mom_dir + self.vote_params['weight_ai'] * ai_dir + vol_breakout_dir
         strong_confirm_vote = abs(vote) >= self.vote_params['strong_min']
@@ -1362,7 +1388,9 @@ class RobustSignalGenerator:
             details['order_book_imbalance'] = float(ob_imb)
 
         # ===== 12. 仓位大小按连续得分映射 =====
-        base_coeff = POS_K_RANGE if regime == "range" else POS_K_TREND
+        base_coeff = (
+            self.pos_coeff_range if regime == "range" else self.pos_coeff_trend
+        )
         tier = 0.1 + base_coeff * abs(grad_dir)
         confidence_factor = 1.0
         if consensus_all:
@@ -1370,6 +1398,8 @@ class RobustSignalGenerator:
         if strong_confirm_vote:
             confidence_factor += 0.05
         pos_size = tier * confidence_factor
+        if direction == 0:
+            pos_size = 0.0
 
         vol_ratio = raw_f1h.get('vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h'))
         details['vol_ratio'] = vol_ratio
