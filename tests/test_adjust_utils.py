@@ -19,5 +19,5 @@ def test_volume_guard_basic():
 
 
 def test_cap_positive_and_fused_to_risk():
-    assert cap_positive(+0.6, -0.6) == 0.0
-    assert fused_to_risk(0.8, 0.02, 0.01) < 1e5
+    assert cap_positive(+0.6, -0.6, 0.4) == pytest.approx(+0.24)
+    assert fused_to_risk(0.8, 0.02, 0.01, cap=5.0) == 5.0

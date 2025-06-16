@@ -3,7 +3,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 from collections import deque
 
-from robust_signal_generator import RobustSignalGenerator
+from robust_signal_generator import (
+    RobustSignalGenerator,
+    cap_positive,
+    fused_to_risk,
+)
 
 
 def make_rsg():
@@ -25,6 +29,7 @@ def make_rsg():
     rsg.current_weights = rsg.base_weights.copy()
     rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
     rsg.sentiment_alpha = 0.5
+    rsg.cap_positive_scale = 0.4
     rsg.volume_guard_params = {
         'weak': 0.7,
         'over': 0.9,
@@ -33,6 +38,8 @@ def make_rsg():
         'roc_low': -20,
         'roc_high': 100,
     }
+    rsg.ob_th_params = {'min_ob_th': 0.15, 'dynamic_factor': 0.08}
+    rsg.risk_score_cap = 5.0
     return rsg
 
 
@@ -85,3 +92,11 @@ def test_score_clip():
     }
     fused = rsg.combine_score(0, factor_scores)
     assert fused >= -1
+
+
+def test_cap_positive():
+    assert cap_positive(+0.6, -0.6, 0.4) == pytest.approx(+0.24)
+
+
+def test_risk_cap():
+    assert fused_to_risk(10, 0.1, 0.1, cap=5) == 5.0
