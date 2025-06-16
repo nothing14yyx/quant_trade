@@ -12,9 +12,6 @@ from config import DYNAMIC_OB_FACTOR, MIN_OB_TH, EXIT_LAG_BARS
 logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
 
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
-
-
 # 默认配置路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
@@ -336,7 +333,7 @@ class RobustSignalGenerator:
                 if c not in features:
                     missing.append(c)
             if missing:
-                logging.warning("get_ai_score missing columns: %s", missing)
+                logging.debug("get_ai_score missing columns: %s", missing)
             df = pd.DataFrame(row)
             return df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
 
@@ -550,12 +547,12 @@ class RobustSignalGenerator:
         pred_vol_4h=None,
         pred_vol_d1=None,
         vix_proxy=None,
-        base=0.12409861615448753,
+        base=0.12,
         regime=None,
     ):
         """根据历史 ATR、ADX、预测波动率及恐慌指数动态计算阈值"""
 
-        thres = base
+        thres = float(base)
 
         # ===== 波动性贡献 =====
         thres += min(0.08, abs(atr) * 3)
@@ -598,6 +595,7 @@ class RobustSignalGenerator:
         thres = max(thres, low_base)
 
         # 阈值已按波动动态计算，无上限封顶。
+        # 本函数已删除 min/max 上限，下界托底 0.13。
         return thres
 
     def combine_score(self, ai_score, factor_scores, weights=None):
@@ -710,7 +708,6 @@ class RobustSignalGenerator:
         raw_fd1 = raw_features_d1 or features_d1
 
         details = {}
-        strong_confirm_vote = False
 
         deltas = {
             "1h": self._calc_deltas(
@@ -1015,7 +1012,6 @@ class RobustSignalGenerator:
                     'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
                     'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
                     'strong_confirm_4h': strong_confirm_4h,
-                    'strong_confirm_vote': strong_confirm_vote,
                     'consensus_14': consensus_14, 'consensus_all': consensus_all,
                     'vol_pred_1h': vol_preds.get('1h'),
                     'vol_pred_4h': vol_preds.get('4h'),
@@ -1102,7 +1098,6 @@ class RobustSignalGenerator:
             'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
             'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
             'strong_confirm_4h': strong_confirm_4h,
-            'strong_confirm_vote': strong_confirm_vote,
             'consensus_14': consensus_14, 'consensus_all': consensus_all,
             'vol_pred_1h': vol_preds.get('1h'),
             'vol_pred_4h': vol_preds.get('4h'),
@@ -1334,3 +1329,7 @@ class RobustSignalGenerator:
             'stop_loss': stop_loss,
             'details': details
         }
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
