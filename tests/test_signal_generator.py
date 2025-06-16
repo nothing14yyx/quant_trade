@@ -642,7 +642,7 @@ def test_momentum_alignment_disables_confirm():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
-    assert res['details']['strong_confirm'] is False
+    assert res['details']['strong_confirm_vote'] is False
     assert res['details'].get('vote', 0) < 5
 
 
