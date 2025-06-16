@@ -9,7 +9,7 @@ import logging
 from config import DYNAMIC_OB_FACTOR, MIN_OB_TH, EXIT_LAG_BARS
 pd.set_option('future.no_silent_downcasting', True)
 
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 # 默认配置路径
