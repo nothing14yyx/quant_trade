@@ -57,7 +57,7 @@ def test_compute_tp_sl():
 def test_dynamic_threshold_basic():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0, 0, 0)
-    assert th == pytest.approx(0.13)
+    assert th == pytest.approx(0.12)
 
 
 def test_get_dynamic_oi_threshold():
@@ -723,7 +723,7 @@ def test_step_exit_with_order_book_flip():
     assert res1['signal'] == 1
 
     res2 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=-0.3)
-    assert res2['signal'] == 0.5
+    assert res2['signal'] == 0
 
     res3 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=-0.3)
     assert res3['signal'] == 0
