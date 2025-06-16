@@ -15,8 +15,6 @@ pd.set_option('future.no_silent_downcasting', True)
 # 默认配置路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
-# 当订单簿动量与信号方向相反且超过该阈值时取消信号
-ORDER_BOOK_MOM_THRESHOLD = 0.02
 
 # 退出信号滞后 bar 数默认值
 EXIT_LAG_BARS_DEFAULT = 1
@@ -88,6 +86,12 @@ def fused_to_risk(
     denom = max(abs(logic_score * env_score), 1e-6)
     risk = fused_score / denom
     return min(risk, cap)
+
+
+def sigmoid_dir(score: float, base_th: float, gamma: float) -> float:
+    """根据分数计算梯度方向强度, 结果范围 [-1, 1]"""
+    amp = np.tanh((abs(score) - base_th) / gamma)
+    return np.sign(score) * max(0.0, amp)
 
 class RobustSignalGenerator:
     """多周期 AI + 多因子 融合信号生成器。
@@ -165,6 +169,8 @@ class RobustSignalGenerator:
         if path.is_file():
             with open(path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
+        self.cfg = cfg
+        self.signal_threshold_cfg = cfg.get("signal_threshold", {})
         db_cfg = cfg.get("delta_boost", {})
         self.core_keys = core_keys or db_cfg.get("core_keys", self.DEFAULT_CORE_KEYS)
         self.delta_params = delta_params or db_cfg.get("params", self.DELTA_PARAMS)
@@ -1167,6 +1173,7 @@ class RobustSignalGenerator:
             vix_p = open_interest.get('vix_proxy')
 
         regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
+        cfg_th = self.signal_threshold_cfg
         base_th = self.dynamic_threshold(
             atr_1h,
             adx_1h,
@@ -1180,6 +1187,7 @@ class RobustSignalGenerator:
             pred_vol_d1=vol_preds.get('d1'),
             vix_proxy=vix_p,
             regime=regime,
+            base=cfg_th.get('base_th', 0.12),
         )
         details['regime'] = regime
         details['dynamic_th_final'] = base_th
@@ -1308,9 +1316,9 @@ class RobustSignalGenerator:
         details["confidence_vote"] = conf_vote
         fused_score = float(np.clip(fused_score, -1, 1))
 
-        direction = 0
-        if abs(fused_score) >= base_th:
-            direction = int(np.sign(fused_score))
+        cfg_th_sig = self.signal_threshold_cfg
+        grad_dir = sigmoid_dir(fused_score, cfg_th_sig.get('base_th', 0.12), cfg_th_sig.get('gamma', 0.05))
+        direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
 
         if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
             last_score = getattr(self, '_last_score', 0.0)
@@ -1350,46 +1358,12 @@ class RobustSignalGenerator:
             self._exit_lag = 0
         direction = exit_sig
 
-        if direction == 0:
-            self._last_signal = 0
-            self._last_score = fused_score
-            self._prev_raw["1h"] = raw_f1h
-            self._prev_raw["4h"] = raw_f4h
-            self._prev_raw["d1"] = raw_fd1
-            return {
-                'signal': 0,
-                'score': fused_score,
-                'position_size': 0.0,
-                'take_profit': None,
-                'stop_loss': None,
-                'details': details
-            }
-
         if ob_imb is not None:
             details['order_book_imbalance'] = float(ob_imb)
-            if abs(direction) == 1 and abs(ob_imb) > 0.1 and np.sign(ob_imb) != np.sign(direction):
-                logging.info(
-                    "Order book imbalance opposes score for %s: %.4f",
-                    coin,
-                    ob_imb,
-                )
-                self._last_score = fused_score
-                self._last_signal = 0
-                self._prev_raw["1h"] = raw_f1h
-                self._prev_raw["4h"] = raw_f4h
-                self._prev_raw["d1"] = raw_fd1
-                return {
-                    'signal': 0,
-                    'score': fused_score,
-                    'position_size': 0.0,
-                    'take_profit': None,
-                    'stop_loss': None,
-                    'details': details,
-                }
 
         # ===== 12. 仓位大小按连续得分映射 =====
         base_coeff = POS_K_RANGE if regime == "range" else POS_K_TREND
-        tier = 0.1 + base_coeff * abs(fused_score)
+        tier = 0.1 + base_coeff * abs(grad_dir)
         confidence_factor = 1.0
         if consensus_all:
             confidence_factor += 0.1
@@ -1417,21 +1391,18 @@ class RobustSignalGenerator:
         if vol_p is not None:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
 
+        if pos_size < cfg_th_sig.get('min_pos', 0.1):
+            direction, pos_size = 0, 0.0
+
 
         details['order_book_momentum'] = ob_imb
-        if (
-            ob_imb is not None
-            and abs(direction) == 1
-            and abs(ob_imb) > ORDER_BOOK_MOM_THRESHOLD
-            and np.sign(ob_imb) != np.sign(direction)
-        ):
-            logging.info(
-                "Direction canceled by order book imbalance %.4f for %s",
-                ob_imb,
-                coin,
-            )
-            direction = 0
-            pos_size = 0.0
+        ob_th = self.ob_th_params['min_ob_th']
+        if ob_imb is not None and abs(ob_imb) > ob_th:
+            weight = max(0.2, 1 - (abs(ob_imb) - ob_th) / ob_th)
+            if np.sign(ob_imb) != direction:
+                pos_size *= weight
+            else:
+                pos_size *= 1 + (1 - weight)
 
         if direction == 1 and scores["4h"] < -self.veto_level:
             direction, pos_size = 0, 0.0
@@ -1449,6 +1420,8 @@ class RobustSignalGenerator:
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
         # ===== 14. 最终返回 =====
+        details['grad_dir'] = float(grad_dir)
+        details['pos_size'] = float(pos_size)
         self._last_signal = int(np.sign(direction)) if direction else 0
         self._last_score = fused_score
         self._prev_vote = vote
