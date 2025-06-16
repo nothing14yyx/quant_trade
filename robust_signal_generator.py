@@ -7,7 +7,7 @@ import yaml
 import threading
 import logging
 import time
-from config import EXIT_LAG_BARS
+
 
 logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
@@ -17,6 +17,9 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
 # 当订单簿动量与信号方向相反且超过该阈值时取消信号
 ORDER_BOOK_MOM_THRESHOLD = 0.02
+
+# 退出信号滞后 bar 数默认值
+EXIT_LAG_BARS_DEFAULT = 2
 
 # AI 投票与仓位参数常量
 AI_DIR_EPS      = 0.02     # AI 方向阈值
@@ -189,6 +192,7 @@ class RobustSignalGenerator:
             "dynamic_factor": ob_cfg.get("dynamic_factor", 0.08),
         }
         self.risk_score_cap = cfg.get("risk_score_cap", 5.0)
+        self.exit_lag_bars = cfg.get("exit_lag_bars", EXIT_LAG_BARS_DEFAULT)
         self.min_weight_ratio = min_weight_ratio
 
         # 静态因子权重（后续可由动态IC接口进行更新）
@@ -288,6 +292,9 @@ class RobustSignalGenerator:
         if name == "min_weight_ratio":
             setattr(self, name, 0.2)
             return 0.2
+        if name == "exit_lag_bars":
+            setattr(self, name, EXIT_LAG_BARS_DEFAULT)
+            return EXIT_LAG_BARS_DEFAULT
         raise AttributeError(name)
 
 
@@ -1305,7 +1312,7 @@ class RobustSignalGenerator:
                     self._exit_lag = 0
                 elif vote <= 0:
                     self._exit_lag += 1
-                    exit_sig = 0 if self._exit_lag >= EXIT_LAG_BARS else 0.5
+                    exit_sig = 0 if self._exit_lag >= self.exit_lag_bars else 0.5
                 else:
                     self._exit_lag = 0
             elif direction == -1:
@@ -1314,7 +1321,7 @@ class RobustSignalGenerator:
                     self._exit_lag = 0
                 elif vote >= 0:
                     self._exit_lag += 1
-                    exit_sig = 0 if self._exit_lag >= EXIT_LAG_BARS else -0.5
+                    exit_sig = 0 if self._exit_lag >= self.exit_lag_bars else -0.5
                 else:
                     self._exit_lag = 0
         else:
