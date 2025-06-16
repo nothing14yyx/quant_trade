@@ -9,8 +9,8 @@ import logging
 from config import DYNAMIC_OB_FACTOR, MIN_OB_TH, EXIT_LAG_BARS
 pd.set_option('future.no_silent_downcasting', True)
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
+
 
 # 默认配置路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
