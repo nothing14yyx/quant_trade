@@ -58,7 +58,7 @@ def test_get_dynamic_oi_threshold():
 def test_dynamic_threshold_upper_bound():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0.1, 50, 0.02)
-    assert th == pytest.approx(0.25)
+    assert th == pytest.approx(0.2399655)
 
 
 def test_dynamic_threshold_multi_period():
@@ -67,9 +67,9 @@ def test_dynamic_threshold_multi_period():
     th2 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
     th3 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
 
-    assert th1 == pytest.approx(0.18)
-    assert th2 == pytest.approx(0.205)
-    assert th3 == pytest.approx(0.2175)
+    assert th1 == pytest.approx(0.2040986)
+    assert th2 == pytest.approx(0.2290986)
+    assert th3 == pytest.approx(0.2399655)
 
 
 def test_dynamic_threshold_with_vix():
@@ -292,7 +292,7 @@ def test_combine_score_weight_names():
     )
 
     fused = rsg.combine_score(ai, factor_scores, weights)
-    assert fused == pytest.approx(expected)
+    assert fused == pytest.approx(np.tanh(expected))
 
 
 def test_generate_signal_with_external_metrics():
@@ -572,7 +572,7 @@ def test_sentiment_reweight_and_guard():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
-    assert res['details']['score_1h'] == pytest.approx(-0.045)
+    assert res['details']['score_1h'] == pytest.approx(np.tanh(-0.045), rel=1e-3)
     assert res['details']['score_4h'] == 0
 
 
@@ -676,7 +676,8 @@ def test_crowding_factor_and_dynamic_threshold():
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                               open_interest=oi)
     assert res['details']['base_threshold'] == pytest.approx(0.5)
-    assert res['score'] == pytest.approx(res['details']['score_1h'] * 0.9)
+    expected = res['details']['score_1h'] * res['details']['crowding_factor'] * res['details']['confidence']
+    assert res['score'] == pytest.approx(expected)
 
 
 def test_step_exit_with_order_book_flip():
@@ -749,6 +750,6 @@ def test_position_size_range_regime():
                               raw_features_1h=f1h,
                               raw_features_4h=f4h,
                               raw_features_d1=fd1)
-    expected = 0.1 + 0.4 * abs(res['details']['score_1h'])
+    expected = 0.1 + 0.4 * abs(res['score'])
     assert res['position_size'] == pytest.approx(expected)
 

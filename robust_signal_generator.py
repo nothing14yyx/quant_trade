@@ -573,7 +573,7 @@ class RobustSignalGenerator:
             + factor_scores['funding'] * weights['funding']
         )
 
-        return float(np.clip(fused_score, -1, 1))
+        return float(np.tanh(fused_score))
 
     def consensus_check(self, s1, s2, s3, min_agree=2):
         # 多周期方向共振（如调研建议），可加全分歧减弱等逻辑
@@ -789,9 +789,6 @@ class RobustSignalGenerator:
             scores["1h"] -= 0.10
         if vol_roc_4h is not None and vol_roc_4h > 50:
             scores["4h"] -= 0.10
-        # 惩罚后再裁剪
-        for p in ("1h", "4h"):
-            scores[p] = float(np.clip(scores[p], -1, 1))
 
         for p, raw_f in [('1h', raw1h), ('4h', raw4h), ('d1', raw_features_d1 or features_d1)]:
             anom = raw_f.get(f'funding_rate_anom_{p}', 0)
@@ -837,24 +834,24 @@ class RobustSignalGenerator:
                 )
             strong_confirm = False
 
-        # ensure scores remain within [-1, 1] after adjustments
-        for p in scores:
-            scores[p] = float(np.clip(scores[p], -1, 1))
-
         score_1h, score_4h, score_d1 = scores['1h'], scores['4h'], scores['d1']
 
         if consensus_all:
             fused_score = w1 * score_1h + w4 * score_4h + w_d1 * score_d1
+            conf = 1.0
             if strong_confirm:
                 fused_score *= 1.15
         elif consensus_14:
             total = w1 + w4
             fused_score = (w1 / total) * score_1h + (w4 / total) * score_4h
+            conf = 0.8
             if strong_confirm:
                 fused_score *= 1.10
         else:
             fused_score = score_1h
+            conf = 0.6
 
+        fused_score *= conf
         fused_score = float(np.clip(fused_score, -1, 1))
 
         prev_ma20 = (raw_features_1h or features_1h).get('sma_20_1h_prev')
@@ -1010,8 +1007,8 @@ class RobustSignalGenerator:
                 fused_score *= mult
                 crowding_factor *= mult
 
-        # 所有放大系数后再最终裁剪
-        fused_score = float(np.clip(fused_score, -1, 1))
+        confidence = conf
+        # 所有放大系数后写入历史
         with self._lock:
             self.history_scores.append(fused_score)
         
@@ -1028,6 +1025,7 @@ class RobustSignalGenerator:
             'oi_overheat': oi_overheat,
             'oi_threshold': th_oi,
             'crowding_factor': crowding_factor,
+            'confidence': confidence,
             'short_momentum': short_mom,
             'ob_imbalance': ob_imb,
             'ma_cross': ma_dir,
@@ -1128,7 +1126,7 @@ class RobustSignalGenerator:
                  -1 if ai_scores['1h'] < -AI_DIR_EPS else 0
 
         vote = 4 * ob_dir + 2 * short_mom_dir + VOTE_W_AI * ai_dir + vol_breakout_dir
-        strong_confirm = vote >= VOTE_STRONG_MIN
+        strong_confirm = abs(vote) >= VOTE_STRONG_MIN
         details['vote'] = vote
         details['strong_confirm'] = strong_confirm
         details['ob_th'] = ob_th
@@ -1204,13 +1202,19 @@ class RobustSignalGenerator:
                 }
 
         # ===== 12. 仓位大小按连续得分映射 =====
-        coeff = POS_K_RANGE if regime == "range" else POS_K_TREND
+        base_coeff = POS_K_RANGE if regime == "range" else POS_K_TREND
+        tier = 0.1 + base_coeff * abs(fused_score)
+        confidence_factor = 1.0
         if consensus_all:
-            coeff += 0.3            # 多周期共振再抬高
-        pos_size = 0.1 + coeff * abs(fused_score)
+            confidence_factor += 0.1
+        if strong_confirm:
+            confidence_factor += 0.05
+        pos_size = tier * confidence_factor
 
         vol_ratio = raw_f1h.get('vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h'))
         details['vol_ratio'] = vol_ratio
+        details['position_tier'] = tier
+        details['confidence_factor'] = confidence_factor
         if (
             regime == "range"
             and vol_ratio is not None
