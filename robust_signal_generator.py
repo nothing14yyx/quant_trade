@@ -551,8 +551,6 @@ class RobustSignalGenerator:
         pred_vol_d1=None,
         vix_proxy=None,
         base=0.12409861615448753,
-        min_thres=0.05799926536625754,
-        max_thres=0.23996549950299914,
         regime=None,
     ):
         """根据历史 ATR、ADX、预测波动率及恐慌指数动态计算阈值"""
@@ -599,7 +597,8 @@ class RobustSignalGenerator:
         low_base = 0.13
         thres = max(thres, low_base)
 
-        return max(min_thres, thres)
+        # 阈值已按波动动态计算，无上限封顶。
+        return thres
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """按固定顺序加权合并各因子得分"""
@@ -1017,7 +1016,6 @@ class RobustSignalGenerator:
                     'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
                     'strong_confirm_4h': strong_confirm_4h,
                     'strong_confirm_vote': strong_confirm_vote,
-                    'strong_confirm': strong_confirm_vote,
                     'consensus_14': consensus_14, 'consensus_all': consensus_all,
                     'vol_pred_1h': vol_preds.get('1h'),
                     'vol_pred_4h': vol_preds.get('4h'),
@@ -1105,7 +1103,6 @@ class RobustSignalGenerator:
             'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
             'strong_confirm_4h': strong_confirm_4h,
             'strong_confirm_vote': strong_confirm_vote,
-            'strong_confirm': strong_confirm_vote,
             'consensus_14': consensus_14, 'consensus_all': consensus_all,
             'vol_pred_1h': vol_preds.get('1h'),
             'vol_pred_4h': vol_preds.get('4h'),
