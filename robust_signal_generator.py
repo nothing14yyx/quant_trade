@@ -1056,6 +1056,39 @@ class RobustSignalGenerator:
                 }
             }
 
+# ===== 7b. 计算动态阈值 =====
+        atr_1h = raw_f1h.get('atr_pct_1h', features_1h.get('atr_pct_1h', 0))
+        adx_1h = raw_f1h.get('adx_1h', features_1h.get('adx_1h', 0))
+        funding_1h = raw_f1h.get('funding_rate_1h', features_1h.get('funding_rate_1h', 0)) or 0
+
+        atr_4h = raw_f4h.get('atr_pct_4h', features_4h.get('atr_pct_4h', 0)) if raw_f4h else None
+        adx_4h = raw_f4h.get('adx_4h', features_4h.get('adx_4h', 0)) if raw_f4h else None
+        atr_d1 = raw_fd1.get('atr_pct_d1', features_d1.get('atr_pct_d1', 0)) if raw_fd1 else None
+        adx_d1 = raw_fd1.get('adx_d1', features_d1.get('adx_d1', 0)) if raw_fd1 else None
+
+        vix_p = None
+        if global_metrics is not None:
+            vix_p = global_metrics.get('vix_proxy')
+        if vix_p is None and open_interest is not None:
+            vix_p = open_interest.get('vix_proxy')
+
+        regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
+        base_th = self.dynamic_threshold(
+            atr_1h,
+            adx_1h,
+            funding_1h,
+            atr_4h=atr_4h,
+            adx_4h=adx_4h,
+            atr_d1=atr_d1,
+            adx_d1=adx_d1,
+            pred_vol=vol_preds.get('1h'),
+            pred_vol_4h=vol_preds.get('4h'),
+            pred_vol_d1=vol_preds.get('d1'),
+            vix_proxy=vix_p,
+            regime=regime,
+        )
+        details['regime'] = regime
+        details['base_threshold'] = base_th
         # ===== 8. 资金费率惩罚 =====
         funding_conflicts = 0
         for p, raw_f in [('1h', raw_f1h), ('4h', raw_f4h), ('d1', raw_fd1)]:
@@ -1119,45 +1152,6 @@ class RobustSignalGenerator:
             'risk_score': risk_score,
         })
 
-        # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
-        raw_f1h = raw_features_1h or features_1h
-        raw_f4h = raw_features_4h or features_4h
-        raw_fd1 = raw_features_d1 or features_d1
-
-        atr_1h = raw_f1h.get('atr_pct_1h', features_1h.get('atr_pct_1h', 0))
-        adx_1h = raw_f1h.get('adx_1h', features_1h.get('adx_1h', 0))
-        funding_1h = raw_f1h.get('funding_rate_1h', features_1h.get('funding_rate_1h', 0)) or 0
-
-        atr_4h = raw_f4h.get('atr_pct_4h', features_4h.get('atr_pct_4h', 0)) if raw_f4h else None
-        adx_4h = raw_f4h.get('adx_4h', features_4h.get('adx_4h', 0)) if raw_f4h else None
-        atr_d1 = raw_fd1.get('atr_pct_d1', features_d1.get('atr_pct_d1', 0)) if raw_fd1 else None
-        adx_d1 = raw_fd1.get('adx_d1', features_d1.get('adx_d1', 0)) if raw_fd1 else None
-
-        vix_p = None
-        if global_metrics is not None:
-            vix_p = global_metrics.get('vix_proxy')
-        if vix_p is None and open_interest is not None:
-            vix_p = open_interest.get('vix_proxy')
-
-        regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
-        th = self.dynamic_threshold(
-            atr_1h,
-            adx_1h,
-            funding_1h,
-            atr_4h=atr_4h,
-            adx_4h=adx_4h,
-            atr_d1=atr_d1,
-            adx_d1=adx_d1,
-            pred_vol=vol_preds.get('1h'),
-            pred_vol_4h=vol_preds.get('4h'),
-            pred_vol_d1=vol_preds.get('d1'),
-            vix_proxy=vix_p,
-            regime=regime,
-        )
-
-        base_th = th
-        details['regime'] = regime
-        details['base_threshold'] = base_th
 
         if regime == "range" and consensus_dir == 0:
             logging.info("Range regime without consensus -> no trade")
