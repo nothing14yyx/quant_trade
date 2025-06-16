@@ -1,1 +1,0 @@
-EXIT_LAG_BARS = 2
