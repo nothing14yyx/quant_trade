@@ -584,7 +584,7 @@ def test_sentiment_reweight_and_guard():
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
     assert res['details']['score_1h'] == pytest.approx(-0.03899, rel=1e-3)
-    assert res['details']['score_4h'] == 0
+    assert res['details']['score_4h'] == pytest.approx(0.19738, rel=1e-3)
 
 
 def test_volume_and_funding_penalties():

@@ -61,6 +61,19 @@ def volume_guard(
         return score * over
     return score
 
+
+def cap_positive(score: float, sentiment: float, threshold: float = -0.5) -> float:
+    """若负面情绪过强则清零正分"""
+    if sentiment <= threshold and score > 0:
+        return 0.0
+    return score
+
+
+def fused_to_risk(fused_score: float, logic_score: float, env_score: float) -> float:
+    """按安全分母计算 risk score"""
+    denom = max(abs(logic_score * env_score), 1e-6)
+    return fused_score / denom
+
 class RobustSignalGenerator:
     """多周期 AI + 多因子 融合信号生成器。
 
@@ -339,17 +352,17 @@ class RobustSignalGenerator:
 
         sma5 = features.get('sma_5_1h')
         sma20 = features.get('sma_20_1h')
-        ratio = features.get('ma_ratio_5_20')
-        if sma5 is None or sma20 is None or ratio is None:
+        ma_ratio = features.get('ma_ratio_5_20', 1.0)
+        if sma5 is None or sma20 is None:
             return 0
 
         slope = 0.0
         if sma_20_1h_prev not in (None, 0):
             slope = (sma20 - sma_20_1h_prev) / sma_20_1h_prev
 
-        if ratio > 1.02 and slope > 0:
+        if ma_ratio > 1.02 and slope > 0:
             return 1
-        if ratio < 0.98 and slope < 0:
+        if ma_ratio < 0.98 and slope < 0:
             return -1
         return 0
 
@@ -783,7 +796,8 @@ class RobustSignalGenerator:
         }
 
         # ===== 3. 使用当前因子权重 =====
-        weights = self.current_weights
+        with self._lock:
+            weights = self.current_weights.copy()
 
         # ===== 4. 合并 AI 与多因子分数，得到各周期总分 =====
         score_1h = self.combine_score(ai_scores['1h'], fs['1h'], weights)
@@ -823,7 +837,7 @@ class RobustSignalGenerator:
             old = scores[p]
             scores[p] = adjust_score(old, sent, self.sentiment_alpha)
             if old != scores[p]:
-                logging.info(
+                logging.debug(
                     "sentiment %.2f extreme on %s -> score %.3f * %.2f = %.3f",
                     sent,
                     p,
@@ -837,9 +851,9 @@ class RobustSignalGenerator:
             + w4 * fs['4h']['sentiment']
             + w_d1 * fs['d1']['sentiment']
         )
-        if sentiment_combined <= -0.25:
+        if sentiment_combined <= -0.5:
             logging.info(
-                "combined sentiment %.3f <= -0.25 for %s -> cap positive scores",
+                "combined sentiment %.3f <= -0.5 for %s -> cap positive scores",
                 sentiment_combined,
                 coin,
             )
@@ -860,7 +874,7 @@ class RobustSignalGenerator:
             **self.volume_guard_params,
         )
         if old != scores['1h']:
-            logging.info(
+            logging.debug(
                 "volume guard %s 1h ratio=%.3f roc=%.3f -> %.3f",
                 coin,
                 vol_ratio_1h,
@@ -879,7 +893,7 @@ class RobustSignalGenerator:
                 **self.volume_guard_params,
             )
             if old_4h != scores['4h']:
-                logging.info(
+                logging.debug(
                     "volume guard %s 4h ratio=%.3f roc=%.3f -> %.3f",
                     coin,
                     vol_ratio_4h,
@@ -888,6 +902,24 @@ class RobustSignalGenerator:
                 )
         else:
             vol_roc_4h = None
+
+        vol_ratio_d1 = raw_fd1.get('vol_ma_ratio_d1')
+        vol_roc_d1 = raw_fd1.get('vol_roc_d1')
+        old_d1 = scores['d1']
+        scores['d1'] = volume_guard(
+            old_d1,
+            vol_ratio_d1,
+            vol_roc_d1,
+            **self.volume_guard_params,
+        )
+        if old_d1 != scores['d1']:
+            logging.debug(
+                "volume guard %s d1 ratio=%.3f roc=%.3f -> %.3f",
+                coin,
+                vol_ratio_d1,
+                vol_roc_d1,
+                scores['d1'],
+            )
 
 
 
@@ -900,7 +932,7 @@ class RobustSignalGenerator:
             and rsi_diff < -8
         ):
             if strong_confirm_4h:
-                logging.info(
+                logging.debug(
                     "momentum misalign macd_diff=%.3f rsi_diff=%.3f -> strong_confirm=False",
                     macd_diff,
                     rsi_diff,
@@ -1130,7 +1162,7 @@ class RobustSignalGenerator:
             oi_crowd = float(np.clip((th_oi - 0.5) * 2, 0, 1))
             if oi_crowd > 0:
                 mult = 1 - oi_crowd * 0.5
-                logging.info(
+                logging.debug(
                     "oi threshold %.3f crowding factor %.3f for %s -> score *= %.3f",
                     th_oi,
                     oi_crowd,
@@ -1139,7 +1171,7 @@ class RobustSignalGenerator:
                 )
                 fused_score *= mult
                 crowding_factor *= mult
-        risk_score = fused_score / (logic_score * env_score) if logic_score * env_score != 0 else 1.0
+        risk_score = fused_to_risk(fused_score, logic_score, env_score)
 
         confidence = conf
         # 所有放大系数后写入历史
@@ -1171,7 +1203,7 @@ class RobustSignalGenerator:
 
 
         if regime == "range" and consensus_dir == 0:
-            logging.info("Range regime without consensus -> no trade")
+            logging.debug("Range regime without consensus -> no trade")
             self._last_signal = 0
             self._last_score = fused_score
             self._prev_raw["1h"] = raw_f1h
@@ -1229,7 +1261,7 @@ class RobustSignalGenerator:
             last_score = getattr(self, '_last_score', 0.0)
             flip_th = base_th + max(0.05, 0.5 * abs(last_score))
             if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
-                logging.info(
+                logging.debug(
                     "Flip prevented for %s: last=%s current=%.3f",
                     coin,
                     self._last_signal,
