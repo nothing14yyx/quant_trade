@@ -250,16 +250,19 @@ class Scheduler:
         filtered = [r for r in results if r.get("signal")]
         filtered.sort(key=lambda x: abs(x.get("score") or 0), reverse=True)
         top10 = filtered[:10]
-        with self.engine.begin() as conn:
-            conn.execute(
-                text(
-                    "REPLACE INTO live_top10_signals "
-                    "(`symbol`,`time`,`price`,`signal`,`score`,`pos`,`take_profit`,`stop_loss`,`indicators`) "
-                    "VALUES (:symbol,:time,:price,:signal,:score,:pos,:take_profit,:stop_loss,:indicators)"
-                ),
-                top10,
+        if top10:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "REPLACE INTO live_top10_signals "
+                        "(`symbol`,`time`,`price`,`signal`,`score`,`pos`,`take_profit`,`stop_loss`,`indicators`) "
+                        "VALUES (:symbol,:time,:price,:signal,:score,:pos,:take_profit,:stop_loss,:indicators)"
+                    ),
+                    top10,
+                )
+            logging.info(
+                "[generate_signals] wrote %s rows to live_top10_signals", len(top10)
             )
-        logging.info("[generate_signals] wrote %s rows to live_top10_signals", len(top10))
 
     def schedule_next(self):
         next_run = (datetime.now(UTC) + timedelta(minutes=1)).replace(
