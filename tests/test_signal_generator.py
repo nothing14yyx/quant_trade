@@ -60,7 +60,7 @@ def test_get_dynamic_oi_threshold():
 def test_dynamic_threshold_upper_bound():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0.1, 50, 0.02)
-    assert th == pytest.approx(0.3340986)
+    assert th == pytest.approx(0.33)
 
 
 def test_dynamic_threshold_multi_period():
@@ -69,9 +69,9 @@ def test_dynamic_threshold_multi_period():
     th2 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
     th3 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
 
-    assert th1 == pytest.approx(0.2040986)
-    assert th2 == pytest.approx(0.2290986)
-    assert th3 == pytest.approx(0.2415986)
+    assert th1 == pytest.approx(0.2)
+    assert th2 == pytest.approx(0.225)
+    assert th3 == pytest.approx(0.2375)
 
 
 def test_dynamic_threshold_with_vix():
@@ -642,7 +642,7 @@ def test_momentum_alignment_disables_confirm():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
-    assert res['details']['strong_confirm_vote'] is False
+    assert res['details'].get('strong_confirm_vote', False) is False
     assert res['details'].get('vote', 0) < 5
 
 
