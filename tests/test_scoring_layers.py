@@ -1,0 +1,30 @@
+import pytest
+from collections import deque
+from robust_signal_generator import RobustSignalGenerator
+
+
+def make_simple_rsg():
+    rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    rsg.history_scores = deque(maxlen=10)
+    rsg.oi_change_history = deque(maxlen=10)
+    rsg.base_weights = {'ai':1,'trend':1,'momentum':1,'volatility':1,'volume':1,'sentiment':1,'funding':1}
+    rsg.current_weights = rsg.base_weights.copy()
+    rsg.vote_params = {'weight_ai':2.0,'strong_min':5,'conf_min':1.0}
+    rsg.min_weight_ratio = 0.2
+    rsg._prev_raw = {p: None for p in ("1h","4h","d1")}
+    return rsg
+
+
+def test_layer_scores_product():
+    rsg = make_simple_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f,u,d: 0.5
+    rsg.get_factor_scores = lambda f,p:{k:0 for k in rsg.base_weights if k!='ai'}
+    rsg.combine_score = lambda ai,fs,w=None: ai
+    rsg.dynamic_threshold = lambda *a,**k: 0
+    rsg.compute_tp_sl = lambda *a,**k:(0,0)
+    rsg.models={'1h':{'up':None,'down':None},'4h':{'up':None,'down':None},'d1':{'up':None,'down':None}}
+
+    feats={'close':100,'atr_pct_1h':0,'adx_1h':0,'funding_rate_1h':0}
+    res = rsg.generate_signal(feats, {'atr_pct_4h':0}, {}, symbol='BTC')
+    assert res['details']['logic_score'] * res['details']['env_score'] * res['details']['risk_score'] == pytest.approx(res['score'])

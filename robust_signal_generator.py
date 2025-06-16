@@ -15,13 +15,10 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 # 当订单簿动量与信号方向相反且超过该阈值时取消信号
 ORDER_BOOK_MOM_THRESHOLD = 0.02
 
-# AI 投票与仓位参数
-VOTE_W_AI       = 2.0      # AI 方向权重
+# AI 投票与仓位参数常量
 AI_DIR_EPS      = 0.02     # AI 方向阈值
 POS_K_RANGE     = 0.40     # 震荡市仓位乘数
 POS_K_TREND     = 0.60     # 趋势市仓位乘数
-VOTE_STRONG_MIN = 5        # strong_confirm 票数门槛
-VOTE_CONF_MIN   = 0.40     # 票数≤2 时衰减到 40%
 
 
 def softmax(x):
@@ -61,6 +58,12 @@ class RobustSignalGenerator:
         "funding_rate": (0.0005, 10000, 0.03),
     }
 
+    VOTE_PARAMS = {
+        "weight_ai": 2.0,
+        "strong_min": 5,
+        "conf_min": 0.40,
+    }
+
     def __init__(
         self,
         model_paths,
@@ -73,6 +76,7 @@ class RobustSignalGenerator:
         config_path=CONFIG_PATH,
         core_keys=None,
         delta_params=None,
+        min_weight_ratio=0.2,
     ):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
@@ -102,6 +106,13 @@ class RobustSignalGenerator:
         db_cfg = cfg.get("delta_boost", {})
         self.core_keys = core_keys or db_cfg.get("core_keys", self.DEFAULT_CORE_KEYS)
         self.delta_params = delta_params or db_cfg.get("params", self.DELTA_PARAMS)
+        vote_cfg = cfg.get("vote_system", {})
+        self.vote_params = {
+            "weight_ai": vote_cfg.get("weight_ai", self.VOTE_PARAMS["weight_ai"]),
+            "strong_min": vote_cfg.get("strong_min", self.VOTE_PARAMS["strong_min"]),
+            "conf_min": vote_cfg.get("conf_min", self.VOTE_PARAMS["conf_min"]),
+        }
+        self.min_weight_ratio = min_weight_ratio
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         _base_weights = {
@@ -191,6 +202,12 @@ class RobustSignalGenerator:
         if name == "delta_params":
             setattr(self, name, self.DELTA_PARAMS.copy())
             return getattr(self, name)
+        if name == "vote_params":
+            setattr(self, name, self.VOTE_PARAMS.copy())
+            return getattr(self, name)
+        if name == "min_weight_ratio":
+            setattr(self, name, 0.2)
+            return 0.2
         raise AttributeError(name)
 
 
@@ -201,7 +218,7 @@ class RobustSignalGenerator:
             th = float(np.quantile(np.abs(self.oi_change_history), quantile))
         if pred_vol is not None:
             th += min(0.1, abs(pred_vol) * 0.5)
-        return th
+        return max(th, 0.3)
 
     def detect_market_regime(self, adx1, adx4, adxd):
         """简易市场状态判别：根据平均ADX判断震荡或趋势"""
@@ -492,7 +509,7 @@ class RobustSignalGenerator:
                     w = base_w * max(0.0, 1 - abs(ic_val))
                 else:
                     w = base_w * (1 + ic_val)
-                raw[k] = max(0.0, w)
+                raw[k] = max(base_w * self.min_weight_ratio, w)
 
             total = sum(raw.values()) or 1.0
             self.current_weights = {k: v / total for k, v in raw.items()}
@@ -587,28 +604,30 @@ class RobustSignalGenerator:
             return int(cnt.most_common(1)[0][0])  # 返回方向
         return 0
 
-    def crowding_protection(self, scores, current_score):
+    def crowding_protection(self, scores, current_score, base_th=0.2):
         """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
-        if not scores:
+        if not scores or len(scores) < 30:
             return 1.0
 
-        arr = np.array(list(scores) + [current_score], dtype=float)
-        signs = [s for s in np.sign(arr[:-1]) if s != 0]
+        arr = np.array(scores, dtype=float)
+        mask = np.abs(arr) >= base_th * 0.8
+        arr = arr[mask]
+        signs = [s for s in np.sign(arr) if s != 0]
         total = len(signs)
         if total == 0:
             return 1.0
         pos_counts = Counter(signs)
         dominant_dir, cnt = pos_counts.most_common(1)[0]
+        if np.sign(current_score) != dominant_dir:
+            return 1.0
 
-        factor = 1.0
-        if total > 0 and cnt / total > self.max_same_direction_rate and np.sign(current_score) == dominant_dir:
-            factor = 0.5
+        ratio = cnt / total
+        rank_pct = pd.Series(np.abs(list(arr) + [current_score])).rank(pct=True).iloc[-1]
+        ratio_intensity = max(0.0, (ratio - self.max_same_direction_rate) / (1 - self.max_same_direction_rate))
+        rank_intensity = max(0.0, rank_pct - 0.8) / 0.2
+        intensity = min(1.0, max(ratio_intensity, rank_intensity))
 
-        ranks = pd.Series(np.abs(arr)).rank(pct=True).iloc[-1]
-        if ranks >= 0.9 and np.sign(current_score) == dominant_dir:
-            factor = min(factor, 0.7)
-
-        return factor
+        return 1.0 - 0.5 * intensity
 
     def apply_oi_overheat_protection(self, fused_score, oi_chg, th_oi):
         """根据 OI 变化率奖励或惩罚分数"""
@@ -618,7 +637,7 @@ class RobustSignalGenerator:
         if abs(oi_chg) < th_oi:
             fused_score *= 1 + 0.08 * oi_chg
         else:
-            logging.debug("OI overheat detected: %.4f", oi_chg)
+            logging.info("OI overheat detected: %.4f", oi_chg)
             fused_score *= 0.8
             oi_overheat = True
         return fused_score, oi_overheat
@@ -739,7 +758,7 @@ class RobustSignalGenerator:
             if sent < -0.5:
                 old = scores[p]
                 scores[p] *= 1.5
-                logging.debug(
+                logging.info(
                     "sentiment %.2f < -0.5 on %s -> score_%s %.3f -> %.3f",
                     sent, p, p, old, scores[p]
                 )
@@ -750,7 +769,7 @@ class RobustSignalGenerator:
             + w_d1 * fs['d1']['sentiment']
         )
         if sentiment_combined <= -0.25:
-            logging.debug(
+            logging.info(
                 "combined sentiment %.3f <= -0.25 -> cap positive scores",
                 sentiment_combined,
             )
@@ -768,7 +787,7 @@ class RobustSignalGenerator:
         ):
             old = scores['1h']
             scores['1h'] -= 0.15
-            logging.debug(
+            logging.info(
                 "volume guard 1h ratio=%.3f roc=%.3f -> %.3f",
                 vol_ratio_1h, vol_roc_1h, scores['1h']
             )
@@ -781,7 +800,7 @@ class RobustSignalGenerator:
             ):
                 old = scores['4h']
                 scores['4h'] -= 0.15
-                logging.debug(
+                logging.info(
                     "volume guard 4h ratio=%.3f roc=%.3f -> %.3f",
                     vol_ratio_4h, vol_roc_4h, scores['4h']
                 )
@@ -801,7 +820,7 @@ class RobustSignalGenerator:
                 if p == '1h':
                     pre = scores['1h']
                     scores['1h'] -= 0.1
-                    logging.debug(
+                    logging.info(
                         "funding bias opposes supertrend on 1h %.3f -> %.3f",
                         pre, scores['1h']
 
@@ -809,14 +828,14 @@ class RobustSignalGenerator:
                 elif p == '4h':
                     pre = scores['4h']
                     scores['4h'] -= 0.1
-                    logging.debug(
+                    logging.info(
                         "funding bias opposes supertrend on 4h %.3f -> %.3f",
                         pre, scores['4h']
                     )
                 else:
                     pre = scores['d1']
                     scores['d1'] -= 0.1
-                    logging.debug(
+                    logging.info(
                         "funding bias opposes supertrend on d1 %.3f -> %.3f",
                         pre, scores['d1']
                     )
@@ -830,7 +849,7 @@ class RobustSignalGenerator:
             and rsi_diff < -8
         ):
             if strong_confirm:
-                logging.debug(
+                logging.info(
                     "momentum misalign macd_diff=%.3f rsi_diff=%.3f -> strong_confirm=False",
                     macd_diff,
                     rsi_diff,
@@ -865,6 +884,10 @@ class RobustSignalGenerator:
                 fused_score *= 1.1
             else:
                 fused_score *= 0.7
+
+        logic_score = fused_score
+        env_score = 1.0
+        risk_score = 1.0
 
         # 根据外部指标微调 fused_score
         if global_metrics is not None:
@@ -931,6 +954,7 @@ class RobustSignalGenerator:
                     corr = 1.0
 
                 fused_score *= 1 + 0.05 * hot * corr
+        env_score = fused_score / logic_score if logic_score != 0 else 1.0
         oi_overheat = False
         th_oi = None
         if open_interest is not None:
@@ -1000,7 +1024,7 @@ class RobustSignalGenerator:
             oi_crowd = float(np.clip((th_oi - 0.5) * 2, 0, 1))
             if oi_crowd > 0:
                 mult = 1 - oi_crowd * 0.5
-                logging.debug(
+                logging.info(
                     "oi threshold %.3f crowding factor %.3f -> score *= %.3f",
                     th_oi,
                     oi_crowd,
@@ -1008,6 +1032,7 @@ class RobustSignalGenerator:
                 )
                 fused_score *= mult
                 crowding_factor *= mult
+        risk_score = fused_score / (logic_score * env_score) if logic_score * env_score != 0 else 1.0
 
         confidence = conf
         # 所有放大系数后写入历史
@@ -1031,6 +1056,9 @@ class RobustSignalGenerator:
             'short_momentum': short_mom,
             'ob_imbalance': ob_imb,
             'ma_cross': ma_dir,
+            'logic_score': logic_score,
+            'env_score': env_score,
+            'risk_score': risk_score,
         })
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
@@ -1079,7 +1107,7 @@ class RobustSignalGenerator:
         if regime == "range" and consensus_all == 0:
             dyn_base += 0.05
         if base_th < dyn_base:
-            logging.debug(
+            logging.info(
                 "base threshold %.3f adjusted to %.3f due to vol/sentiment",
                 base_th,
                 dyn_base,
@@ -1089,7 +1117,7 @@ class RobustSignalGenerator:
         details['base_threshold'] = base_th
 
         if regime == "range" and consensus_dir == 0:
-            logging.debug("Range regime without consensus -> no trade")
+            logging.info("Range regime without consensus -> no trade")
             self._last_signal = 0
             self._last_score = fused_score
             self._prev_raw["1h"] = raw_f1h
@@ -1127,14 +1155,14 @@ class RobustSignalGenerator:
         ai_dir = 1 if ai_scores['1h'] > AI_DIR_EPS else \
                  -1 if ai_scores['1h'] < -AI_DIR_EPS else 0
 
-        vote = 4 * ob_dir + 2 * short_mom_dir + VOTE_W_AI * ai_dir + vol_breakout_dir
-        strong_confirm = abs(vote) >= VOTE_STRONG_MIN
+        vote = 4 * ob_dir + 2 * short_mom_dir + self.vote_params['weight_ai'] * ai_dir + vol_breakout_dir
+        strong_confirm = abs(vote) >= self.vote_params['strong_min']
         details['vote'] = vote
         details['strong_confirm'] = strong_confirm
         details['ob_th'] = ob_th
 
         # ====== 票数置信度衰减 ======
-        conf_vote = min(1.0, max(VOTE_CONF_MIN, abs(vote) / VOTE_STRONG_MIN))
+        conf_vote = min(1.0, max(self.vote_params['conf_min'], abs(vote) / self.vote_params['strong_min']))
         fused_score *= conf_vote
         details["confidence_vote"] = conf_vote
         fused_score = float(np.clip(fused_score, -1, 1))
@@ -1147,7 +1175,7 @@ class RobustSignalGenerator:
             last_score = getattr(self, '_last_score', 0.0)
             flip_th = base_th + max(0.05, 0.5 * abs(last_score))
             if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
-                logging.debug("Flip prevented: last=%s current=%.3f", self._last_signal, fused_score)
+                logging.info("Flip prevented: last=%s current=%.3f", self._last_signal, fused_score)
                 direction = self._last_signal
 
         # 阶梯退出逻辑
@@ -1194,7 +1222,7 @@ class RobustSignalGenerator:
         if ob_imb is not None:
             details['order_book_imbalance'] = float(ob_imb)
             if abs(direction) == 1 and abs(ob_imb) > 0.1 and np.sign(ob_imb) != np.sign(direction):
-                logging.debug("Order book imbalance opposes score: %.4f", ob_imb)
+                logging.info("Order book imbalance opposes score: %.4f", ob_imb)
                 self._last_score = fused_score
                 self._last_signal = 0
                 self._prev_raw["1h"] = raw_f1h
@@ -1247,7 +1275,7 @@ class RobustSignalGenerator:
             and abs(ob_imb) > ORDER_BOOK_MOM_THRESHOLD
             and np.sign(ob_imb) != np.sign(direction)
         ):
-            logging.debug(
+            logging.info(
                 "Direction canceled by order book imbalance %.4f", ob_imb
             )
             direction = 0
@@ -1275,6 +1303,7 @@ class RobustSignalGenerator:
         self._prev_raw["1h"] = raw_f1h
         self._prev_raw["4h"] = raw_f4h
         self._prev_raw["d1"] = raw_fd1
+        logging.info("fused_score=%.4f base_th=%.4f vote=%d", fused_score, base_th, vote)
         return {
             'signal': direction,
             'score': fused_score,
