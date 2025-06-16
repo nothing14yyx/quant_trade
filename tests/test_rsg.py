@@ -33,6 +33,15 @@ def make_rsg():
     rsg._last_score = 0.0
     rsg._lock = threading.RLock()
     rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+    rsg.sentiment_alpha = 0.5
+    rsg.volume_guard_params = {
+        'weak': 0.7,
+        'over': 0.9,
+        'ratio_low': 0.8,
+        'ratio_high': 2.0,
+        'roc_low': -20,
+        'roc_high': 100,
+    }
     return rsg
 
 
@@ -81,7 +90,14 @@ def test_range_filter_keeps_strong_signal():
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None}, '4h': {'up': None, 'down': None}, 'd1': {'up': None, 'down': None}}
 
-    feats_1h = {'close': 100, 'atr_pct_1h': 0.05, 'adx_1h': 0, 'funding_rate_1h': 0, 'vol_ma_ratio_1h': 0.2}
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0.05,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'vol_ma_ratio_1h': 0.2,
+        'vol_roc_1h': -30,
+    }
     feats_4h = {'atr_pct_4h': 0.05}
     feats_d1 = {}
 
