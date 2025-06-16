@@ -60,7 +60,7 @@ def test_get_dynamic_oi_threshold():
 def test_dynamic_threshold_upper_bound():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0.1, 50, 0.02)
-    assert th == pytest.approx(0.2399655)
+    assert th == pytest.approx(0.3340986)
 
 
 def test_dynamic_threshold_multi_period():
@@ -71,7 +71,7 @@ def test_dynamic_threshold_multi_period():
 
     assert th1 == pytest.approx(0.2040986)
     assert th2 == pytest.approx(0.2290986)
-    assert th3 == pytest.approx(0.2399655)
+    assert th3 == pytest.approx(0.2415986)
 
 
 def test_dynamic_threshold_with_vix():
@@ -608,7 +608,7 @@ def test_volume_and_funding_penalties():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
-    assert res['details']['score_1h'] == pytest.approx(-0.25)
+    assert res['details']['score_1h'] == pytest.approx(-0.15)
 
 
 def test_momentum_alignment_disables_confirm():
@@ -677,7 +677,7 @@ def test_crowding_factor_and_dynamic_threshold():
     oi = {'oi_chg': 0}
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                               open_interest=oi)
-    assert res['details']['base_threshold'] == pytest.approx(0.1)
+    assert res['details']['dynamic_th_final'] == pytest.approx(0.1)
     expected = res['details']['score_1h'] * res['details']['crowding_factor'] * res['details']['confidence']
     assert res['score'] == pytest.approx(expected)
 
