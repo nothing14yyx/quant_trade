@@ -6,7 +6,10 @@ from pathlib import Path
 import yaml
 import threading
 import logging
+import time
 from config import DYNAMIC_OB_FACTOR, MIN_OB_TH, EXIT_LAG_BARS
+
+logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -167,6 +170,9 @@ class RobustSignalGenerator:
         # 缓存上一周期的原始特征，便于计算指标变化量
         self._prev_raw = {p: None for p in ("1h", "4h", "d1")}
 
+        # 定时更新因子权重
+        self.start_weight_update_thread()
+
     def __getattr__(self, name):
         if name in {"eth_dom_history", "btc_dom_history", "oi_change_history", "history_scores"}:
             val = deque(maxlen=3000)
@@ -216,6 +222,10 @@ class RobustSignalGenerator:
 
     def get_dynamic_oi_threshold(self, pred_vol=None, base=0.5, quantile=0.9):
         """根据历史 OI 变化率及预测波动率自适应阈值"""
+        if self.oi_change_history:
+            base = np.quantile(np.abs(self.oi_change_history), 0.8)
+        else:
+            base = 0.2
         th = base
         if len(self.oi_change_history) > 30:
             th = float(np.quantile(np.abs(self.oi_change_history), quantile))
@@ -282,10 +292,7 @@ class RobustSignalGenerator:
                 continue
             base = k.split("_", 2)[0]
             _, _, inc = self.delta_params.get(base, (0, 1, 0))
-            if val * score > 0:
-                boost += inc
-            else:
-                boost -= inc
+            boost += np.clip(inc * np.sign(val), -0.03, 0.03)
         return score * (1 + boost)
 
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> int:
@@ -297,11 +304,9 @@ class RobustSignalGenerator:
         if sma5 is None or sma20 is None or ratio is None:
             return 0
 
-        slope = (
-            (sma20 - sma_20_1h_prev) / sma_20_1h_prev
-            if sma_20_1h_prev
-            else 0.0
-        )
+        slope = 0.0
+        if sma_20_1h_prev not in (None, 0):
+            slope = (sma20 - sma_20_1h_prev) / sma_20_1h_prev
 
         if ratio > 1.02 and slope > 0:
             return 1
@@ -518,6 +523,19 @@ class RobustSignalGenerator:
             self.current_weights = {k: v / total for k, v in raw.items()}
             return self.current_weights
 
+    def _weight_update_loop(self, interval):
+        while True:
+            try:
+                self.dynamic_weight_update()
+            except Exception as e:
+                logger.warning("weight update failed: %s", e)
+            time.sleep(interval)
+
+    def start_weight_update_thread(self, interval=300):
+        t = threading.Thread(target=self._weight_update_loop, args=(interval,), daemon=True)
+        t.start()
+        self._weight_thread = t
+
     def dynamic_threshold(
         self,
         atr,
@@ -576,6 +594,9 @@ class RobustSignalGenerator:
             thres += 0.02
         elif regime == "range":
             thres -= 0.02
+
+        low_base = 0.13
+        thres = max(thres, low_base)
 
         return max(min_thres, min(max_thres, thres))
 
@@ -689,6 +710,7 @@ class RobustSignalGenerator:
         raw_fd1 = raw_features_d1 or features_d1
 
         details = {}
+        strong_confirm_vote = False
 
         deltas = {
             "1h": self._calc_deltas(
@@ -721,8 +743,8 @@ class RobustSignalGenerator:
             'd1': self.get_factor_scores(raw_features_d1 or features_d1, 'd1')
         }
 
-        # ===== 3. 动态权重更新 =====
-        weights = self.dynamic_weight_update()
+        # ===== 3. 使用当前因子权重 =====
+        weights = self.current_weights
 
         # ===== 4. 合并 AI 与多因子分数，得到各周期总分 =====
         score_1h = self.combine_score(ai_scores['1h'], fs['1h'], weights)
@@ -735,7 +757,7 @@ class RobustSignalGenerator:
         score_d1 = self._apply_delta_boost(score_d1, deltas["d1"])
 
         # ===== 5. 判断 4h 强确认条件 =====
-        strong_confirm = (
+        strong_confirm_4h = (
             (fs['4h']['trend'] > 0 and fs['4h']['momentum'] > 0 and fs['4h']['volatility'] > 0 and score_4h > 0) or
             (fs['4h']['trend'] < 0 and fs['4h']['momentum'] < 0 and fs['4h']['volatility'] < 0 and score_4h < 0)
         )
@@ -856,26 +878,26 @@ class RobustSignalGenerator:
             and macd_diff < 0
             and rsi_diff < -8
         ):
-            if strong_confirm:
+            if strong_confirm_4h:
                 logging.info(
                     "momentum misalign macd_diff=%.3f rsi_diff=%.3f -> strong_confirm=False",
                     macd_diff,
                     rsi_diff,
                 )
-            strong_confirm = False
+            strong_confirm_4h = False
 
         score_1h, score_4h, score_d1 = scores['1h'], scores['4h'], scores['d1']
 
         if consensus_all:
             fused_score = w1 * score_1h + w4 * score_4h + w_d1 * score_d1
             conf = 1.0
-            if strong_confirm:
+            if strong_confirm_4h:
                 fused_score *= 1.15
         elif consensus_14:
             total = w1 + w4
             fused_score = (w1 / total) * score_1h + (w4 / total) * score_4h
             conf = 0.8
-            if strong_confirm:
+            if strong_confirm_4h:
                 fused_score *= 1.10
         else:
             fused_score = score_1h
@@ -892,6 +914,14 @@ class RobustSignalGenerator:
                 fused_score *= 1.1
             else:
                 fused_score *= 0.7
+
+        ratio = (raw_features_1h or features_1h).get('ma_ratio_5_20')
+        sma20 = (raw_features_1h or features_1h).get('sma_20_1h')
+        slope = 0.0
+        if prev_ma20 not in (None, 0):
+            slope = (sma20 - prev_ma20) / prev_ma20
+        if ratio is not None and ((ratio > 1.02 and slope < 0) or (ratio < 0.98 and slope > 0)):
+            fused_score -= 0.3
 
         logic_score = fused_score
         env_score = 1.0
@@ -1014,19 +1044,35 @@ class RobustSignalGenerator:
                     'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
                     'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
                     'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
-                    'strong_confirm': strong_confirm,
+                    'strong_confirm_4h': strong_confirm_4h,
+                    'strong_confirm_vote': strong_confirm_vote,
+                    'strong_confirm': strong_confirm_vote,
                     'consensus_14': consensus_14, 'consensus_all': consensus_all,
                     'vol_pred_1h': vol_preds.get('1h'),
                     'vol_pred_4h': vol_preds.get('4h'),
                     'vol_pred_d1': vol_preds.get('d1'),
+                    'funding_conflicts': 0,
                     'note': 'fused_score was NaN'
                 }
             }
 
-        # ===== 8. 极端行情保护 =====
+        # ===== 8. 资金费率惩罚 =====
+        funding_conflicts = 0
+        for p, raw_f in [('1h', raw_f1h), ('4h', raw_f4h), ('d1', raw_fd1)]:
+            if raw_f is None:
+                continue
+            f_rate = raw_f.get(f'funding_rate_{p}', 0)
+            if abs(f_rate) > 0.0005 and np.sign(f_rate) * np.sign(fused_score) < 0:
+                penalty = min(abs(f_rate) * 20, 0.20)
+                fused_score *= 1 - penalty
+                funding_conflicts += 1
+        if funding_conflicts >= 2:
+            fused_score *= 0.85 ** funding_conflicts
+
+        # ===== 9. 极端行情保护 =====
         crowding_factor = 1.0
         if all_scores_list is not None:
-            crowding_factor = self.crowding_protection(all_scores_list, fused_score)
+            crowding_factor = self.crowding_protection(all_scores_list, fused_score, base_th)
             fused_score *= crowding_factor
         if th_oi is not None:
             oi_crowd = float(np.clip((th_oi - 0.5) * 2, 0, 1))
@@ -1053,7 +1099,9 @@ class RobustSignalGenerator:
             'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
             'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
             'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
-            'strong_confirm': strong_confirm,
+            'strong_confirm_4h': strong_confirm_4h,
+            'strong_confirm_vote': strong_confirm_vote,
+            'strong_confirm': strong_confirm_vote,
             'consensus_14': consensus_14, 'consensus_all': consensus_all,
             'vol_pred_1h': vol_preds.get('1h'),
             'vol_pred_4h': vol_preds.get('4h'),
@@ -1061,6 +1109,7 @@ class RobustSignalGenerator:
             'oi_overheat': oi_overheat,
             'oi_threshold': th_oi,
             'crowding_factor': crowding_factor,
+            'funding_conflicts': funding_conflicts,
             'confidence': confidence,
             'short_momentum': short_mom,
             'ob_imbalance': ob_imb,
@@ -1107,22 +1156,6 @@ class RobustSignalGenerator:
         )
 
         base_th = th
-        dyn_base = 0.25
-        v_ratio = raw_f1h.get('vol_ma_ratio_1h')
-        if v_ratio is not None and v_ratio < 0.8:
-            dyn_base += 0.1
-        if fs['1h']['sentiment'] < -0.5:
-            dyn_base += 0.1
-        if regime == "range" and consensus_all == 0:
-            dyn_base += 0.05
-        if base_th < dyn_base:
-            logging.info(
-                "base threshold %.3f adjusted to %.3f for %s due to vol/sentiment",
-                base_th,
-                dyn_base,
-                coin,
-            )
-            base_th = dyn_base
         details['regime'] = regime
         details['base_threshold'] = base_th
 
@@ -1166,9 +1199,9 @@ class RobustSignalGenerator:
                  -1 if ai_scores['1h'] < -AI_DIR_EPS else 0
 
         vote = 4 * ob_dir + 2 * short_mom_dir + self.vote_params['weight_ai'] * ai_dir + vol_breakout_dir
-        strong_confirm = abs(vote) >= self.vote_params['strong_min']
+        strong_confirm_vote = abs(vote) >= self.vote_params['strong_min']
         details['vote'] = vote
-        details['strong_confirm'] = strong_confirm
+        details['strong_confirm_vote'] = strong_confirm_vote
         details['ob_th'] = ob_th
 
         # ====== 票数置信度衰减 ======
@@ -1262,7 +1295,7 @@ class RobustSignalGenerator:
         confidence_factor = 1.0
         if consensus_all:
             confidence_factor += 0.1
-        if strong_confirm:
+        if strong_confirm_vote:
             confidence_factor += 0.05
         pos_size = tier * confidence_factor
 
@@ -1324,12 +1357,12 @@ class RobustSignalGenerator:
         self._prev_raw["1h"] = raw_f1h
         self._prev_raw["4h"] = raw_f4h
         self._prev_raw["d1"] = raw_fd1
-        logging.info(
-            "fused_score=%.4f base_th=%.4f vote=%d for %s",
-            fused_score,
+        logger.info(
+            "[%s] base_th=%.3f, funding_conflicts=%d, fused=%.4f",
+            symbol,
             base_th,
-            vote,
-            coin,
+            funding_conflicts,
+            fused_score,
         )
         return {
             'signal': direction,
