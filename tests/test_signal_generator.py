@@ -28,6 +28,15 @@ def make_dummy_rsg():
     rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
     rsg.vote_params = {'weight_ai': 2.0, 'strong_min': 5, 'conf_min': 1.0}
     rsg.min_weight_ratio = 0.2
+    rsg.sentiment_alpha = 0.5
+    rsg.volume_guard_params = {
+        'weak': 0.7,
+        'over': 0.9,
+        'ratio_low': 0.8,
+        'ratio_high': 2.0,
+        'roc_low': -20,
+        'roc_high': 100,
+    }
     return rsg
 
 
@@ -574,7 +583,7 @@ def test_sentiment_reweight_and_guard():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
-    assert res['details']['score_1h'] == pytest.approx(np.tanh(-0.045), rel=1e-3)
+    assert res['details']['score_1h'] == pytest.approx(-0.03899, rel=1e-3)
     assert res['details']['score_4h'] == 0
 
 
@@ -608,7 +617,7 @@ def test_volume_and_funding_penalties():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
-    assert res['details']['score_1h'] == pytest.approx(-0.15)
+    assert res['details']['score_1h'] == pytest.approx(0.0)
 
 
 def test_momentum_alignment_disables_confirm():

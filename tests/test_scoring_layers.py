@@ -12,6 +12,15 @@ def make_simple_rsg():
     rsg.vote_params = {'weight_ai':2.0,'strong_min':5,'conf_min':1.0}
     rsg.min_weight_ratio = 0.2
     rsg._prev_raw = {p: None for p in ("1h","4h","d1")}
+    rsg.sentiment_alpha = 0.5
+    rsg.volume_guard_params = {
+        'weak': 0.7,
+        'over': 0.9,
+        'ratio_low': 0.8,
+        'ratio_high': 2.0,
+        'roc_low': -20,
+        'roc_high': 100,
+    }
     return rsg
 
 

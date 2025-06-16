@@ -21,6 +21,15 @@ def make_rsg():
     r.ic_scores = {k: 1 for k in r.base_weights}
     r.current_weights = r.base_weights.copy()
     r._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+    r.sentiment_alpha = 0.5
+    r.volume_guard_params = {
+        'weak': 0.7,
+        'over': 0.9,
+        'ratio_low': 0.8,
+        'ratio_high': 2.0,
+        'roc_low': -20,
+        'roc_high': 100,
+    }
     return r
 
 
