@@ -135,3 +135,8 @@ delta_boost:
     vol_ma_ratio: [0.2, 1.0, 0.03]
     funding_rate: [0.0005, 10000, 0.03]
 
+
+vote_system:
+  weight_ai: 2.0
+  strong_min: 5
+  conf_min: 0.40
