@@ -67,7 +67,7 @@ class RobustSignalGenerator:
         feature_cols_1h,
         feature_cols_4h,
         feature_cols_d1,
-        history_window=3000,
+        history_window=660,
         symbol_categories=None,
         config_path=CONFIG_PATH,
         core_keys=None,
@@ -104,9 +104,9 @@ class RobustSignalGenerator:
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         _base_weights = {
-            'ai': 0.15,
-            'trend': 0.2,
-            'momentum': 0.2,
+            'ai': 0.10374469306511298,
+            'trend': 0.29541645926817756,
+            'momentum': 0.2889591044255588,
             'volatility': 0.2,
             'volume': 0.1,
             'sentiment': 0.05,
@@ -510,9 +510,9 @@ class RobustSignalGenerator:
         pred_vol_4h=None,
         pred_vol_d1=None,
         vix_proxy=None,
-        base=0.10,
-        min_thres=0.06,
-        max_thres=0.25,
+        base=0.12409861615448753,
+        min_thres=0.05799926536625754,
+        max_thres=0.23996549950299914,
         regime=None,
     ):
         """根据历史 ATR、ADX、预测波动率及恐慌指数动态计算阈值"""
