@@ -140,3 +140,13 @@ vote_system:
   weight_ai: 2.0
   strong_min: 5
   conf_min: 0.40
+
+# === 调参选项 ===
+sentiment_alpha: 0.5
+volume_guard:
+  weak: 0.7
+  over: 0.9
+  ratio_low: 0.8
+  ratio_high: 2.0
+  roc_low: -20
+  roc_high: 100
