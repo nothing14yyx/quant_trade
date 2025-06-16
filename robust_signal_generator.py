@@ -15,6 +15,13 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 # 当订单簿动量与信号方向相反且超过该阈值时取消信号
 ORDER_BOOK_MOM_THRESHOLD = 0.02
 
+# AI 投票与仓位参数
+VOTE_W_AI       = 2.0      # AI 方向权重
+AI_DIR_EPS      = 0.02     # AI 方向阈值
+POS_K_RANGE     = 0.40     # 震荡市仓位乘数
+POS_K_TREND     = 0.60     # 趋势市仓位乘数
+VOTE_STRONG_MIN = 5        # strong_confirm 票数门槛
+
 
 def softmax(x):
     """简单 softmax 实现"""
@@ -1116,11 +1123,15 @@ class RobustSignalGenerator:
         short_mom_dir = int(np.sign(short_mom)) if short_mom != 0 else 0
         vol_breakout_val = raw_f1h.get('vol_breakout_1h')
         vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
-        vote = 4 * ob_dir + 2 * short_mom_dir + vol_breakout_dir
-        strong_confirm = vote > 4
+
+        ai_dir = 1 if ai_scores['1h'] > AI_DIR_EPS else \
+                 -1 if ai_scores['1h'] < -AI_DIR_EPS else 0
+
+        vote = 4 * ob_dir + 2 * short_mom_dir + VOTE_W_AI * ai_dir + vol_breakout_dir
+        strong_confirm = vote >= VOTE_STRONG_MIN
         details['vote'] = vote
-        details['ob_th'] = ob_th
         details['strong_confirm'] = strong_confirm
+        details['ob_th'] = ob_th
 
         direction = 0
         if abs(fused_score) >= base_th:
@@ -1193,7 +1204,9 @@ class RobustSignalGenerator:
                 }
 
         # ===== 12. 仓位大小按连续得分映射 =====
-        coeff = 0.6 if consensus_all == 0 else 0.9
+        coeff = POS_K_RANGE if regime == "range" else POS_K_TREND
+        if consensus_all:
+            coeff += 0.3            # 多周期共振再抬高
         pos_size = 0.1 + coeff * abs(fused_score)
 
         vol_ratio = raw_f1h.get('vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h'))
