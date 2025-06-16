@@ -30,6 +30,37 @@ def softmax(x):
     ex = np.exp(arr - np.nanmax(arr))
     return ex / ex.sum()
 
+
+def adjust_score(score: float, sentiment: float, alpha: float = 0.5) -> float:
+    """根据情绪值调整分数"""
+    if abs(sentiment) <= 0.5:
+        return score
+    scale = 1 + alpha * np.sign(score) * sentiment
+    scale = float(np.clip(scale, 0.6, 1.5))
+    return score * scale
+
+
+def volume_guard(
+    score: float,
+    ratio: float | None,
+    roc: float | None,
+    *,
+    weak: float = 0.7,
+    over: float = 0.9,
+    ratio_low: float = 0.8,
+    ratio_high: float = 2.0,
+    roc_low: float = -20,
+    roc_high: float = 100,
+) -> float:
+    """量能不足或异常时压缩得分"""
+    if ratio is None or roc is None:
+        return score
+    if ratio < ratio_low or roc < roc_low:
+        return score * weak
+    if ratio > ratio_high or roc > roc_high:
+        return score * over
+    return score
+
 class RobustSignalGenerator:
     """多周期 AI + 多因子 融合信号生成器。
 
@@ -114,6 +145,17 @@ class RobustSignalGenerator:
             "weight_ai": vote_cfg.get("weight_ai", self.VOTE_PARAMS["weight_ai"]),
             "strong_min": vote_cfg.get("strong_min", self.VOTE_PARAMS["strong_min"]),
             "conf_min": vote_cfg.get("conf_min", self.VOTE_PARAMS["conf_min"]),
+        }
+
+        self.sentiment_alpha = cfg.get("sentiment_alpha", 0.5)
+        vg_cfg = cfg.get("volume_guard", {})
+        self.volume_guard_params = {
+            "weak": vg_cfg.get("weak", 0.7),
+            "over": vg_cfg.get("over", 0.9),
+            "ratio_low": vg_cfg.get("ratio_low", 0.8),
+            "ratio_high": vg_cfg.get("ratio_high", 2.0),
+            "roc_low": vg_cfg.get("roc_low", -20),
+            "roc_high": vg_cfg.get("roc_high", 100),
         }
         self.min_weight_ratio = min_weight_ratio
 
@@ -778,12 +820,16 @@ class RobustSignalGenerator:
         coin = str(symbol).upper() if symbol else ""
         for p in scores:
             sent = fs[p]['sentiment']
-            if sent < -0.5:
-                old = scores[p]
-                scores[p] *= 1.5
+            old = scores[p]
+            scores[p] = adjust_score(old, sent, self.sentiment_alpha)
+            if old != scores[p]:
                 logging.info(
-                    "sentiment %.2f < -0.5 on %s for %s -> score_%s %.3f -> %.3f",
-                    sent, p, coin, p, old, scores[p]
+                    "sentiment %.2f extreme on %s -> score %.3f * %.2f = %.3f",
+                    sent,
+                    p,
+                    old,
+                    scores[p] / old if old else 1.0,
+                    scores[p],
                 )
 
         sentiment_combined = (
@@ -806,35 +852,43 @@ class RobustSignalGenerator:
         raw4h = raw_features_4h or features_4h
         vol_ratio_1h = raw1h.get('vol_ma_ratio_1h')
         vol_roc_1h = raw1h.get('vol_roc_1h')
-        if (vol_ratio_1h is not None and vol_ratio_1h < 0.8) or (
-            vol_roc_1h is not None and vol_roc_1h < -20
-        ):
-            old = scores['1h']
-            scores['1h'] -= 0.15
+        old = scores['1h']
+        scores['1h'] = volume_guard(
+            old,
+            vol_ratio_1h,
+            vol_roc_1h,
+            **self.volume_guard_params,
+        )
+        if old != scores['1h']:
             logging.info(
                 "volume guard %s 1h ratio=%.3f roc=%.3f -> %.3f",
-                coin, vol_ratio_1h, vol_roc_1h, scores['1h']
+                coin,
+                vol_ratio_1h,
+                vol_roc_1h,
+                scores['1h'],
             )
 
         if raw4h is not None:
             vol_ratio_4h = raw4h.get('vol_ma_ratio_4h')
             vol_roc_4h = raw4h.get('vol_roc_4h')
-            if (vol_ratio_4h is not None and vol_ratio_4h < 0.8) or (
-                vol_roc_4h is not None and vol_roc_4h < -10
-            ):
-                old = scores['4h']
-                scores['4h'] -= 0.15
+            old_4h = scores['4h']
+            scores['4h'] = volume_guard(
+                old_4h,
+                vol_ratio_4h,
+                vol_roc_4h,
+                **self.volume_guard_params,
+            )
+            if old_4h != scores['4h']:
                 logging.info(
                     "volume guard %s 4h ratio=%.3f roc=%.3f -> %.3f",
-                    coin, vol_ratio_4h, vol_roc_4h, scores['4h']
+                    coin,
+                    vol_ratio_4h,
+                    vol_roc_4h,
+                    scores['4h'],
                 )
         else:
             vol_roc_4h = None
 
-        if vol_roc_1h is not None and vol_roc_1h > 100:
-            scores["1h"] -= 0.10
-        if vol_roc_4h is not None and vol_roc_4h > 50:
-            scores["4h"] -= 0.10
 
 
         macd_diff = raw1h.get('macd_hist_diff_1h_4h')
