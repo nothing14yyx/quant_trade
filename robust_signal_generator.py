@@ -756,14 +756,15 @@ class RobustSignalGenerator:
 
         # ---- 额外逻辑：情绪与交易量等修正 ----
         scores = {'1h': score_1h, '4h': score_4h, 'd1': score_d1}
+        coin = str(symbol).upper() if symbol else ""
         for p in scores:
             sent = fs[p]['sentiment']
             if sent < -0.5:
                 old = scores[p]
                 scores[p] *= 1.5
                 logging.info(
-                    "sentiment %.2f < -0.5 on %s -> score_%s %.3f -> %.3f",
-                    sent, p, p, old, scores[p]
+                    "sentiment %.2f < -0.5 on %s for %s -> score_%s %.3f -> %.3f",
+                    sent, p, coin, p, old, scores[p]
                 )
 
         sentiment_combined = (
@@ -773,8 +774,9 @@ class RobustSignalGenerator:
         )
         if sentiment_combined <= -0.25:
             logging.info(
-                "combined sentiment %.3f <= -0.25 -> cap positive scores",
+                "combined sentiment %.3f <= -0.25 for %s -> cap positive scores",
                 sentiment_combined,
+                coin,
             )
             for p in scores:
                 if scores[p] > 0:
@@ -791,8 +793,8 @@ class RobustSignalGenerator:
             old = scores['1h']
             scores['1h'] -= 0.15
             logging.info(
-                "volume guard 1h ratio=%.3f roc=%.3f -> %.3f",
-                vol_ratio_1h, vol_roc_1h, scores['1h']
+                "volume guard %s 1h ratio=%.3f roc=%.3f -> %.3f",
+                coin, vol_ratio_1h, vol_roc_1h, scores['1h']
             )
 
         if raw4h is not None:
@@ -804,8 +806,8 @@ class RobustSignalGenerator:
                 old = scores['4h']
                 scores['4h'] -= 0.15
                 logging.info(
-                    "volume guard 4h ratio=%.3f roc=%.3f -> %.3f",
-                    vol_ratio_4h, vol_roc_4h, scores['4h']
+                    "volume guard %s 4h ratio=%.3f roc=%.3f -> %.3f",
+                    coin, vol_ratio_4h, vol_roc_4h, scores['4h']
                 )
         else:
             vol_roc_4h = None
@@ -824,7 +826,8 @@ class RobustSignalGenerator:
                     pre = scores['1h']
                     scores['1h'] -= 0.1
                     logging.info(
-                        "funding bias opposes supertrend on 1h %.3f -> %.3f",
+                        "funding bias opposes supertrend on %s 1h %.3f -> %.3f",
+                        coin,
                         pre, scores['1h']
 
                     )
@@ -832,14 +835,16 @@ class RobustSignalGenerator:
                     pre = scores['4h']
                     scores['4h'] -= 0.1
                     logging.info(
-                        "funding bias opposes supertrend on 4h %.3f -> %.3f",
+                        "funding bias opposes supertrend on %s 4h %.3f -> %.3f",
+                        coin,
                         pre, scores['4h']
                     )
                 else:
                     pre = scores['d1']
                     scores['d1'] -= 0.1
                     logging.info(
-                        "funding bias opposes supertrend on d1 %.3f -> %.3f",
+                        "funding bias opposes supertrend on %s d1 %.3f -> %.3f",
+                        coin,
                         pre, scores['d1']
                     )
 
@@ -1028,9 +1033,10 @@ class RobustSignalGenerator:
             if oi_crowd > 0:
                 mult = 1 - oi_crowd * 0.5
                 logging.info(
-                    "oi threshold %.3f crowding factor %.3f -> score *= %.3f",
+                    "oi threshold %.3f crowding factor %.3f for %s -> score *= %.3f",
                     th_oi,
                     oi_crowd,
+                    coin,
                     mult,
                 )
                 fused_score *= mult
@@ -1111,9 +1117,10 @@ class RobustSignalGenerator:
             dyn_base += 0.05
         if base_th < dyn_base:
             logging.info(
-                "base threshold %.3f adjusted to %.3f due to vol/sentiment",
+                "base threshold %.3f adjusted to %.3f for %s due to vol/sentiment",
                 base_th,
                 dyn_base,
+                coin,
             )
             base_th = dyn_base
         details['regime'] = regime
@@ -1178,7 +1185,12 @@ class RobustSignalGenerator:
             last_score = getattr(self, '_last_score', 0.0)
             flip_th = base_th + max(0.05, 0.5 * abs(last_score))
             if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
-                logging.info("Flip prevented: last=%s current=%.3f", self._last_signal, fused_score)
+                logging.info(
+                    "Flip prevented for %s: last=%s current=%.3f",
+                    coin,
+                    self._last_signal,
+                    fused_score,
+                )
                 direction = self._last_signal
 
         # 阶梯退出逻辑
@@ -1225,7 +1237,11 @@ class RobustSignalGenerator:
         if ob_imb is not None:
             details['order_book_imbalance'] = float(ob_imb)
             if abs(direction) == 1 and abs(ob_imb) > 0.1 and np.sign(ob_imb) != np.sign(direction):
-                logging.info("Order book imbalance opposes score: %.4f", ob_imb)
+                logging.info(
+                    "Order book imbalance opposes score for %s: %.4f",
+                    coin,
+                    ob_imb,
+                )
                 self._last_score = fused_score
                 self._last_signal = 0
                 self._prev_raw["1h"] = raw_f1h
@@ -1279,7 +1295,9 @@ class RobustSignalGenerator:
             and np.sign(ob_imb) != np.sign(direction)
         ):
             logging.info(
-                "Direction canceled by order book imbalance %.4f", ob_imb
+                "Direction canceled by order book imbalance %.4f for %s",
+                ob_imb,
+                coin,
             )
             direction = 0
             pos_size = 0.0
@@ -1306,7 +1324,13 @@ class RobustSignalGenerator:
         self._prev_raw["1h"] = raw_f1h
         self._prev_raw["4h"] = raw_f4h
         self._prev_raw["d1"] = raw_fd1
-        logging.info("fused_score=%.4f base_th=%.4f vote=%d", fused_score, base_th, vote)
+        logging.info(
+            "fused_score=%.4f base_th=%.4f vote=%d for %s",
+            fused_score,
+            base_th,
+            vote,
+            coin,
+        )
         return {
             'signal': direction,
             'score': fused_score,
