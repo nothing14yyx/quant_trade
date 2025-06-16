@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from collections import deque
 
-from robust_signal_generator import RobustSignalGenerator
+from robust_signal_generator import RobustSignalGenerator, sigmoid_dir
 
 def compute_vix_proxy(fr, oi):
     return 0.5 * fr + 0.5 * oi
@@ -40,6 +40,16 @@ def make_dummy_rsg():
     }
     rsg.ob_th_params = {'min_ob_th': 0.15, 'dynamic_factor': 0.08}
     rsg.risk_score_cap = 5.0
+    rsg.cfg = {
+        'signal_threshold': {
+            'mode': 'sigmoid',
+            'base_th': 0.12,
+            'gamma': 0.05,
+            'min_pos': 0.10,
+        },
+        'ob_threshold': {'min_ob_th': 0.15},
+    }
+    rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
     return rsg
 
 
@@ -724,9 +734,7 @@ def test_step_exit_with_order_book_flip():
 
     res2 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=-0.3)
     assert res2['signal'] == 0
-
-    res3 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=-0.3)
-    assert res3['signal'] == 0
+    assert res2['position_size'] < res1['position_size']
 
 
 def test_position_size_range_regime():
@@ -764,6 +772,7 @@ def test_position_size_range_regime():
                               raw_features_1h=f1h,
                               raw_features_4h=f4h,
                               raw_features_d1=fd1)
-    expected = 0.1 + 0.4 * abs(res['score'])
+    grad = sigmoid_dir(res['score'], 0.12, 0.05)
+    expected = 0.1 + 0.4 * abs(grad)
     assert res['position_size'] == pytest.approx(expected)
 
