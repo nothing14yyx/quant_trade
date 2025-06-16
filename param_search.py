@@ -83,6 +83,7 @@ def run_single_backtest(
             pred_vol=None,
             pred_vol_4h=None,
             pred_vol_d1=None,
+            vix_proxy=None,
             regime=None,
         ):
             return RobustSignalGenerator.dynamic_threshold(
@@ -97,6 +98,7 @@ def run_single_backtest(
                 pred_vol=pred_vol,
                 pred_vol_4h=pred_vol_4h,
                 pred_vol_d1=pred_vol_d1,
+                vix_proxy=vix_proxy,
                 regime=regime,
                 **th_params,
             )
@@ -345,7 +347,7 @@ def run_param_search(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, default=1, help="只取最近 N 行数据")
+    parser.add_argument("--rows", type=int, default=20000, help="只取最近 N 行数据")
     parser.add_argument(
         "--method",
         choices=["grid", "optuna"],
