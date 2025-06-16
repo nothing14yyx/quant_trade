@@ -26,6 +26,8 @@ def make_rsg():
     }
     rsg.ic_scores = {k: 1 for k in rsg.base_weights}
     rsg.current_weights = rsg.base_weights.copy()
+    rsg.vote_params = {'weight_ai': 2.0, 'strong_min': 5, 'conf_min': 1.0}
+    rsg.min_weight_ratio = 0.2
     rsg._equity_drawdown = 0.0
     rsg._last_signal = 0
     rsg._last_score = 0.0

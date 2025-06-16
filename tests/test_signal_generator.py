@@ -26,6 +26,8 @@ def make_dummy_rsg():
     rsg.ic_scores = {k: 1 for k in rsg.base_weights}
     rsg.current_weights = rsg.base_weights.copy()
     rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+    rsg.vote_params = {'weight_ai': 2.0, 'strong_min': 5, 'conf_min': 1.0}
+    rsg.min_weight_ratio = 0.2
     return rsg
 
 
@@ -96,9 +98,9 @@ def test_consensus_check():
 
 def test_crowding_protection():
     rsg = make_dummy_rsg()
-    factor = rsg.crowding_protection([0.9, 0.8, 0.85, -0.2], 0.95)
-    assert factor == pytest.approx(0.7)
-    factor2 = rsg.crowding_protection([0.1, -0.2], 0.15)
+    factor = rsg.crowding_protection([0.9, 0.8, 0.85, -0.2]*8, 0.95, base_th=0.2)
+    assert factor == pytest.approx(0.5)
+    factor2 = rsg.crowding_protection([0.1, -0.2]*15, 0.15, base_th=0.2)
     assert factor2 == pytest.approx(1.0)
 
 
