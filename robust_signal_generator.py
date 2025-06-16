@@ -21,6 +21,7 @@ AI_DIR_EPS      = 0.02     # AI 方向阈值
 POS_K_RANGE     = 0.40     # 震荡市仓位乘数
 POS_K_TREND     = 0.60     # 趋势市仓位乘数
 VOTE_STRONG_MIN = 5        # strong_confirm 票数门槛
+VOTE_CONF_MIN   = 0.40     # 票数≤2 时衰减到 40%
 
 
 def softmax(x):
@@ -665,6 +666,8 @@ class RobustSignalGenerator:
         raw_f4h = raw_features_4h or features_4h
         raw_fd1 = raw_features_d1 or features_d1
 
+        details = {}
+
         deltas = {
             "1h": self._calc_deltas(
                 raw_f1h, self._prev_raw["1h"], self.core_keys["1h"]
@@ -852,7 +855,6 @@ class RobustSignalGenerator:
             conf = 0.6
 
         fused_score *= conf
-        fused_score = float(np.clip(fused_score, -1, 1))
 
         prev_ma20 = (raw_features_1h or features_1h).get('sma_20_1h_prev')
         ma_dir = self.ma_cross_logic(raw_features_1h or features_1h, prev_ma20)
@@ -1013,7 +1015,7 @@ class RobustSignalGenerator:
             self.history_scores.append(fused_score)
         
         # ===== 9. 准备 details，用于回测与调试 =====
-        details = {
+        details.update({
             'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
             'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
             'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
@@ -1029,7 +1031,7 @@ class RobustSignalGenerator:
             'short_momentum': short_mom,
             'ob_imbalance': ob_imb,
             'ma_cross': ma_dir,
-        }
+        })
 
         # ===== 11. 动态阈值过滤，调用已有 dynamic_threshold =====
         raw_f1h = raw_features_1h or features_1h
@@ -1130,6 +1132,12 @@ class RobustSignalGenerator:
         details['vote'] = vote
         details['strong_confirm'] = strong_confirm
         details['ob_th'] = ob_th
+
+        # ====== 票数置信度衰减 ======
+        conf_vote = min(1.0, max(VOTE_CONF_MIN, abs(vote) / VOTE_STRONG_MIN))
+        fused_score *= conf_vote
+        details["confidence_vote"] = conf_vote
+        fused_score = float(np.clip(fused_score, -1, 1))
 
         direction = 0
         if abs(fused_score) >= base_th:
