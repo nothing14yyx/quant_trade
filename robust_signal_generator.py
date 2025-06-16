@@ -431,10 +431,11 @@ class RobustSignalGenerator:
 
         f_rate = safe(f'funding_rate_{period}', 0)
         f_anom = safe(f'funding_rate_anom_{period}', 0)
-        if abs(f_rate) > 0.05:
-            funding_raw = -np.tanh(f_rate * 100)
+        thr = 0.0005  # 約 0.05% 年化
+        if abs(f_rate) > thr:
+            funding_raw = -np.tanh(f_rate * 4000)  # 4000 ≈ 1/0.00025，讓 ±0.002 ≈ tanh(8)
         else:
-            funding_raw = np.tanh(f_rate * 100)
+            funding_raw = np.tanh(f_rate * 4000)
         funding_raw += np.tanh(f_anom * 50)
 
         return {
