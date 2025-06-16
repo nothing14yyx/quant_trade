@@ -7,7 +7,7 @@ import yaml
 import threading
 import logging
 import time
-from config import DYNAMIC_OB_FACTOR, MIN_OB_TH, EXIT_LAG_BARS
+from config import EXIT_LAG_BARS
 
 logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
@@ -62,17 +62,29 @@ def volume_guard(
     return score
 
 
-def cap_positive(score: float, sentiment: float, threshold: float = -0.5) -> float:
-    """若负面情绪过强则清零正分"""
+def cap_positive(
+    score: float,
+    sentiment: float,
+    scale: float = 0.4,
+    threshold: float = -0.5,
+) -> float:
+    """若负面情绪过强则按比例削弱正分"""
     if sentiment <= threshold and score > 0:
-        return 0.0
+        return score * scale
     return score
 
 
-def fused_to_risk(fused_score: float, logic_score: float, env_score: float) -> float:
-    """按安全分母计算 risk score"""
+def fused_to_risk(
+    fused_score: float,
+    logic_score: float,
+    env_score: float,
+    *,
+    cap: float = 5.0,
+) -> float:
+    """按安全分母计算并限制 risk score"""
     denom = max(abs(logic_score * env_score), 1e-6)
-    return fused_score / denom
+    risk = fused_score / denom
+    return min(risk, cap)
 
 class RobustSignalGenerator:
     """多周期 AI + 多因子 融合信号生成器。
@@ -161,15 +173,22 @@ class RobustSignalGenerator:
         }
 
         self.sentiment_alpha = cfg.get("sentiment_alpha", 0.5)
+        self.cap_positive_scale = cfg.get("cap_positive_scale", 0.4)
         vg_cfg = cfg.get("volume_guard", {})
         self.volume_guard_params = {
-            "weak": vg_cfg.get("weak", 0.7),
-            "over": vg_cfg.get("over", 0.9),
+            "weak": vg_cfg.get("weak_scale", 0.7),
+            "over": vg_cfg.get("over_scale", 0.9),
             "ratio_low": vg_cfg.get("ratio_low", 0.8),
             "ratio_high": vg_cfg.get("ratio_high", 2.0),
             "roc_low": vg_cfg.get("roc_low", -20),
             "roc_high": vg_cfg.get("roc_high", 100),
         }
+        ob_cfg = cfg.get("ob_threshold", {})
+        self.ob_th_params = {
+            "min_ob_th": ob_cfg.get("min_ob_th", 0.15),
+            "dynamic_factor": ob_cfg.get("dynamic_factor", 0.08),
+        }
+        self.risk_score_cap = cfg.get("risk_score_cap", 5.0)
         self.min_weight_ratio = min_weight_ratio
 
         # 静态因子权重（后续可由动态IC接口进行更新）
@@ -852,14 +871,14 @@ class RobustSignalGenerator:
             + w_d1 * fs['d1']['sentiment']
         )
         if sentiment_combined <= -0.5:
-            logging.info(
+            logging.debug(
                 "combined sentiment %.3f <= -0.5 for %s -> cap positive scores",
                 sentiment_combined,
                 coin,
             )
             for p in scores:
                 if scores[p] > 0:
-                    scores[p] = 0.0
+                    scores[p] *= self.cap_positive_scale
 
         # volume guard-rail
         raw1h = raw_features_1h or features_1h
@@ -1171,7 +1190,12 @@ class RobustSignalGenerator:
                 )
                 fused_score *= mult
                 crowding_factor *= mult
-        risk_score = fused_to_risk(fused_score, logic_score, env_score)
+        risk_score = fused_to_risk(
+            fused_score,
+            logic_score,
+            env_score,
+            cap=self.risk_score_cap,
+        )
 
         confidence = conf
         # 所有放大系数后写入历史
@@ -1226,7 +1250,10 @@ class RobustSignalGenerator:
             vol_ratio_1h_4h = raw_f4h.get('vol_ratio_1h_4h')
         if vol_ratio_1h_4h is None:
             vol_ratio_1h_4h = 1.0
-        ob_th = max(MIN_OB_TH, DYNAMIC_OB_FACTOR * vol_ratio_1h_4h)
+        ob_th = max(
+            self.ob_th_params["min_ob_th"],
+            self.ob_th_params["dynamic_factor"] * vol_ratio_1h_4h,
+        )
         if ob_imb is not None and ob_imb > ob_th:
             ob_dir = 1
         elif ob_imb is not None and ob_imb < -ob_th:
