@@ -677,3 +677,38 @@ def test_crowding_factor_and_dynamic_threshold():
     assert res['details']['base_threshold'] == pytest.approx(0.5)
     assert res['score'] == pytest.approx(res['details']['score_1h'] * 0.9)
 
+
+def test_step_exit_with_order_book_flip():
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.combine_score = lambda ai, fs, weights=None: 0.6
+    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+
+    f1h = {
+        'close': 100,
+        'atr_pct_1h': 0,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'mom_5m_roll1h': 0.1,
+        'mom_15m_roll1h': 0.1,
+        'vol_breakout_1h': 1,
+        'vol_ratio_1h_4h': 1.0,
+    }
+    f4h = {'atr_pct_4h': 0, 'adx_4h': 0, 'vol_ratio_1h_4h': 1.0}
+    fd1 = {}
+
+    res1 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=0.3)
+    assert res1['signal'] == 1
+
+    res2 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=-0.3)
+    assert res2['signal'] == 0.5
+
+    res3 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=-0.3)
+    assert res3['signal'] == 0
+
