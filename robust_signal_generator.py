@@ -231,7 +231,7 @@ class RobustSignalGenerator:
             th = float(np.quantile(np.abs(self.oi_change_history), quantile))
         if pred_vol is not None:
             th += min(0.1, abs(pred_vol) * 0.5)
-        return max(th, 0.3)
+        return max(th, 0.18)
 
     def detect_market_regime(self, adx1, adx4, adxd):
         """简易市场状态判别：根据平均ADX判断震荡或趋势"""
@@ -598,7 +598,7 @@ class RobustSignalGenerator:
         low_base = 0.13
         thres = max(thres, low_base)
 
-        return max(min_thres, min(max_thres, thres))
+        return max(min_thres, thres)
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """按固定顺序加权合并各因子得分"""
@@ -839,36 +839,6 @@ class RobustSignalGenerator:
         if vol_roc_4h is not None and vol_roc_4h > 50:
             scores["4h"] -= 0.10
 
-        for p, raw_f in [('1h', raw1h), ('4h', raw4h), ('d1', raw_features_d1 or features_d1)]:
-            anom = raw_f.get(f'funding_rate_anom_{p}', 0)
-            super_dir = raw_f.get(f'supertrend_dir_{p}', 0)
-            bias = np.sign(anom)
-            if bias != 0 and super_dir != 0 and bias != super_dir:
-                if p == '1h':
-                    pre = scores['1h']
-                    scores['1h'] -= 0.1
-                    logging.info(
-                        "funding bias opposes supertrend on %s 1h %.3f -> %.3f",
-                        coin,
-                        pre, scores['1h']
-
-                    )
-                elif p == '4h':
-                    pre = scores['4h']
-                    scores['4h'] -= 0.1
-                    logging.info(
-                        "funding bias opposes supertrend on %s 4h %.3f -> %.3f",
-                        coin,
-                        pre, scores['4h']
-                    )
-                else:
-                    pre = scores['d1']
-                    scores['d1'] -= 0.1
-                    logging.info(
-                        "funding bias opposes supertrend on %s d1 %.3f -> %.3f",
-                        coin,
-                        pre, scores['d1']
-                    )
 
         macd_diff = raw1h.get('macd_hist_diff_1h_4h')
         rsi_diff = raw1h.get('rsi_diff_1h_4h')
@@ -1088,7 +1058,7 @@ class RobustSignalGenerator:
             regime=regime,
         )
         details['regime'] = regime
-        details['base_threshold'] = base_th
+        details['dynamic_th_final'] = base_th
         # ===== 8. 资金费率惩罚 =====
         funding_conflicts = 0
         for p, raw_f in [('1h', raw_f1h), ('4h', raw_f4h), ('d1', raw_fd1)]:
