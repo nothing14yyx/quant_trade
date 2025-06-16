@@ -29,6 +29,7 @@ def make_dummy_rsg():
     rsg.vote_params = {'weight_ai': 2.0, 'strong_min': 5, 'conf_min': 1.0}
     rsg.min_weight_ratio = 0.2
     rsg.sentiment_alpha = 0.5
+    rsg.cap_positive_scale = 0.4
     rsg.volume_guard_params = {
         'weak': 0.7,
         'over': 0.9,
@@ -37,6 +38,9 @@ def make_dummy_rsg():
         'roc_low': -20,
         'roc_high': 100,
     }
+    rsg.ob_th_params = {'min_ob_th': 0.15, 'dynamic_factor': 0.08}
+    rsg.risk_score_cap = 5.0
+    rsg.exit_lag_bars = 2
     return rsg
 
 

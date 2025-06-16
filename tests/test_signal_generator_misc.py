@@ -8,6 +8,7 @@ def make_rsg():
     r = RobustSignalGenerator.__new__(RobustSignalGenerator)
     r._prev_raw = {p: None for p in ("1h", "4h", "d1")}
     r.sentiment_alpha = 0.5
+    r.cap_positive_scale = 0.4
     r.volume_guard_params = {
         'weak': 0.7,
         'over': 0.9,
@@ -16,6 +17,9 @@ def make_rsg():
         'roc_low': -20,
         'roc_high': 100,
     }
+    r.ob_th_params = {'min_ob_th': 0.15, 'dynamic_factor': 0.08}
+    r.risk_score_cap = 5.0
+    r.exit_lag_bars = 2
     return r
 
 

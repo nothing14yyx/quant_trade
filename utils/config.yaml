@@ -143,10 +143,16 @@ vote_system:
 
 # === 调参选项 ===
 sentiment_alpha: 0.5
+cap_positive_scale: 0.4
 volume_guard:
-  weak: 0.7
-  over: 0.9
+  weak_scale: 0.7
+  over_scale: 0.9
   ratio_low: 0.8
   ratio_high: 2.0
   roc_low: -20
   roc_high: 100
+ob_threshold:
+  min_ob_th: 0.15
+  dynamic_factor: 0.08
+risk_score_cap: 5.0
+exit_lag_bars: 2
