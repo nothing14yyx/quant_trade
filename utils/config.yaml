@@ -140,6 +140,7 @@ vote_system:
   weight_ai: 2.0
   strong_min: 5
   conf_min: 0.40
+  ai_dir_eps: 0.02
 
 # === 调参选项 ===
 sentiment_alpha: 0.5
@@ -156,7 +157,6 @@ ob_threshold:
   dynamic_factor: 0.08
 risk_score_cap: 5.0
 exit_lag_bars: 1
-low_base: 0.10
 quantile: 0.88
 vote:
   strong_min: 3
@@ -166,8 +166,12 @@ oi_protection:
   crowding_threshold: 0.90
 veto_level: 0.9
 flip_coeff: 0.3
+position_coeff:
+  range: 0.40
+  trend: 0.60
 signal_threshold:
   mode: sigmoid      # 可选：sigmoid / double
   base_th: 0.12      # 原 dynamic_th_final 的初始值
   gamma: 0.05        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
+  low_base: 0.10
