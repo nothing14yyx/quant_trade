@@ -1158,7 +1158,6 @@ class RobustSignalGenerator:
         vote = 4 * ob_dir + 2 * short_mom_dir + self.vote_params['weight_ai'] * ai_dir + vol_breakout_dir
         strong_confirm_vote = abs(vote) >= self.vote_params['strong_min']
         details['vote'] = vote
-        details['strong_confirm_vote'] = strong_confirm_vote
         details['ob_th'] = ob_th
 
         # ====== 票数置信度衰减 ======
