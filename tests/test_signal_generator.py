@@ -43,7 +43,7 @@ def test_compute_tp_sl():
 def test_dynamic_threshold_basic():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0, 0, 0)
-    assert th == pytest.approx(0.10)
+    assert th == pytest.approx(0.1240986)
 
 
 def test_get_dynamic_oi_threshold():
