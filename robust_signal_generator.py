@@ -19,7 +19,7 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 ORDER_BOOK_MOM_THRESHOLD = 0.02
 
 # 退出信号滞后 bar 数默认值
-EXIT_LAG_BARS_DEFAULT = 2
+EXIT_LAG_BARS_DEFAULT = 1
 
 # AI 投票与仓位参数常量
 AI_DIR_EPS      = 0.02     # AI 方向阈值
@@ -48,9 +48,9 @@ def volume_guard(
     ratio: float | None,
     roc: float | None,
     *,
-    weak: float = 0.7,
+    weak: float = 0.85,
     over: float = 0.9,
-    ratio_low: float = 0.8,
+    ratio_low: float = 0.6,
     ratio_high: float = 2.0,
     roc_low: float = -20,
     roc_high: float = 100,
@@ -68,7 +68,7 @@ def volume_guard(
 def cap_positive(
     score: float,
     sentiment: float,
-    scale: float = 0.4,
+    scale: float = 0.7,
     threshold: float = -0.5,
 ) -> float:
     """若负面情绪过强则按比例削弱正分"""
@@ -122,8 +122,8 @@ class RobustSignalGenerator:
 
     VOTE_PARAMS = {
         "weight_ai": 2.0,
-        "strong_min": 5,
-        "conf_min": 0.40,
+        "strong_min": 3,
+        "conf_min": 0.25,
     }
 
     def __init__(
@@ -176,12 +176,12 @@ class RobustSignalGenerator:
         }
 
         self.sentiment_alpha = cfg.get("sentiment_alpha", 0.5)
-        self.cap_positive_scale = cfg.get("cap_positive_scale", 0.4)
+        self.cap_positive_scale = cfg.get("cap_positive_scale", 0.7)
         vg_cfg = cfg.get("volume_guard", {})
         self.volume_guard_params = {
-            "weak": vg_cfg.get("weak_scale", 0.7),
+            "weak": vg_cfg.get("weak_scale", 0.85),
             "over": vg_cfg.get("over_scale", 0.9),
-            "ratio_low": vg_cfg.get("ratio_low", 0.8),
+            "ratio_low": vg_cfg.get("ratio_low", 0.6),
             "ratio_high": vg_cfg.get("ratio_high", 2.0),
             "roc_low": vg_cfg.get("roc_low", -20),
             "roc_high": vg_cfg.get("roc_high", 100),
@@ -193,6 +193,11 @@ class RobustSignalGenerator:
         }
         self.risk_score_cap = cfg.get("risk_score_cap", 5.0)
         self.exit_lag_bars = cfg.get("exit_lag_bars", EXIT_LAG_BARS_DEFAULT)
+        oi_cfg = cfg.get("oi_protection", {})
+        self.oi_scale = oi_cfg.get("scale", 0.8)
+        self.max_same_direction_rate = oi_cfg.get("crowding_threshold", 0.85)
+        self.veto_level = cfg.get("veto_level", 0.7)
+        self.flip_coeff = cfg.get("flip_coeff", 0.5)
         self.min_weight_ratio = min_weight_ratio
 
         # 静态因子权重（后续可由动态IC接口进行更新）
@@ -237,7 +242,7 @@ class RobustSignalGenerator:
 
 
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
-        self.max_same_direction_rate = 0.85
+        # 值由配置 oi_protection.crowding_threshold 控制
 
         # 保存上一次生成的信号，供滞后阈值逻辑使用
         self._last_signal = 0
@@ -295,6 +300,18 @@ class RobustSignalGenerator:
         if name == "exit_lag_bars":
             setattr(self, name, EXIT_LAG_BARS_DEFAULT)
             return EXIT_LAG_BARS_DEFAULT
+        if name == "oi_scale":
+            setattr(self, name, 0.8)
+            return 0.8
+        if name == "max_same_direction_rate":
+            setattr(self, name, 0.85)
+            return 0.85
+        if name == "veto_level":
+            setattr(self, name, 0.7)
+            return 0.7
+        if name == "flip_coeff":
+            setattr(self, name, 0.5)
+            return 0.5
         raise AttributeError(name)
 
 
@@ -664,15 +681,15 @@ class RobustSignalGenerator:
 
         # ===== 历史分位阈值补充 =====
         if len(self.history_scores) > 100:
-            quantile_th = np.quantile(np.abs(self.history_scores), 0.92)
+            quantile_th = np.quantile(np.abs(self.history_scores), 0.88)
             thres = max(thres, quantile_th)
 
         if regime == "trend":
-            thres += 0.02
+            thres += 0.01
         elif regime == "range":
             thres -= 0.02
 
-        low_base = 0.13
+        low_base = 0.10
         thres = max(thres, low_base)
 
         # 阈值已按波动动态计算，无上限封顶。
@@ -741,7 +758,7 @@ class RobustSignalGenerator:
             fused_score *= 1 + 0.08 * oi_chg
         else:
             logging.info("OI overheat detected: %.4f", oi_chg)
-            fused_score *= 0.8
+            fused_score *= self.oi_scale
             oi_overheat = True
         return fused_score, oi_overheat
 
@@ -1234,20 +1251,24 @@ class RobustSignalGenerator:
 
 
         if regime == "range" and consensus_dir == 0:
-            logging.debug("Range regime without consensus -> no trade")
-            self._last_signal = 0
-            self._last_score = fused_score
-            self._prev_raw["1h"] = raw_f1h
-            self._prev_raw["4h"] = raw_f4h
-            self._prev_raw["d1"] = raw_fd1
-            return {
-                'signal': 0,
-                'score': fused_score,
-                'position_size': 0.0,
-                'take_profit': None,
-                'stop_loss': None,
-                'details': details,
-            }
+            # 允许 1h 与 4h 共振即通过
+            if np.sign(score_1h) == np.sign(score_4h) and score_1h * score_4h != 0:
+                pass
+            else:
+                logging.debug("Range regime without consensus -> no trade")
+                self._last_signal = 0
+                self._last_score = fused_score
+                self._prev_raw["1h"] = raw_f1h
+                self._prev_raw["4h"] = raw_f4h
+                self._prev_raw["d1"] = raw_fd1
+                return {
+                    'signal': 0,
+                    'score': fused_score,
+                    'position_size': 0.0,
+                    'take_profit': None,
+                    'stop_loss': None,
+                    'details': details,
+                }
 
         if ob_imb is not None:
             details['order_book_imbalance'] = float(ob_imb)
@@ -1293,7 +1314,7 @@ class RobustSignalGenerator:
 
         if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
             last_score = getattr(self, '_last_score', 0.0)
-            flip_th = base_th + max(0.05, 0.5 * abs(last_score))
+            flip_th = base_th + max(0.05, self.flip_coeff * abs(last_score))
             if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
                 logging.debug(
                     "Flip prevented for %s: last=%s current=%.3f",
@@ -1412,9 +1433,9 @@ class RobustSignalGenerator:
             direction = 0
             pos_size = 0.0
 
-        if direction == 1 and scores["4h"] < -0.7:
+        if direction == 1 and scores["4h"] < -self.veto_level:
             direction, pos_size = 0, 0.0
-        elif direction == -1 and scores["4h"] > 0.7:
+        elif direction == -1 and scores["4h"] > self.veto_level:
             direction, pos_size = 0, 0.0
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
