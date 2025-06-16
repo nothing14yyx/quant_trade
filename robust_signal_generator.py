@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 import threading
 import logging
+from config import DYNAMIC_OB_FACTOR, MIN_OB_TH, EXIT_LAG_BARS
 pd.set_option('future.no_silent_downcasting', True)
 
 # 默认配置路径
@@ -164,6 +165,12 @@ class RobustSignalGenerator:
             setattr(self, name, 0.0)
             return 0.0
         if name == "_last_signal":
+            setattr(self, name, 0)
+            return 0
+        if name == "_prev_vote":
+            setattr(self, name, 0)
+            return 0
+        if name == "_exit_lag":
             setattr(self, name, 0)
             return 0
         if name == "_prev_raw":
@@ -1092,6 +1099,28 @@ class RobustSignalGenerator:
 
         if ob_imb is not None:
             details['order_book_imbalance'] = float(ob_imb)
+        # ---- 新增：方向确认与多因子投票 ----
+        vol_ratio_1h_4h = raw_f1h.get('vol_ratio_1h_4h')
+        if vol_ratio_1h_4h is None and raw_f4h is not None:
+            vol_ratio_1h_4h = raw_f4h.get('vol_ratio_1h_4h')
+        if vol_ratio_1h_4h is None:
+            vol_ratio_1h_4h = 1.0
+        ob_th = max(MIN_OB_TH, DYNAMIC_OB_FACTOR * vol_ratio_1h_4h)
+        if ob_imb is not None and ob_imb > ob_th:
+            ob_dir = 1
+        elif ob_imb is not None and ob_imb < -ob_th:
+            ob_dir = -1
+        else:
+            ob_dir = 0
+
+        short_mom_dir = int(np.sign(short_mom)) if short_mom != 0 else 0
+        vol_breakout_val = raw_f1h.get('vol_breakout_1h')
+        vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
+        vote = 4 * ob_dir + 2 * short_mom_dir + vol_breakout_dir
+        strong_confirm = vote > 4
+        details['vote'] = vote
+        details['ob_th'] = ob_th
+        details['strong_confirm'] = strong_confirm
 
         direction = 0
         if abs(fused_score) >= base_th:
@@ -1103,6 +1132,32 @@ class RobustSignalGenerator:
             if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
                 logging.debug("Flip prevented: last=%s current=%.3f", self._last_signal, fused_score)
                 direction = self._last_signal
+
+        # 阶梯退出逻辑
+        prev_vote = getattr(self, '_prev_vote', 0)
+        exit_sig = direction
+        if direction == self._last_signal != 0:
+            if direction == 1:
+                if prev_vote > 4 and 1 <= vote <= 4:
+                    exit_sig = 0.5
+                    self._exit_lag = 0
+                elif vote <= 0:
+                    self._exit_lag += 1
+                    exit_sig = 0 if self._exit_lag >= EXIT_LAG_BARS else 0.5
+                else:
+                    self._exit_lag = 0
+            elif direction == -1:
+                if prev_vote < -4 and -4 <= vote <= -1:
+                    exit_sig = -0.5
+                    self._exit_lag = 0
+                elif vote >= 0:
+                    self._exit_lag += 1
+                    exit_sig = 0 if self._exit_lag >= EXIT_LAG_BARS else -0.5
+                else:
+                    self._exit_lag = 0
+        else:
+            self._exit_lag = 0
+        direction = exit_sig
 
         if direction == 0:
             self._last_signal = 0
@@ -1121,7 +1176,7 @@ class RobustSignalGenerator:
 
         if ob_imb is not None:
             details['order_book_imbalance'] = float(ob_imb)
-            if abs(ob_imb) > 0.1 and np.sign(ob_imb) != np.sign(fused_score):
+            if abs(direction) == 1 and abs(ob_imb) > 0.1 and np.sign(ob_imb) != np.sign(direction):
                 logging.debug("Order book imbalance opposes score: %.4f", ob_imb)
                 self._last_score = fused_score
                 self._last_signal = 0
@@ -1163,9 +1218,9 @@ class RobustSignalGenerator:
         details['order_book_momentum'] = ob_imb
         if (
             ob_imb is not None
-            and direction != 0
+            and abs(direction) == 1
             and abs(ob_imb) > ORDER_BOOK_MOM_THRESHOLD
-            and np.sign(ob_imb) != direction
+            and np.sign(ob_imb) != np.sign(direction)
         ):
             logging.debug(
                 "Direction canceled by order book imbalance %.4f", ob_imb
@@ -1185,12 +1240,13 @@ class RobustSignalGenerator:
         else:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
         atr_abs = max(atr_1h, atr_pct_4h) * price
-        tp_dir = direction if direction != 0 else 1
+        tp_dir = 1 if direction >= 0 else -1
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
         # ===== 14. 最终返回 =====
-        self._last_signal = direction
+        self._last_signal = int(np.sign(direction)) if direction else 0
         self._last_score = fused_score
+        self._prev_vote = vote
         self._prev_raw["1h"] = raw_f1h
         self._prev_raw["4h"] = raw_f4h
         self._prev_raw["d1"] = raw_fd1
