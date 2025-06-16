@@ -99,8 +99,8 @@ def run_single_backtest(
                 pred_vol_4h=pred_vol_4h,
                 pred_vol_d1=pred_vol_d1,
                 vix_proxy=vix_proxy,
+                base=th_params.get("base", 0.12409861615448753),
                 regime=regime,
-                **th_params,
             )
 
         sg.dynamic_threshold = dyn_th.__get__(sg, RobustSignalGenerator)
@@ -219,8 +219,6 @@ def run_param_search(
             }
             th_params = {
                 "base": params["th_base"],
-                "min_thres": 0.06,
-                "max_thres": 0.25,
             }
             delta_params = base_delta.copy()
             if tune_delta:
@@ -291,8 +289,6 @@ def run_param_search(
             }
             th_params = {
                 "base": trial.suggest_float("th_base", 0.06, 0.15),
-                "min_thres": trial.suggest_float("min_thres", 0.05, 0.1),
-                "max_thres": trial.suggest_float("max_thres", 0.2, 0.3),
             }
             history_window = trial.suggest_int("history_window", 300, 800)
             delta_params = base_delta.copy()
