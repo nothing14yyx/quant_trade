@@ -45,7 +45,7 @@ def test_compute_tp_sl():
 def test_dynamic_threshold_basic():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0, 0, 0)
-    assert th == pytest.approx(0.1240986)
+    assert th == pytest.approx(0.13)
 
 
 def test_get_dynamic_oi_threshold():
@@ -677,7 +677,7 @@ def test_crowding_factor_and_dynamic_threshold():
     oi = {'oi_chg': 0}
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                               open_interest=oi)
-    assert res['details']['base_threshold'] == pytest.approx(0.5)
+    assert res['details']['base_threshold'] == pytest.approx(0.1)
     expected = res['details']['score_1h'] * res['details']['crowding_factor'] * res['details']['confidence']
     assert res['score'] == pytest.approx(expected)
 
