@@ -20,7 +20,7 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 EXIT_LAG_BARS_DEFAULT = 1
 
 # AI 投票与仓位参数默认值
-DEFAULT_AI_DIR_EPS = 0.02     # AI 方向阈值
+DEFAULT_AI_DIR_EPS = 0.07     # AI 方向阈值
 DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
 DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
 DEFAULT_LOW_BASE = 0.10       # 动态阈值下限
@@ -59,7 +59,9 @@ def volume_guard(
         return score
     if ratio < ratio_low or roc < roc_low:
         return score * weak
-    if ratio > ratio_high or roc > roc_high:
+    if ratio_high <= ratio < 4 and roc_low < roc < 150:
+        return score * 1.05
+    if ratio >= 4 or roc >= 150:
         return score * over
     return score
 
@@ -73,6 +75,8 @@ def cap_positive(
     """若负面情绪过强则按比例削弱正分"""
     if sentiment <= threshold and score > 0:
         return score * scale
+    if sentiment >= 0.5 and score < 0:
+        return score * scale
     return score
 
 
@@ -85,7 +89,7 @@ def fused_to_risk(
 ) -> float:
     """按安全分母计算并限制 risk score"""
     denom = max(abs(logic_score * env_score), 1e-6)
-    risk = fused_score / denom
+    risk = abs(fused_score) / denom
     return min(risk, cap)
 
 
@@ -1336,7 +1340,10 @@ class RobustSignalGenerator:
         details['ob_th'] = ob_th
 
         # ====== 票数置信度衰减 ======
-        conf_vote = min(1.0, max(self.vote_params['conf_min'], abs(vote) / self.vote_params['strong_min']))
+        strong_min = self.vote_params['strong_min']
+        conf_min = self.vote_params['conf_min']
+        conf_vote = 1 / (1 + np.exp(-4 * (abs(vote) - strong_min)))
+        conf_vote = max(conf_min, conf_vote)
         fused_score *= conf_vote
         details["confidence_vote"] = conf_vote
         fused_score = float(np.clip(fused_score, -1, 1))
@@ -1420,6 +1427,9 @@ class RobustSignalGenerator:
         if vol_p is not None:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
 
+        if abs(risk_score) > 3 and consensus_all:
+            pos_size = min(pos_size * 1.2, 1.0)
+
         if pos_size < cfg_th_sig.get('min_pos', 0.1):
             direction, pos_size = 0, 0.0
 
@@ -1445,6 +1455,7 @@ class RobustSignalGenerator:
         else:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
         atr_abs = max(atr_1h, atr_pct_4h) * price
+        atr_abs = max(atr_abs, 0.003 * price)
         tp_dir = 1 if direction >= 0 else -1
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
