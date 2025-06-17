@@ -131,7 +131,7 @@ for period, cols in feature_pool.items():
     shap_imp = pd.Series(0.0, index=keep_cols)
 
     # 计算 pos_weight（在训练集里动态计算，避免用全量数据泄露）
-    pos_weight_global = (y == 0).sum() / max((y == 1).sum(), 1)
+    pos_weight_global = min((y == 0).sum() / max((y == 1).sum(), 1), 50)
     lgb_params = dict(
         objective="binary",
         metric="auc",
@@ -151,7 +151,7 @@ for period, cols in feature_pool.items():
         X_val,   y_val   = X.iloc[val_idx],   y.iloc[val_idx]
 
         # 重新计算每 fold 的 pos_weight，细粒度更好
-        pw = (y_train == 0).sum() / max((y_train == 1).sum(), 1)
+        pw = min((y_train == 0).sum() / max((y_train == 1).sum(), 1), 50)
         lgb_params["scale_pos_weight"] = pw
 
         gbm = lgb.LGBMClassifier(**lgb_params)
