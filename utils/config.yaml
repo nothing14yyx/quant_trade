@@ -60,54 +60,148 @@ database:
   uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
 
 feature_cols:
-  1h:           # 样本量 ≈ 552k，Feat/样本 ≈ 1∶2750
-    - pct_chg1_1h           # 1.000
-    - bear_streak_1h        # 0.995
-    - pct_chg3_1h           # 0.990
-    - cci_delta_1h          # 0.985
-    - close_spread_1h_4h    # 0.975
-    - cci_1h                # 0.965
-    - atr_pct_ratio_1h_4h   # 0.955
-    - bull_streak_1h        # 0.945
-    - vol_ma_ratio_long_1h  # 0.940
-    - obv_delta_1h          # 0.935
-    - upper_wick_ratio_1h   # 0.930
-    - lower_wick_ratio_1h   # 0.910
-    - hour_of_day           # 0.925
-    - day_of_week           # 0.900
-    - vol_roc_1h            # 0.871
-  4h:
-    - vol_ratio_1h_4h       # 0.706  跨周期量比
-    - atr_pct_ratio_1h_4h   # 0.915  跨周期波动率比
-    - rsi_slope_4h          # 0.900  中线趋势斜率
-    - vol_roc_4h            # 0.851  量能环比
-    - lower_wick_ratio_4h   # 0.940  买盘吸收
-    - atr_chg_4h            # 0.806  波动率动量
-    - pct_chg6_4h           # 0.935  6 根动量
-    - bb_width_ratio_1h_4h  # 0.786  跨周期布林带比
-    - upper_wick_ratio_4h   # 0.930  卖盘抛压
+  1h: # ≈ 552 k 样本，Feat ≈ 42
+    # ─── 价    格 ───
+    - pct_chg1_1h
+    - pct_chg3_1h
+    - pct_chg6_1h
+    - pct_chg3_4h        # 上级周期，保留对 mid-term 动量的感知
+    - pct_chg6_4h
 
-    # ——— 新增 1h 高贡献因子 ———
-    - pct_chg1_1h           # 1.000  极短线动量
-    - bear_streak_1h        # 0.995  连跌动能
-    - cci_delta_1h          # 0.985  短期趋势斜率
-  d1:
-    - fg_index_d1            # 0.960  恐惧-贪婪情绪
-    - cg_market_cap_roc_d1   # 0.955  宏观市值变化
-    - macd_signal_d1         # 0.930  长线趋势信号
-    - macd_hist_diff_1h_d1   # 0.910  日线-1h MACD 差异
-    - rsi_diff_4h_d1         # 0.904  RSI 跨周期背离
-    - kc_width_pct_chg_d1    # 0.866  Keltner 通道宽度变化
-    - hv_14d_d1              # 0.856  14 天历史波动率
-    - cg_total_volume_roc_d1 # 0.841  市值成交量变化
-    - vol_ratio_4h_d1        # 0.838  4h/日量能比
-    - pct_chg6_4h            # 0.935  4h 中期动量
-    - atr_pct_ratio_1h_4h    # 0.915  跨周期波动率比
-    - pct_chg1_1h            # 0.905  1h 涨跌幅
-    - bear_streak_1h         # 0.995  1h 连跌动能
-    - lower_wick_ratio_1h    # 0.820  下影线占比
-    - upper_wick_ratio_4h    # 0.815  上影线占比
-    - funding_rate_anom_d1   # 0.800  衍生品 Funding 异常
+    # ─── K 线形态 ───
+    - bear_streak_1h
+    - bull_streak_1h
+    - upper_wick_ratio_1h
+    - lower_wick_ratio_1h
+    - long_upper_shadow_1h
+    - long_lower_shadow_1h
+
+    # ─── 技 术 指 标 ───
+    - cci_1h
+    - cci_delta_1h
+    - macd_hist_1h
+    - rsi_diff_1h_4h
+    - rsi_slope_4h
+    - atr_chg_1h
+    - atr_pct_ratio_1h_4h
+    - bb_width_chg_1h
+    - bb_width_ratio_1h_4h
+
+    # ─── 成交量 & 量价 ───
+    - vol_ma_ratio_long_1h
+    - vol_roc_1h
+    - vol_breakout_1h
+    - volume_cg_ratio_1h
+    - obv_delta_1h
+    - vol_profile_density_1h
+
+    # ─── 波动性 ───
+    - hv_7d_1h
+    - kurtosis_1h
+    - skewness_1h
+
+    # ─── 市场相关性 ───
+    - btc_correlation_1h_1h
+    - eth_correlation_1h_1h
+
+    # ─── 宏观 / 链上 ───
+    - cg_market_cap_roc_1h
+    - cg_total_volume_roc_1h
+    - fg_index_d1
+    - donchian_perc_d1
+    - cg_market_cap_roc_d1
+    - hv_14d_d1
+    - ema_diff_d1
+    - supertrend_dir_d1
+
+    # ─── 时间哑变量 ───
+    - hour_of_day
+    - day_of_week
+
+  4h:
+    # ─── 价格动量 ───
+    - pct_chg1_4h
+    - pct_chg3_4h
+    - pct_chg6_4h
+    - pct_chg12_4h        # 新：半天级别
+    - rsi_4h
+    - rsi_slope_4h
+    - rsi_diff_1h_4h      # 保留唯一 1h→4h 差分
+    - macd_hist_4h
+    - macd_hist_diff_4h_d1
+    - cci_4h
+    - cci_delta_4h
+
+    # ─── 波动 & 布林/通道 ───
+    - atr_chg_4h
+    - atr_pct_ratio_1h_4h     # 跨周期波动
+    - bb_width_chg_4h
+    - bb_width_ratio_1h_4h
+    - kc_width_pct_chg_4h
+    - hv_7d_4h
+    - hv_30d_4h
+
+    # ─── 形态学 ───
+    - upper_wick_ratio_4h
+    - lower_wick_ratio_4h
+    - long_lower_shadow_4h
+    - long_upper_shadow_4h
+    - skewness_4h
+    - kurtosis_4h
+
+    # ─── 成交量 / 量价 ───
+    - vol_ma_ratio_long_4h    # 用 4h 版本
+    - vol_roc_4h
+    - vol_breakout_4h
+    - cg_total_volume_roc_4h
+    - vol_ratio_1h_4h         # 唯一留作量占比差分
+
+    # ─── 宏观 & 资金流 ───
+    - fg_index_d1
+    - cg_market_cap_roc_4h
+    - funding_rate_anom_d1
+
+    # ─── 时间哑变量 ───
+    - hour_of_day
+    - day_of_week
+
+d1:          # ≈ 22 k 样本，Feat ≈ 27
+  # ─── 日线动量 ───
+  - pct_chg1_d1
+  - pct_chg3_d1
+  - pct_chg7_d1
+  - macd_hist_d1
+  - ema_diff_d1
+  - rsi_d1
+  - rsi_slope_d1
+
+  # ─── 波动 & 通道 ───
+  - atr_chg_d1
+  - atr_pct_d1
+  - kc_width_pct_chg_d1
+  - bb_width_chg_d1
+  - hv_14d_d1
+  - hv_30d_d1
+
+  # ─── 形态 & 分布 ───
+  - kurtosis_d1
+  - skewness_d1
+  - donchian_perc_d1
+  - long_lower_shadow_d1
+  - upper_wick_ratio_d1
+
+  # ─── 量价 & 资金流 ───
+  - vol_ma_ratio_long_d1
+  - vol_breakout_d1
+  - vol_ratio_4h_d1        # 跨周期量差
+  - cg_market_cap_roc_d1
+  - cg_total_volume_roc_d1
+  - fg_index_d1            # 情绪
+
+  # ─── 跨周期差分（保留 3 个最稳）───
+  - rsi_diff_1h_4h
+  - atr_pct_ratio_1h_4h
+  - vol_ratio_1h_4h
 
 
 train_settings:
@@ -117,7 +211,7 @@ train_settings:
   ts_smote: true
   ts_smote_group_freq: null
   hold_days: 7
-  n_trials: 40
+  n_trials: 10
 
 # Δ-boost 配置：关键指标与参数
 delta_boost:
