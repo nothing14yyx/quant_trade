@@ -211,7 +211,51 @@ train_settings:
   ts_smote: true
   ts_smote_group_freq: null
   hold_days: 7
-  n_trials: 10
+  n_trials:
+    1h: 10
+    4h: 10
+    d1: 15
+
+param_space:
+  1h:
+    lr: [0.03, 0.08]
+    nl: [31, 95]
+    ne: [400, 800]
+    md: [4, 12]
+    mcs: [50, 150]
+    subsample: [0.8, 1.0]
+    cbt: [0.6, 0.9]
+    reg_lambda: [0.0, 0.5]
+  4h:
+    lr: [0.02, 0.06]
+    nl: [31, 127]
+    ne: [300, 700]
+    md: [4, 10]
+    mcs: [50, 120]
+    subsample: [0.8, 1.0]
+    cbt: [0.6, 0.9]
+    reg_lambda: [0.0, 0.5]
+  d1:
+    lr: [0.01, 0.03]
+    nl: [64, 160]
+    ne: [300, 600]
+    md: [4, 10]
+    mcs: [40, 100]
+    subsample: [0.85, 1.0]
+    cbt: [0.6, 0.9]
+    reg_lambda: [0.0, 0.5]
+
+fixed_params:
+  objective:
+    up: "binary"
+    down: "binary"
+    vol: "regression"
+  metric:
+    up: "auc"
+    down: "auc"
+    vol: "l1"
+  early_stopping_rounds: 30
+  n_jobs: -1
 
 # Δ-boost 配置：关键指标与参数
 delta_boost:
