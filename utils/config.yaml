@@ -91,7 +91,7 @@ feature_cols:
     - pct_chg1_1h           # 1.000  极短线动量
     - bear_streak_1h        # 0.995  连跌动能
     - cci_delta_1h          # 0.985  短期趋势斜率
-  1d:
+  d1:
     - fg_index_d1            # 0.960  恐惧-贪婪情绪
     - cg_market_cap_roc_d1   # 0.955  宏观市值变化
     - macd_signal_d1         # 0.930  长线趋势信号
