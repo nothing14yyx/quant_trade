@@ -115,6 +115,7 @@ train_settings:
   min_rows: 500
   time_ranges: []
   ts_smote: true
+  ts_smote_group_freq: null
   hold_days: 7
   n_trials: 40
 
