@@ -202,10 +202,9 @@ df = df.sort_values("open_time").reset_index(drop=True)
 feature_cols = cfg.get("feature_cols", {})
 if not feature_cols:
     raise RuntimeError("config.yaml 缺少 feature_cols 配置")
-if "1d" not in feature_cols and "d1" in feature_cols:
-    feature_cols["1d"] = feature_cols["d1"]
-elif "1d" in feature_cols and "d1" not in feature_cols:
-    feature_cols["d1"] = feature_cols["1d"]
+# 将 1d 统一映射为 d1，避免重复训练
+if "1d" in feature_cols:
+    feature_cols["d1"] = feature_cols.pop("1d")
 
 # ---------- 4. 目标列 ----------
 targets = {"up": "target_up", "down": "target_down", "vol": "future_volatility"}
@@ -252,7 +251,7 @@ def train_one(
     y = data[tgt]
 
     # 5-3.1 处理缺失值，确保 SMOTE / SMOTEENN 能正常工作
-    if use_ts_smote or (period in {"1d", "d1"} and tag == "down"):
+    if use_ts_smote or (period == "d1" and tag == "down"):
         imputer = SimpleImputer(strategy="median")
         X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns, index=X.index)
 
@@ -272,7 +271,7 @@ def train_one(
         random_state=42,
     )
 
-    if period in {"1d", "d1"} and tag == "down":
+    if period == "d1" and tag == "down":
         X_res, y_res = SMOTEENN(random_state=42).fit_resample(X_tr, y_tr)
         if len(np.unique(y_res)) < 2:
             X_res, y_res = X_tr, y_tr
@@ -289,7 +288,7 @@ def train_one(
     # 5-5  使用 Optuna + pruner 进行超参搜索
 
     def objective(trial: optuna.Trial):
-        if period in {"1d", "d1"}:
+        if period == "d1":
             params = {
                 "learning_rate": trial.suggest_float("lr_d1", 0.01, 0.03, log=True),
                 "num_leaves": trial.suggest_int("nl_d1", 64, 160, step=8),
@@ -350,7 +349,7 @@ def train_one(
             preds = model.predict_proba(X_va, num_iteration=model.best_iteration_)[:, 1]
             return roc_auc_score(y_va, preds)
 
-    if period in {"1d", "d1"}:
+    if period == "d1":
         pruner = optuna.pruners.SuccessiveHalvingPruner(
             min_resource=5000, reduction_factor=4
         )
@@ -360,7 +359,7 @@ def train_one(
     study.optimize(objective, n_trials=40, show_progress_bar=False)
 
     raw_params = study.best_params
-    if period in {"1d", "d1"}:
+    if period == "d1":
         best_params = {
             "learning_rate": raw_params["lr_d1"],
             "num_leaves": raw_params["nl_d1"],
@@ -474,7 +473,7 @@ for sym in symbols:
         for period, cols in feature_cols.items():
             if period == "4h":
                 subset = df_rng[df_rng["open_time"].dt.hour % 4 == 0]
-            elif period in {"1d", "d1"}:
+            elif period == "d1":
                 subset = df_rng[df_rng["open_time"].dt.hour == 0]
             else:
                 subset = df_rng
