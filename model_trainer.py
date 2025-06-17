@@ -197,6 +197,7 @@ time_ranges = train_cfg.get("time_ranges", []) or [
     {"name": "all", "start": None, "end": None}
 ]
 use_ts_smote = bool(train_cfg.get("ts_smote", False))
+ts_smote_group_freq = train_cfg.get("ts_smote_group_freq")
 hold_days = int(train_cfg.get("hold_days", 0))
 n_trials = int(train_cfg.get("n_trials", 40))
 
@@ -313,7 +314,7 @@ def train_one(
             if regression:
                 X_res_imp, y_res = X_tr_imp, y_tr
             elif use_ts_smote:
-                smote = TimeSeriesAwareSMOTE()
+                smote = TimeSeriesAwareSMOTE(group_freq=ts_smote_group_freq)
                 X_res_imp, y_res = smote.fit_resample(
                     X_tr_imp,
                     y_tr,
@@ -321,7 +322,7 @@ def train_one(
                 )
             else:
                 X_res_imp, y_res = X_tr_imp, y_tr
-                pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
+                pos_weight = min((y_tr == 0).sum() / max((y_tr == 1).sum(), 1), 50)
                 extra_params["scale_pos_weight"] = pos_weight
 
             if regression:
@@ -411,18 +412,9 @@ def train_one(
     y_va = y.iloc[va_idx]
 
     extra_params: dict[str, float] = {}
-    if regression:
-        X_res_imp, y_res = X_all_imp, y
-    elif use_ts_smote:
-        smote = TimeSeriesAwareSMOTE()
-        X_res_imp, y_res = smote.fit_resample(
-            X_all_imp,
-            y,
-            data["open_time"],
-        )
-    else:
-        X_res_imp, y_res = X_all_imp, y
-        pos_weight = (y == 0).sum() / max((y == 1).sum(), 1)
+    X_res_imp, y_res = X_all_imp, y
+    if not regression:
+        pos_weight = min((y == 0).sum() / max((y == 1).sum(), 1), 50)
         extra_params["scale_pos_weight"] = pos_weight
 
     if regression:
@@ -461,7 +453,7 @@ def train_one(
         X_hold_imp = pd.DataFrame(imputer.transform(X_hold), columns=X_hold.columns, index=X_hold.index)
         if regression:
             hold_pred = best.predict(X_hold_imp, num_iteration=best.best_iteration_)
-            hold_score = -mean_absolute_error(y_hold, hold_pred)
+            hold_score = mean_absolute_error(y_hold, hold_pred)
         else:
             hold_pred = best.predict_proba(X_hold_imp, num_iteration=best.best_iteration_)[
                 :, 1
@@ -501,8 +493,9 @@ def train_one(
     )
     study.trials_dataframe().to_csv(model_path.parent / "optuna_trials.csv", index=False)
     score_label = "CV-MAE" if regression else "CV-AUC"
+    best_val = abs(study.best_value) if regression else study.best_value
     logging.info(
-        f"✔ Saved: {model_path.name}  ({score_label} {study.best_value:.4f}, th{best_th:.3f})"
+        f"✔ Saved: {model_path.name}  ({score_label} {best_val:.4f}, th{best_th:.3f})"
     )
 
     # 5-8  打印前 15 个重要特征
@@ -534,7 +527,6 @@ for sym in symbols:
                 subset = df_rng[df_rng["open_time"].dt.hour == 0]
             else:
                 subset = df_rng
-            subset = drop_price_outliers(subset)
 
             for tag, tgt_col in targets.items():
                 file_name = f"model_{period}_{tag}.pkl"
