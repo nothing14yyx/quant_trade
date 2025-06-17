@@ -11,6 +11,7 @@ import datetime
 from pathlib import Path
 from sklearn.metrics import roc_auc_score, mean_absolute_error
 from sklearn.metrics import precision_recall_curve
+from imblearn.combine import SMOTEENN
 
 
 import optuna
@@ -190,6 +191,10 @@ df = df.sort_values("open_time").reset_index(drop=True)
 feature_cols = cfg.get("feature_cols", {})
 if not feature_cols:
     raise RuntimeError("config.yaml 缺少 feature_cols 配置")
+if "1d" not in feature_cols and "d1" in feature_cols:
+    feature_cols["1d"] = feature_cols["d1"]
+elif "1d" in feature_cols and "d1" not in feature_cols:
+    feature_cols["d1"] = feature_cols["1d"]
 
 # ---------- 4. 目标列 ----------
 targets = {"up": "target_up", "down": "target_down", "vol": "future_volatility"}
@@ -209,7 +214,15 @@ def drop_price_outliers(df: pd.DataFrame, pct: float = 0.995) -> pd.DataFrame:
 
 
 # ---------- 5. 训练函数 ----------
-def train_one(df_all: pd.DataFrame, features: list[str], tgt: str, model_path: Path, regression: bool = False) -> None:
+def train_one(
+    df_all: pd.DataFrame,
+    features: list[str],
+    tgt: str,
+    model_path: Path,
+    period: str,
+    tag: str,
+    regression: bool = False,
+) -> None:
 
     # 5-1  缺列补 NaN
     feat_use = _sanitize_feature_names(df_all, features.copy())
@@ -231,12 +244,17 @@ def train_one(df_all: pd.DataFrame, features: list[str], tgt: str, model_path: P
         smote = TimeSeriesAwareSMOTE()
         X, y = smote.fit_resample(X, y, data["open_time"])
 
+    if period in {"1d", "d1"} and tag == "down":
+        X_res, y_res = SMOTEENN().fit_resample(X, y)
+    else:
+        X_res, y_res = X, y
+
     # ----- 留出最后 10% 仅做最终评估 -----
-    hold_len = max(1, int(len(X) * 0.1))
-    X_hold = X.iloc[-hold_len:]
-    y_hold = y.iloc[-hold_len:]
-    X = X.iloc[:-hold_len]
-    y = y.iloc[:-hold_len]
+    hold_len = max(1, int(len(X_res) * 0.1))
+    X_hold = X_res.iloc[-hold_len:]
+    y_hold = y_res.iloc[-hold_len:]
+    X = X_res.iloc[:-hold_len]
+    y = y_res.iloc[:-hold_len]
 
     # 5-4  计算类别不平衡补偿
     if not regression:
@@ -255,6 +273,12 @@ def train_one(df_all: pd.DataFrame, features: list[str], tgt: str, model_path: P
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
             "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 0.5),
         }
+
+        if period in {"1d", "d1"}:
+            params["learning_rate"] = trial.suggest_float("learning_rate", 0.01, 0.03, log=True)
+            params["num_leaves"] = trial.suggest_int("num_leaves", 64, 160, step=8)
+            params["n_estimators"] = trial.suggest_int("n_estimators", 600, 1200, step=100)
+            params["max_depth"] = trial.suggest_int("max_depth", 4, 12)
 
         scores = []
         fcv = forward_chain_split(len(X), n_splits=5, gap=50)
@@ -306,7 +330,11 @@ def train_one(df_all: pd.DataFrame, features: list[str], tgt: str, model_path: P
             scores.append(score)
 
         return float(np.mean(scores))
-    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.SuccessiveHalvingPruner())
+    if period in {"1d", "d1"}:
+        pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=5000, reduction_factor=4)
+    else:
+        pruner = optuna.pruners.SuccessiveHalvingPruner()
+    study = optuna.create_study(direction="maximize", pruner=pruner)
     study.optimize(objective, n_trials=40, show_progress_bar=False)
 
     best_params = study.best_params
@@ -408,6 +436,14 @@ for sym in symbols:
                 file_name = f"model_{period}_{tag}.pkl"
                 print(f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}")
                 out_file = Path("models") / file_name
-                train_one(subset.copy(), cols, tgt_col, out_file, regression=(tag == "vol"))
+                train_one(
+                    subset.copy(),
+                    cols,
+                    tgt_col,
+                    out_file,
+                    period,
+                    tag,
+                    regression=(tag == "vol"),
+                )
 
 print("\n✅  All models finished.")
