@@ -199,7 +199,10 @@ time_ranges = train_cfg.get("time_ranges", []) or [
 use_ts_smote = bool(train_cfg.get("ts_smote", False))
 ts_smote_group_freq = train_cfg.get("ts_smote_group_freq")
 hold_days = int(train_cfg.get("hold_days", 0))
-n_trials = int(train_cfg.get("n_trials", 40))
+n_trials_cfg = train_cfg.get("n_trials", 10)
+
+param_space_all = cfg["param_space"]
+fixed_params = cfg["fixed_params"]
 
 # ---------- 2. 读取特征大表并按时间排序 ----------
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time"])
@@ -277,31 +280,30 @@ def train_one(
 
     imputer = SimpleImputer(strategy="median")
 
-    def objective(trial: optuna.Trial):
-        if period == "d1":
-            params = {
-                "learning_rate": trial.suggest_float("lr_d1", 0.01, 0.03, log=True),
-                "num_leaves": trial.suggest_int("nl_d1", 64, 160, step=8),
-                "n_estimators": trial.suggest_int("ne_d1", 600, 1200, step=100),
-                "max_depth": trial.suggest_int("md_d1", 4, 12),
-                "min_child_samples": trial.suggest_int("mcs_d1", 20, 100),
-                "subsample": trial.suggest_float("subsample_d1", 0.8, 1.0),
-                "colsample_bytree": trial.suggest_float("cbt_d1", 0.6, 1.0),
-                "reg_lambda": trial.suggest_float("reg_lambda_d1", 0.0, 0.5),
-            }
-        else:
-            params = {
-                "learning_rate": trial.suggest_float("lr", 0.01, 0.1, log=True),
-                "num_leaves": trial.suggest_int("nl", 31, 127),
-                "n_estimators": trial.suggest_int("ne", 300, 900),
-                "max_depth": trial.suggest_int("md", -1, 20),
-                "min_child_samples": trial.suggest_int("mcs", 20, 100),
-                "subsample": trial.suggest_float("subsample", 0.8, 1.0),
-                "colsample_bytree": trial.suggest_float("cbt", 0.6, 1.0),
-                "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 0.5),
-            }
+    space = param_space_all.get(period, param_space_all["1h"])
+    n_trials = n_trials_cfg[period] if isinstance(n_trials_cfg, dict) else n_trials_cfg
+    early_stop_rounds = fixed_params["early_stopping_rounds"]
 
-        n_boost_rounds = params.get("n_estimators", params.get("ne", params.get("ne_d1")))
+    def suggest(trial: optuna.Trial, name: str):
+        lo, hi = space[name]
+        log = name in ("lr",)
+        return (
+            trial.suggest_int if isinstance(lo, int) else trial.suggest_float
+        )(name, lo, hi, log=log)
+
+    def objective(trial: optuna.Trial):
+        params = {
+            "learning_rate": suggest(trial, "lr"),
+            "num_leaves": suggest(trial, "nl"),
+            "n_estimators": suggest(trial, "ne"),
+            "max_depth": suggest(trial, "md"),
+            "min_child_samples": suggest(trial, "mcs"),
+            "subsample": suggest(trial, "subsample"),
+            "colsample_bytree": suggest(trial, "cbt"),
+            "reg_lambda": suggest(trial, "reg_lambda"),
+        }
+
+        n_boost_rounds = params.get("n_estimators")
         fold_scores: list[float] = []
 
         for fold_i, (tr_idx, va_idx) in enumerate(splits):
@@ -325,21 +327,22 @@ def train_one(
                 pos_weight = min((y_tr == 0).sum() / max((y_tr == 1).sum(), 1), 50)
                 extra_params["scale_pos_weight"] = pos_weight
 
+            task = "vol" if regression else tag
+            params.update({
+                "objective": fixed_params["objective"][task],
+                "metric": fixed_params["metric"][task],
+                "n_jobs": fixed_params["n_jobs"],
+            })
+
             if regression:
                 model = lgb.LGBMRegressor(
-                    objective="regression",
-                    metric="l1",
                     random_state=42,
-                    n_jobs=-1,
                     verbosity=-1,
                     **params,
                 )
             else:
                 model = lgb.LGBMClassifier(
-                    objective="binary",
-                    metric="auc",
                     random_state=42,
-                    n_jobs=-1,
                     verbosity=-1,
                     **extra_params,
                     **params,
@@ -351,7 +354,7 @@ def train_one(
                 eval_set=[(X_va_imp, y_va)],
                 eval_metric="l1" if regression else "auc",
                 callbacks=[
-                    lgb.early_stopping(stopping_rounds=50, verbose=False),
+                    lgb.early_stopping(early_stop_rounds, verbose=False),
                     OffsetLightGBMPruningCallback(
                         trial,
                         "l1" if regression else "auc",
@@ -382,28 +385,16 @@ def train_one(
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
     raw_params = study.best_params
-    if period == "d1":
-        best_params = {
-            "learning_rate": raw_params["lr_d1"],
-            "num_leaves": raw_params["nl_d1"],
-            "n_estimators": raw_params["ne_d1"],
-            "max_depth": raw_params["md_d1"],
-            "min_child_samples": raw_params["mcs_d1"],
-            "subsample": raw_params["subsample_d1"],
-            "colsample_bytree": raw_params["cbt_d1"],
-            "reg_lambda": raw_params["reg_lambda_d1"],
-        }
-    else:
-        best_params = {
-            "learning_rate": raw_params["lr"],
-            "num_leaves": raw_params["nl"],
-            "n_estimators": raw_params["ne"],
-            "max_depth": raw_params["md"],
-            "min_child_samples": raw_params["mcs"],
-            "subsample": raw_params["subsample"],
-            "colsample_bytree": raw_params["cbt"],
-            "reg_lambda": raw_params["reg_lambda"],
-        }
+    best_params = {
+        "learning_rate": raw_params["lr"],
+        "num_leaves": raw_params["nl"],
+        "n_estimators": raw_params["ne"],
+        "max_depth": raw_params["md"],
+        "min_child_samples": raw_params["mcs"],
+        "subsample": raw_params["subsample"],
+        "colsample_bytree": raw_params["cbt"],
+        "reg_lambda": raw_params["reg_lambda"],
+    }
 
     # ----- 依据最后一折重新训练最佳模型 -----
     _, va_idx = splits[-1]
@@ -417,21 +408,22 @@ def train_one(
         pos_weight = min((y == 0).sum() / max((y == 1).sum(), 1), 50)
         extra_params["scale_pos_weight"] = pos_weight
 
+    task = "vol" if regression else tag
+    best_params.update({
+        "objective": fixed_params["objective"][task],
+        "metric": fixed_params["metric"][task],
+        "n_jobs": fixed_params["n_jobs"],
+    })
+
     if regression:
         best = lgb.LGBMRegressor(
-            objective="regression",
-            metric="l1",
             random_state=42,
-            n_jobs=-1,
             verbosity=-1,
             **best_params,
         )
     else:
         best = lgb.LGBMClassifier(
-            objective="binary",
-            metric="auc",
             random_state=42,
-            n_jobs=-1,
             verbosity=-1,
             **extra_params,
             **best_params,
@@ -443,7 +435,7 @@ def train_one(
         eval_set=[(X_va_imp, y_va)],
         eval_metric="l1" if regression else "auc",
         callbacks=[
-            lgb.early_stopping(stopping_rounds=50, verbose=False),
+            lgb.early_stopping(early_stop_rounds, verbose=False),
             lgb.log_evaluation(period=50),
         ],
     )
