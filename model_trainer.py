@@ -12,6 +12,7 @@ from pathlib import Path
 from sklearn.metrics import roc_auc_score, mean_absolute_error
 from sklearn.metrics import precision_recall_curve
 from imblearn.combine import SMOTEENN
+from sklearn.impute import SimpleImputer
 
 
 import optuna
@@ -239,6 +240,11 @@ def train_one(
 
     X = data[feat_use]
     y = data[tgt]
+
+    # 5-3.1 处理缺失值，确保 SMOTE / SMOTEENN 能正常工作
+    if use_ts_smote or (period in {"1d", "d1"} and tag == "down"):
+        imputer = SimpleImputer(strategy="median")
+        X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns, index=X.index)
 
     if use_ts_smote:
         smote = TimeSeriesAwareSMOTE()
