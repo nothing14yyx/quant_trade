@@ -115,6 +115,7 @@ train_settings:
   min_rows: 500
   time_ranges: []
   ts_smote: true
+  hold_days: 7
 
 # Δ-boost 配置：关键指标与参数
 delta_boost:
