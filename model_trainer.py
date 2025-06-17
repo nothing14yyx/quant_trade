@@ -261,8 +261,15 @@ def train_one(
         X, y = smote.fit_resample(X, y, data["open_time"])
 
     # 先划分训练/验证，再执行采样
+    needs_stratify = (
+            not regression  # ① 仅分类才考虑分层
+            and y.nunique() >= 2  # ② 至少两类
+            and y.value_counts().min() >= 2  # ③ 每类 ≥ 2 行
+    )
     X_tr, X_va, y_tr, y_va = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=42
+        X, y, test_size=0.2,
+        stratify=y if needs_stratify else None,
+        random_state=42,
     )
 
     if period in {"1d", "d1"} and tag == "down":

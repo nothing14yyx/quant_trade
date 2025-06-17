@@ -92,16 +92,23 @@ feature_cols:
     - bear_streak_1h        # 0.995  连跌动能
     - cci_delta_1h          # 0.985  短期趋势斜率
   1d:
-    - fg_index_d1           # 0.960  恐惧-贪婪情绪
-    - cg_market_cap_roc_d1  # 0.955  宏观市值变化
-    - macd_signal_d1        # 0.930  长线趋势信号
-    - macd_hist_diff_1h_d1  # 0.910  日线与 1h MACD 差异
-    - kc_width_pct_chg_d1   # 0.866  Keltner 通道宽度变化
-    - hv_14d_d1             # 0.856  14 天历史波动率
+    - fg_index_d1            # 0.960  恐惧-贪婪情绪
+    - cg_market_cap_roc_d1   # 0.955  宏观市值变化
+    - macd_signal_d1         # 0.930  长线趋势信号
+    - macd_hist_diff_1h_d1   # 0.910  日线-1h MACD 差异
+    - rsi_diff_4h_d1         # 0.904  RSI 跨周期背离
+    - kc_width_pct_chg_d1    # 0.866  Keltner 通道宽度变化
+    - hv_14d_d1              # 0.856  14 天历史波动率
     - cg_total_volume_roc_d1 # 0.841  市值成交量变化
-    - pct_chg6_4h           # 0.935  4h 中期动量
-    - atr_pct_ratio_1h_4h   # 0.915  跨周期波动率比
-    - bear_streak_1h        # 0.995  1h 连跌动能
+    - vol_ratio_4h_d1        # 0.838  4h/日量能比
+    - pct_chg6_4h            # 0.935  4h 中期动量
+    - atr_pct_ratio_1h_4h    # 0.915  跨周期波动率比
+    - pct_chg1_1h            # 0.905  1h 涨跌幅
+    - bear_streak_1h         # 0.995  1h 连跌动能
+    - lower_wick_ratio_1h    # 0.820  下影线占比
+    - upper_wick_ratio_4h    # 0.815  上影线占比
+    - funding_rate_anom_d1   # 0.800  衍生品 Funding 异常
+
 
 train_settings:
   by_symbol: false
