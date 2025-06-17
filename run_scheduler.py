@@ -85,7 +85,7 @@ class Scheduler:
             model_paths=cfg["models"],
             feature_cols_1h=cfg.get("feature_cols", {}).get("1h", []),
             feature_cols_4h=cfg.get("feature_cols", {}).get("4h", []),
-            feature_cols_d1=cfg.get("feature_cols", {}).get("1d", []),
+            feature_cols_d1=cfg.get("feature_cols", {}).get("d1", []),
         )
         categories = load_symbol_categories(self.engine)
         self.sg.set_symbol_categories(categories)
