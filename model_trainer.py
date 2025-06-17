@@ -23,8 +23,9 @@ from sqlalchemy import create_engine
 
 def _sanitize_feature_names(
     df: pd.DataFrame, features: list[str]
-) -> tuple[list[str], dict[str, str]]:
-    """Replace unsupported characters in feature names and return mapping."""
+) -> tuple[pd.DataFrame, list[str], dict[str, str]]:
+    """Sanitize feature names without mutating the original DataFrame."""
+
     mapping: dict[str, str] = {}
     sanitized: list[str] = []
     for col in features:
@@ -32,9 +33,8 @@ def _sanitize_feature_names(
         if clean != col:
             mapping[col] = clean
         sanitized.append(clean)
-    if mapping:
-        df.rename(columns=mapping, inplace=True)
-    return sanitized, mapping
+    df_out = df.rename(columns=mapping, inplace=False) if mapping else df
+    return df_out, sanitized, mapping
 
 
 def forward_chain_split(n_samples: int, n_splits: int = 5, gap: int = 0):
@@ -195,6 +195,7 @@ time_ranges = train_cfg.get("time_ranges", []) or [
 ]
 use_ts_smote = bool(train_cfg.get("ts_smote", False))
 hold_days = int(train_cfg.get("hold_days", 0))
+n_trials = int(train_cfg.get("n_trials", 40))
 
 # ---------- 2. 读取特征大表并按时间排序 ----------
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time"])
@@ -238,7 +239,7 @@ def train_one(
 ) -> None:
 
     # 5-1  缺列补 NaN，并记录重命名映射
-    feat_use, rename_map = _sanitize_feature_names(df_all, features.copy())
+    df_all, feat_use, rename_map = _sanitize_feature_names(df_all, features.copy())
 
     for col in feat_use:
         if col not in df_all.columns:
@@ -267,33 +268,10 @@ def train_one(
     X = data[feat_use]
     y = data[tgt]
 
-    # 时序切分（最后一折为验证集）
+    # 时序切分
     splits = list(forward_chain_split(len(X), n_splits=5))
-    tr_idx, va_idx = splits[-1]
-    X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
-    y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
 
     imputer = SimpleImputer(strategy="median")
-    X_tr_imp = pd.DataFrame(imputer.fit_transform(X_tr), columns=X_tr.columns, index=X_tr.index)
-    X_va_imp = pd.DataFrame(imputer.transform(X_va), columns=X_va.columns, index=X_va.index)
-
-    if use_ts_smote:
-        smote = TimeSeriesAwareSMOTE()
-        X_res_imp, y_res = smote.fit_resample(X_tr_imp, y_tr, data.loc[X_tr.index, "open_time"])
-        pos_weight = 1.0
-    elif period == "d1" and tag == "down":
-        X_res_imp, y_res = SMOTEENN(random_state=42).fit_resample(X_tr_imp, y_tr)
-        if len(np.unique(y_res)) < 2:
-            X_res_imp, y_res = X_tr_imp, y_tr
-        pos_weight = 1.0
-    else:
-        X_res_imp, y_res = X_tr_imp, y_tr
-        if not regression:
-            pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
-        else:
-            pos_weight = 1.0
-
-    # 5-5  使用 Optuna + pruner 进行超参搜索
 
     def objective(trial: optuna.Trial):
         if period == "d1":
@@ -319,52 +297,84 @@ def train_one(
                 "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 0.5),
             }
 
-        if regression:
-            model = lgb.LGBMRegressor(
-                objective="regression",
-                metric="l1",
-                random_state=42,
-                n_jobs=-1,
-                verbosity=-1,
-                **params,
-            )
-        else:
-            model = lgb.LGBMClassifier(
-                objective="binary",
-                metric="auc",
-                random_state=42,
-                n_jobs=-1,
-                scale_pos_weight=pos_weight,
-                verbosity=-1,
-                **params,
+        n_boost_rounds = params.get("n_estimators", params.get("ne", params.get("ne_d1")))
+        fold_scores: list[float] = []
+
+        for fold_i, (tr_idx, va_idx) in enumerate(splits):
+            X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
+            y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
+            X_tr_imp = pd.DataFrame(imputer.fit_transform(X_tr), columns=X_tr.columns, index=X_tr.index)
+            X_va_imp = pd.DataFrame(imputer.transform(X_va), columns=X_va.columns, index=X_va.index)
+
+            extra_params: dict[str, float] = {}
+            if use_ts_smote:
+                smote = TimeSeriesAwareSMOTE()
+                X_res_imp, y_res = smote.fit_resample(
+                    X_tr_imp,
+                    y_tr,
+                    data.loc[X_tr.index, "open_time"],
+                )
+            else:
+                X_res_imp, y_res = X_tr_imp, y_tr
+                if not regression:
+                    pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
+                    extra_params["scale_pos_weight"] = pos_weight
+
+            if regression:
+                model = lgb.LGBMRegressor(
+                    objective="regression",
+                    metric="l1",
+                    random_state=42,
+                    n_jobs=-1,
+                    verbosity=-1,
+                    **params,
+                )
+            else:
+                model = lgb.LGBMClassifier(
+                    objective="binary",
+                    metric="auc",
+                    random_state=42,
+                    n_jobs=-1,
+                    verbosity=-1,
+                    **extra_params,
+                    **params,
+                )
+
+            model.fit(
+                X_res_imp,
+                y_res,
+                eval_set=[(X_va_imp, y_va)],
+                eval_metric="l1" if regression else "auc",
+                callbacks=[
+                    lgb.early_stopping(stopping_rounds=50, verbose=False),
+                    OffsetLightGBMPruningCallback(
+                        trial,
+                        "l1" if regression else "auc",
+                        report_interval=10,
+                        step_offset=fold_i * n_boost_rounds,
+                    ),
+                ],
             )
 
-        model.fit(
-            X_res_imp,
-            y_res,
-            eval_set=[(X_va_imp, y_va)],
-            eval_metric="l1" if regression else "auc",
-            callbacks=[
-                lgb.early_stopping(stopping_rounds=50, verbose=False),
-                OffsetLightGBMPruningCallback(trial, "l1" if regression else "auc", report_interval=10),
-            ],
-        )
+            if regression:
+                preds = model.predict(X_va_imp, num_iteration=model.best_iteration_)
+                fold_scores.append(-mean_absolute_error(y_va, preds))
+            else:
+                preds = model.predict_proba(X_va_imp, num_iteration=model.best_iteration_)[:, 1]
+                fold_scores.append(roc_auc_score(y_va, preds))
 
-        if regression:
-            preds = model.predict(X_va_imp, num_iteration=model.best_iteration_)
-            return -mean_absolute_error(y_va, preds)
-        else:
-            preds = model.predict_proba(X_va_imp, num_iteration=model.best_iteration_)[:, 1]
-            return roc_auc_score(y_va, preds)
+        return float(np.mean(fold_scores))
+
+    # 5-5  使用 Optuna + pruner 进行超参搜索
 
     if period == "d1":
-        pruner = optuna.pruners.SuccessiveHalvingPruner(
-            min_resource=5000, reduction_factor=4
-        )
+        pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=5000, reduction_factor=4)
+    elif period == "4h":
+        pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=1500)
     else:
-        pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=1000)
+        pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=2000)
     study = optuna.create_study(direction="maximize", pruner=pruner)
-    study.optimize(objective, n_trials=40, show_progress_bar=False)
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
     raw_params = study.best_params
     if period == "d1":
@@ -390,6 +400,23 @@ def train_one(
             "reg_lambda": raw_params["reg_lambda"],
         }
 
+    # ----- 依据最后一折重新训练最佳模型 -----
+    tr_idx, va_idx = splits[-1]
+    X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
+    y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
+    X_tr_imp = pd.DataFrame(imputer.fit_transform(X_tr), columns=X_tr.columns, index=X_tr.index)
+    X_va_imp = pd.DataFrame(imputer.transform(X_va), columns=X_va.columns, index=X_va.index)
+
+    extra_params: dict[str, float] = {}
+    if use_ts_smote:
+        smote = TimeSeriesAwareSMOTE()
+        X_res_imp, y_res = smote.fit_resample(X_tr_imp, y_tr, data.loc[X_tr.index, "open_time"])
+    else:
+        X_res_imp, y_res = X_tr_imp, y_tr
+        if not regression:
+            pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
+            extra_params["scale_pos_weight"] = pos_weight
+
     if regression:
         best = lgb.LGBMRegressor(
             objective="regression",
@@ -405,8 +432,8 @@ def train_one(
             metric="auc",
             random_state=42,
             n_jobs=-1,
-            scale_pos_weight=pos_weight,
             verbosity=-1,
+            **extra_params,
             **best_params,
         )
 
@@ -458,6 +485,7 @@ def train_one(
             "features": feat_use,
             "threshold": best_th,
             "rename_map": rename_map,
+            "sampled": bool(use_ts_smote),
             "version": datetime.datetime.utcnow().strftime("%Y%m%d"),
         },
         model_path,
@@ -470,8 +498,9 @@ def train_one(
 
     # 5-8  打印前 15 个重要特征
     if feat_imp is not None:
-        imp = pd.Series(feat_imp, index=feat_use).sort_values(ascending=False).head(15)
-        print(imp.to_string())
+        imp = pd.Series(feat_imp, index=feat_use).sort_values(ascending=False)
+        imp.to_csv(model_path.with_suffix(".feat_imp.csv"))
+        print(imp.head(15).to_string())
 
 
 # ---------- 6. 周期 × 方向 × 符号 训练循环 ----------
@@ -502,7 +531,9 @@ for sym in symbols:
                 print(
                     f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}"
                 )
-                out_file = Path("models") / file_name
+                out_dir = Path("models") / sym if sym is not None else Path("models")
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_file = out_dir / file_name
                 train_one(
                     subset.copy(),
                     cols,
