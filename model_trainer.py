@@ -13,7 +13,7 @@ from sklearn.metrics import roc_auc_score, mean_absolute_error
 from sklearn.metrics import precision_recall_curve
 from imblearn.combine import SMOTEENN
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 
 
 import optuna
@@ -21,10 +21,12 @@ from lightgbm.callback import CallbackEnv
 from sqlalchemy import create_engine
 
 
-def _sanitize_feature_names(df: pd.DataFrame, features: list[str]) -> list[str]:
-    """Replace characters not supported by LightGBM in feature names."""
-    mapping = {}
-    sanitized = []
+def _sanitize_feature_names(
+    df: pd.DataFrame, features: list[str]
+) -> tuple[list[str], dict[str, str]]:
+    """Replace unsupported characters in feature names and return mapping."""
+    mapping: dict[str, str] = {}
+    sanitized: list[str] = []
     for col in features:
         clean = re.sub(r'[\[\]{}\\"\n\r\t]', "_", col)
         if clean != col:
@@ -32,7 +34,7 @@ def _sanitize_feature_names(df: pd.DataFrame, features: list[str]) -> list[str]:
         sanitized.append(clean)
     if mapping:
         df.rename(columns=mapping, inplace=True)
-    return sanitized
+    return sanitized, mapping
 
 
 def forward_chain_split(n_samples: int, n_splits: int = 5, gap: int = 0):
@@ -192,6 +194,7 @@ time_ranges = train_cfg.get("time_ranges", []) or [
     {"name": "all", "start": None, "end": None}
 ]
 use_ts_smote = bool(train_cfg.get("ts_smote", False))
+hold_days = int(train_cfg.get("hold_days", 0))
 
 # ---------- 2. 读取特征大表并按时间排序 ----------
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time"])
@@ -234,8 +237,8 @@ def train_one(
     regression: bool = False,
 ) -> None:
 
-    # 5-1  缺列补 NaN
-    feat_use = _sanitize_feature_names(df_all, features.copy())
+    # 5-1  缺列补 NaN，并记录重命名映射
+    feat_use, rename_map = _sanitize_feature_names(df_all, features.copy())
 
     for col in feat_use:
         if col not in df_all.columns:
@@ -250,40 +253,45 @@ def train_one(
     X = data[feat_use]
     y = data[tgt]
 
-    # 5-3.1 处理缺失值，确保 SMOTE / SMOTEENN 能正常工作
-    if use_ts_smote or (period == "d1" and tag == "down"):
-        imputer = SimpleImputer(strategy="median")
-        X = pd.DataFrame(imputer.fit_transform(X), columns=X.columns, index=X.index)
+    # ---- 留出集
+    if hold_days > 0:
+        end_time = data["open_time"].max()
+        hold_mask = data["open_time"] >= end_time - pd.Timedelta(days=hold_days)
+        hold_df = data[hold_mask]
+        data = data[~hold_mask]
+        X_hold = hold_df[feat_use]
+        y_hold = hold_df[tgt]
+    else:
+        X_hold = pd.DataFrame()
+        y_hold = pd.Series(dtype=y.dtype)
+    X = data[feat_use]
+    y = data[tgt]
+
+    # 时序切分（最后一折为验证集）
+    splits = list(forward_chain_split(len(X), n_splits=5))
+    tr_idx, va_idx = splits[-1]
+    X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
+    y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
+
+    imputer = SimpleImputer(strategy="median")
+    X_tr_imp = pd.DataFrame(imputer.fit_transform(X_tr), columns=X_tr.columns, index=X_tr.index)
+    X_va_imp = pd.DataFrame(imputer.transform(X_va), columns=X_va.columns, index=X_va.index)
 
     if use_ts_smote:
         smote = TimeSeriesAwareSMOTE()
-        X, y = smote.fit_resample(X, y, data["open_time"])
-
-    # 先划分训练/验证，再执行采样
-    needs_stratify = (
-            not regression  # ① 仅分类才考虑分层
-            and y.nunique() >= 2  # ② 至少两类
-            and y.value_counts().min() >= 2  # ③ 每类 ≥ 2 行
-    )
-    X_tr, X_va, y_tr, y_va = train_test_split(
-        X, y, test_size=0.2,
-        stratify=y if needs_stratify else None,
-        random_state=42,
-    )
-
-    if period == "d1" and tag == "down":
-        X_res, y_res = SMOTEENN(random_state=42).fit_resample(X_tr, y_tr)
+        X_res_imp, y_res = smote.fit_resample(X_tr_imp, y_tr, data.loc[X_tr.index, "open_time"])
+        pos_weight = 1.0
+    elif period == "d1" and tag == "down":
+        X_res_imp, y_res = SMOTEENN(random_state=42).fit_resample(X_tr_imp, y_tr)
         if len(np.unique(y_res)) < 2:
-            X_res, y_res = X_tr, y_tr
+            X_res_imp, y_res = X_tr_imp, y_tr
+        pos_weight = 1.0
     else:
-        X_res, y_res = X_tr, y_tr
-
-    X_hold = pd.DataFrame()  # 不再单独留出集
-    y_hold = pd.Series(dtype=y.dtype)
-
-    # 5-4  计算类别不平衡补偿
-    if not regression:
-        pos_weight = (y_res == 0).sum() / max((y_res == 1).sum(), 1)
+        X_res_imp, y_res = X_tr_imp, y_tr
+        if not regression:
+            pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
+        else:
+            pos_weight = 1.0
 
     # 5-5  使用 Optuna + pruner 进行超参搜索
 
@@ -332,21 +340,21 @@ def train_one(
             )
 
         model.fit(
-            X_res,
+            X_res_imp,
             y_res,
-            eval_set=[(X_va, y_va)],
+            eval_set=[(X_va_imp, y_va)],
             eval_metric="l1" if regression else "auc",
             callbacks=[
                 lgb.early_stopping(stopping_rounds=50, verbose=False),
-                OffsetLightGBMPruningCallback(trial, "l1" if regression else "auc"),
+                OffsetLightGBMPruningCallback(trial, "l1" if regression else "auc", report_interval=10),
             ],
         )
 
         if regression:
-            preds = model.predict(X_va, num_iteration=model.best_iteration_)
+            preds = model.predict(X_va_imp, num_iteration=model.best_iteration_)
             return -mean_absolute_error(y_va, preds)
         else:
-            preds = model.predict_proba(X_va, num_iteration=model.best_iteration_)[:, 1]
+            preds = model.predict_proba(X_va_imp, num_iteration=model.best_iteration_)[:, 1]
             return roc_auc_score(y_va, preds)
 
     if period == "d1":
@@ -354,7 +362,7 @@ def train_one(
             min_resource=5000, reduction_factor=4
         )
     else:
-        pruner = optuna.pruners.SuccessiveHalvingPruner()
+        pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=1000)
     study = optuna.create_study(direction="maximize", pruner=pruner)
     study.optimize(objective, n_trials=40, show_progress_bar=False)
 
@@ -403,23 +411,24 @@ def train_one(
         )
 
     best.fit(
-        X_res,
+        X_res_imp,
         y_res,
-        eval_set=[(X_va, y_va)],
+        eval_set=[(X_va_imp, y_va)],
         eval_metric="l1" if regression else "auc",
         callbacks=[
             lgb.early_stopping(stopping_rounds=50, verbose=False),
-            lgb.log_evaluation(period=0),
+            lgb.log_evaluation(period=50),
         ],
     )
 
     # ----- 留出集评估 -----
     if len(X_hold):
+        X_hold_imp = pd.DataFrame(imputer.transform(X_hold), columns=X_hold.columns, index=X_hold.index)
         if regression:
-            hold_pred = best.predict(X_hold, num_iteration=best.best_iteration_)
+            hold_pred = best.predict(X_hold_imp, num_iteration=best.best_iteration_)
             hold_score = -mean_absolute_error(y_hold, hold_pred)
         else:
-            hold_pred = best.predict_proba(X_hold, num_iteration=best.best_iteration_)[
+            hold_pred = best.predict_proba(X_hold_imp, num_iteration=best.best_iteration_)[
                 :, 1
             ]
             hold_score = roc_auc_score(y_hold, hold_pred)
@@ -431,16 +440,26 @@ def train_one(
     # ----- 根据验证集寻找最佳阈值 -----
     best_th = 0.5
     if not regression:
-        val_proba = best.predict_proba(X_va, num_iteration=best.best_iteration_)[:, 1]
+        val_proba = best.predict_proba(X_va_imp, num_iteration=best.best_iteration_)[:, 1]
         prec, rec, thr = precision_recall_curve(y_va, val_proba)
         f1 = 2 * prec * rec / (prec + rec + 1e-12)
         if len(thr):
             best_th = float(thr[np.nanargmax(f1)])
 
     # 5-7  保存模型与特征列及阈值
+    pipe = Pipeline([
+        ("imputer", imputer),
+        ("model", best),
+    ])
     model_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(
-        {"model": best, "features": feat_use, "threshold": best_th},
+        {
+            "pipeline": pipe,
+            "features": feat_use,
+            "threshold": best_th,
+            "rename_map": rename_map,
+            "version": datetime.datetime.utcnow().strftime("%Y%m%d"),
+        },
         model_path,
         compress=3,
     )
