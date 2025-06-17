@@ -52,9 +52,9 @@ models:
     down: models/model_4h_down.pkl
     vol: models/model_4h_vol.pkl
   d1:
-    up: models/model_1d_up.pkl
-    down: models/model_1d_down.pkl
-    vol: models/model_1d_vol.pkl
+    up: models/model_d1_up.pkl
+    down: models/model_d1_down.pkl
+    vol: models/model_d1_vol.pkl
 
 database:
   uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
@@ -165,43 +165,43 @@ feature_cols:
     - hour_of_day
     - day_of_week
 
-d1:          # ≈ 22 k 样本，Feat ≈ 27
-  # ─── 日线动量 ───
-  - pct_chg1_d1
-  - pct_chg3_d1
-  - pct_chg7_d1
-  - macd_hist_d1
-  - ema_diff_d1
-  - rsi_d1
-  - rsi_slope_d1
+  d1:          # ≈ 22 k 样本，Feat ≈ 27
+    # ─── 日线动量 ───
+    - pct_chg1_d1
+    - pct_chg3_d1
+    - pct_chg7_d1
+    - macd_hist_d1
+    - ema_diff_d1
+    - rsi_d1
+    - rsi_slope_d1
 
-  # ─── 波动 & 通道 ───
-  - atr_chg_d1
-  - atr_pct_d1
-  - kc_width_pct_chg_d1
-  - bb_width_chg_d1
-  - hv_14d_d1
-  - hv_30d_d1
+    # ─── 波动 & 通道 ───
+    - atr_chg_d1
+    - atr_pct_d1
+    - kc_width_pct_chg_d1
+    - bb_width_chg_d1
+    - hv_14d_d1
+    - hv_30d_d1
 
-  # ─── 形态 & 分布 ───
-  - kurtosis_d1
-  - skewness_d1
-  - donchian_perc_d1
-  - long_lower_shadow_d1
-  - upper_wick_ratio_d1
+    # ─── 形态 & 分布 ───
+    - kurtosis_d1
+    - skewness_d1
+    - donchian_perc_d1
+    - long_lower_shadow_d1
+    - upper_wick_ratio_d1
 
-  # ─── 量价 & 资金流 ───
-  - vol_ma_ratio_long_d1
-  - vol_breakout_d1
-  - vol_ratio_4h_d1        # 跨周期量差
-  - cg_market_cap_roc_d1
-  - cg_total_volume_roc_d1
-  - fg_index_d1            # 情绪
+    # ─── 量价 & 资金流 ───
+    - vol_ma_ratio_long_d1
+    - vol_breakout_d1
+    - vol_ratio_4h_d1        # 跨周期量差
+    - cg_market_cap_roc_d1
+    - cg_total_volume_roc_d1
+    - fg_index_d1            # 情绪
 
-  # ─── 跨周期差分（保留 3 个最稳）───
-  - rsi_diff_1h_4h
-  - atr_pct_ratio_1h_4h
-  - vol_ratio_1h_4h
+    # ─── 跨周期差分（保留 3 个最稳）───
+    - rsi_diff_1h_4h
+    - atr_pct_ratio_1h_4h
+    - vol_ratio_1h_4h
 
 
 train_settings:
