@@ -13,6 +13,7 @@ from sklearn.metrics import roc_auc_score, mean_absolute_error
 from sklearn.metrics import precision_recall_curve
 from imblearn.combine import SMOTEENN
 from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
 
 
 import optuna
@@ -25,7 +26,7 @@ def _sanitize_feature_names(df: pd.DataFrame, features: list[str]) -> list[str]:
     mapping = {}
     sanitized = []
     for col in features:
-        clean = re.sub(r'[\[\]{}\\"\n\r\t]', '_', col)
+        clean = re.sub(r'[\[\]{}\\"\n\r\t]', "_", col)
         if clean != col:
             mapping[col] = clean
         sanitized.append(clean)
@@ -51,7 +52,12 @@ def forward_chain_split(n_samples: int, n_splits: int = 5, gap: int = 0):
 class TimeSeriesAwareSMOTE:
     """在时间序列数据上执行 SMOTE，支持按时间分组，确保仅使用过去的少数类样本"""
 
-    def __init__(self, k_neighbors: int = 2, random_state: int | None = 42, group_freq: str | None = None):
+    def __init__(
+        self,
+        k_neighbors: int = 2,
+        random_state: int | None = 42,
+        group_freq: str | None = None,
+    ):
         self.k_neighbors = k_neighbors
         self.random_state = random_state
         self.group_freq = group_freq
@@ -150,7 +156,9 @@ class OffsetLightGBMPruningCallback:
         target_valid_name = "valid" if is_cv else self._valid_name
 
         for valid_name, metric, value in [(e[0], e[1], e[2]) for e in evals]:
-            if valid_name == target_valid_name and (metric == self._metric or metric == "valid " + self._metric):
+            if valid_name == target_valid_name and (
+                metric == self._metric or metric == "valid " + self._metric
+            ):
                 step = env.iteration + self._step_offset
                 self._trial.report(value, step=step)
                 if self._trial.should_prune():
@@ -180,7 +188,9 @@ engine = create_engine(
 train_cfg = cfg.get("train_settings", {})
 train_by_symbol = bool(train_cfg.get("by_symbol", False))
 min_rows = int(train_cfg.get("min_rows", 500))
-time_ranges = train_cfg.get("time_ranges", []) or [{"name": "all", "start": None, "end": None}]
+time_ranges = train_cfg.get("time_ranges", []) or [
+    {"name": "all", "start": None, "end": None}
+]
 use_ts_smote = bool(train_cfg.get("ts_smote", False))
 
 # ---------- 2. 读取特征大表并按时间排序 ----------
@@ -250,100 +260,121 @@ def train_one(
         smote = TimeSeriesAwareSMOTE()
         X, y = smote.fit_resample(X, y, data["open_time"])
 
-    if period in {"1d", "d1"} and tag == "down":
-        X_res, y_res = SMOTEENN().fit_resample(X, y)
-    else:
-        X_res, y_res = X, y
+    # 先划分训练/验证，再执行采样
+    X_tr, X_va, y_tr, y_va = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
 
-    # ----- 留出最后 10% 仅做最终评估 -----
-    hold_len = max(1, int(len(X_res) * 0.1))
-    X_hold = X_res.iloc[-hold_len:]
-    y_hold = y_res.iloc[-hold_len:]
-    X = X_res.iloc[:-hold_len]
-    y = y_res.iloc[:-hold_len]
+    if period in {"1d", "d1"} and tag == "down":
+        X_res, y_res = SMOTEENN(random_state=42).fit_resample(X_tr, y_tr)
+        if len(np.unique(y_res)) < 2:
+            X_res, y_res = X_tr, y_tr
+    else:
+        X_res, y_res = X_tr, y_tr
+
+    X_hold = pd.DataFrame()  # 不再单独留出集
+    y_hold = pd.Series(dtype=y.dtype)
 
     # 5-4  计算类别不平衡补偿
     if not regression:
-        pos_weight = (y == 0).sum() / max((y == 1).sum(), 1)
+        pos_weight = (y_res == 0).sum() / max((y_res == 1).sum(), 1)
 
     # 5-5  使用 Optuna + pruner 进行超参搜索
 
     def objective(trial: optuna.Trial):
-        params = {
-            "n_estimators": trial.suggest_int("n_estimators", 300, 900),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
-            "num_leaves": trial.suggest_int("num_leaves", 31, 127),
-            "max_depth": trial.suggest_int("max_depth", -1, 20),
-            "min_child_samples": trial.suggest_int("min_child_samples", 20, 100),
-            "subsample": trial.suggest_float("subsample", 0.8, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-            "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 0.5),
-        }
-
         if period in {"1d", "d1"}:
-            params["learning_rate"] = trial.suggest_float("learning_rate", 0.01, 0.03, log=True)
-            params["num_leaves"] = trial.suggest_int("num_leaves", 64, 160, step=8)
-            params["n_estimators"] = trial.suggest_int("n_estimators", 600, 1200, step=100)
-            params["max_depth"] = trial.suggest_int("max_depth", 4, 12)
+            params = {
+                "learning_rate": trial.suggest_float("lr_d1", 0.01, 0.03, log=True),
+                "num_leaves": trial.suggest_int("nl_d1", 64, 160, step=8),
+                "n_estimators": trial.suggest_int("ne_d1", 600, 1200, step=100),
+                "max_depth": trial.suggest_int("md_d1", 4, 12),
+                "min_child_samples": trial.suggest_int("mcs_d1", 20, 100),
+                "subsample": trial.suggest_float("subsample_d1", 0.8, 1.0),
+                "colsample_bytree": trial.suggest_float("cbt_d1", 0.6, 1.0),
+                "reg_lambda": trial.suggest_float("reg_lambda_d1", 0.0, 0.5),
+            }
+        else:
+            params = {
+                "learning_rate": trial.suggest_float("lr", 0.01, 0.1, log=True),
+                "num_leaves": trial.suggest_int("nl", 31, 127),
+                "n_estimators": trial.suggest_int("ne", 300, 900),
+                "max_depth": trial.suggest_int("md", -1, 20),
+                "min_child_samples": trial.suggest_int("mcs", 20, 100),
+                "subsample": trial.suggest_float("subsample", 0.8, 1.0),
+                "colsample_bytree": trial.suggest_float("cbt", 0.6, 1.0),
+                "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 0.5),
+            }
 
-        scores = []
-        fcv = forward_chain_split(len(X), n_splits=5, gap=50)
-        for fold_idx, (tr_idx, val_idx) in enumerate(fcv):
-            X_tr, X_val = X.iloc[tr_idx], X.iloc[val_idx]
-            y_tr, y_val = y.iloc[tr_idx], y.iloc[val_idx]
-
-            if regression:
-                model = lgb.LGBMRegressor(
-                    objective="regression",
-                    metric="l1",
-                    random_state=42,
-                    n_jobs=-1,
-                    verbosity=-1,
-                    **params,
-                )
-            else:
-                model = lgb.LGBMClassifier(
-                    objective="binary",
-                    metric="auc",
-                    random_state=42,
-                    n_jobs=-1,
-                    scale_pos_weight=pos_weight,
-                    verbosity=-1,
-                    **params,
-                )
-
-            model.fit(
-                X_tr,
-                y_tr,
-                eval_set=[(X_val, y_val)],
-                eval_metric="l1" if regression else "auc",
-                callbacks=[
-                    lgb.early_stopping(stopping_rounds=50, verbose=False),
-                    OffsetLightGBMPruningCallback(
-                        trial,
-                        "l1" if regression else "auc",
-                        step_offset=fold_idx * 10000,
-                    ),
-                ],
+        if regression:
+            model = lgb.LGBMRegressor(
+                objective="regression",
+                metric="l1",
+                random_state=42,
+                n_jobs=-1,
+                verbosity=-1,
+                **params,
+            )
+        else:
+            model = lgb.LGBMClassifier(
+                objective="binary",
+                metric="auc",
+                random_state=42,
+                n_jobs=-1,
+                scale_pos_weight=pos_weight,
+                verbosity=-1,
+                **params,
             )
 
-            if regression:
-                preds = model.predict(X_val, num_iteration=model.best_iteration_)
-                score = -mean_absolute_error(y_val, preds)
-            else:
-                preds = model.predict_proba(X_val, num_iteration=model.best_iteration_)[:, 1]
-                score = roc_auc_score(y_val, preds)
-            scores.append(score)
+        model.fit(
+            X_res,
+            y_res,
+            eval_set=[(X_va, y_va)],
+            eval_metric="l1" if regression else "auc",
+            callbacks=[
+                lgb.early_stopping(stopping_rounds=50, verbose=False),
+                OffsetLightGBMPruningCallback(trial, "l1" if regression else "auc"),
+            ],
+        )
 
-        return float(np.mean(scores))
+        if regression:
+            preds = model.predict(X_va, num_iteration=model.best_iteration_)
+            return -mean_absolute_error(y_va, preds)
+        else:
+            preds = model.predict_proba(X_va, num_iteration=model.best_iteration_)[:, 1]
+            return roc_auc_score(y_va, preds)
+
     if period in {"1d", "d1"}:
-        pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=5000, reduction_factor=4)
+        pruner = optuna.pruners.SuccessiveHalvingPruner(
+            min_resource=5000, reduction_factor=4
+        )
     else:
         pruner = optuna.pruners.SuccessiveHalvingPruner()
     study = optuna.create_study(direction="maximize", pruner=pruner)
     study.optimize(objective, n_trials=40, show_progress_bar=False)
 
-    best_params = study.best_params
+    raw_params = study.best_params
+    if period in {"1d", "d1"}:
+        best_params = {
+            "learning_rate": raw_params["lr_d1"],
+            "num_leaves": raw_params["nl_d1"],
+            "n_estimators": raw_params["ne_d1"],
+            "max_depth": raw_params["md_d1"],
+            "min_child_samples": raw_params["mcs_d1"],
+            "subsample": raw_params["subsample_d1"],
+            "colsample_bytree": raw_params["cbt_d1"],
+            "reg_lambda": raw_params["reg_lambda_d1"],
+        }
+    else:
+        best_params = {
+            "learning_rate": raw_params["lr"],
+            "num_leaves": raw_params["nl"],
+            "n_estimators": raw_params["ne"],
+            "max_depth": raw_params["md"],
+            "min_child_samples": raw_params["mcs"],
+            "subsample": raw_params["subsample"],
+            "colsample_bytree": raw_params["cbt"],
+            "reg_lambda": raw_params["reg_lambda"],
+        }
 
     if regression:
         best = lgb.LGBMRegressor(
@@ -365,15 +396,10 @@ def train_one(
             **best_params,
         )
 
-    # 5-6  三段式时间切分：CV -> 验证 -> 留出集
-    val_len = max(1, int(len(X) * 0.1))
-    X_tr, X_val = X.iloc[:-val_len], X.iloc[-val_len:]
-    y_tr, y_val = y.iloc[:-val_len], y.iloc[-val_len:]
-
     best.fit(
-        X_tr,
-        y_tr,
-        eval_set=[(X_val, y_val)],
+        X_res,
+        y_res,
+        eval_set=[(X_va, y_va)],
         eval_metric="l1" if regression else "auc",
         callbacks=[
             lgb.early_stopping(stopping_rounds=50, verbose=False),
@@ -387,7 +413,9 @@ def train_one(
             hold_pred = best.predict(X_hold, num_iteration=best.best_iteration_)
             hold_score = -mean_absolute_error(y_hold, hold_pred)
         else:
-            hold_pred = best.predict_proba(X_hold, num_iteration=best.best_iteration_)[:, 1]
+            hold_pred = best.predict_proba(X_hold, num_iteration=best.best_iteration_)[
+                :, 1
+            ]
             hold_score = roc_auc_score(y_hold, hold_pred)
         label = "Holdout-MAE" if regression else "Holdout-AUC"
         print(f"{label}: {hold_score:.4f}")
@@ -397,17 +425,23 @@ def train_one(
     # ----- 根据验证集寻找最佳阈值 -----
     best_th = 0.5
     if not regression:
-        val_proba = best.predict_proba(X_val, num_iteration=best.best_iteration_)[:, 1]
-        prec, rec, thr = precision_recall_curve(y_val, val_proba)
+        val_proba = best.predict_proba(X_va, num_iteration=best.best_iteration_)[:, 1]
+        prec, rec, thr = precision_recall_curve(y_va, val_proba)
         f1 = 2 * prec * rec / (prec + rec + 1e-12)
         if len(thr):
             best_th = float(thr[np.nanargmax(f1)])
 
     # 5-7  保存模型与特征列及阈值
     model_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"model": best, "features": feat_use, "threshold": best_th}, model_path, compress=3)
+    joblib.dump(
+        {"model": best, "features": feat_use, "threshold": best_th},
+        model_path,
+        compress=3,
+    )
     score_label = "CV-MAE" if regression else "CV-AUC"
-    print(f"✔ Saved: {model_path.name}  ({score_label} {study.best_value:.4f}, th {best_th:.3f})")
+    print(
+        f"✔ Saved: {model_path.name}  ({score_label} {study.best_value:.4f}, th {best_th:.3f})"
+    )
 
     # 5-8  打印前 15 个重要特征
     if feat_imp is not None:
@@ -440,7 +474,9 @@ for sym in symbols:
 
             for tag, tgt_col in targets.items():
                 file_name = f"model_{period}_{tag}.pkl"
-                print(f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}")
+                print(
+                    f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}"
+                )
                 out_file = Path("models") / file_name
                 train_one(
                     subset.copy(),
