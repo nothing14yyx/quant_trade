@@ -8,15 +8,18 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import datetime
+import logging
 from pathlib import Path
 from sklearn.metrics import roc_auc_score, mean_absolute_error
 from sklearn.metrics import precision_recall_curve
-from imblearn.combine import SMOTEENN
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 
 
 import optuna
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+optuna.logging.set_verbosity(optuna.logging.ERROR)
 from lightgbm.callback import CallbackEnv
 from sqlalchemy import create_engine
 
@@ -223,7 +226,7 @@ def drop_price_outliers(df: pd.DataFrame, pct: float = 0.995) -> pd.DataFrame:
     keep = chg <= thresh
     removed = len(df) - keep.sum()
     if removed:
-        print(f"drop_price_outliers: removed {removed} rows")
+        logging.info(f"drop_price_outliers: removed {removed} rows")
     return df[keep]
 
 
@@ -307,7 +310,9 @@ def train_one(
             X_va_imp = pd.DataFrame(imputer.transform(X_va), columns=X_va.columns, index=X_va.index)
 
             extra_params: dict[str, float] = {}
-            if use_ts_smote:
+            if regression:
+                X_res_imp, y_res = X_tr_imp, y_tr
+            elif use_ts_smote:
                 smote = TimeSeriesAwareSMOTE()
                 X_res_imp, y_res = smote.fit_resample(
                     X_tr_imp,
@@ -316,9 +321,8 @@ def train_one(
                 )
             else:
                 X_res_imp, y_res = X_tr_imp, y_tr
-                if not regression:
-                    pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
-                    extra_params["scale_pos_weight"] = pos_weight
+                pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
+                extra_params["scale_pos_weight"] = pos_weight
 
             if regression:
                 model = lgb.LGBMRegressor(
@@ -401,21 +405,25 @@ def train_one(
         }
 
     # ----- 依据最后一折重新训练最佳模型 -----
-    tr_idx, va_idx = splits[-1]
-    X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
-    y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
-    X_tr_imp = pd.DataFrame(imputer.fit_transform(X_tr), columns=X_tr.columns, index=X_tr.index)
-    X_va_imp = pd.DataFrame(imputer.transform(X_va), columns=X_va.columns, index=X_va.index)
+    _, va_idx = splits[-1]
+    X_all_imp = pd.DataFrame(imputer.fit_transform(X), columns=X.columns, index=X.index)
+    X_va_imp = X_all_imp.iloc[va_idx]
+    y_va = y.iloc[va_idx]
 
     extra_params: dict[str, float] = {}
-    if use_ts_smote:
+    if regression:
+        X_res_imp, y_res = X_all_imp, y
+    elif use_ts_smote:
         smote = TimeSeriesAwareSMOTE()
-        X_res_imp, y_res = smote.fit_resample(X_tr_imp, y_tr, data.loc[X_tr.index, "open_time"])
+        X_res_imp, y_res = smote.fit_resample(
+            X_all_imp,
+            y,
+            data["open_time"],
+        )
     else:
-        X_res_imp, y_res = X_tr_imp, y_tr
-        if not regression:
-            pos_weight = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
-            extra_params["scale_pos_weight"] = pos_weight
+        X_res_imp, y_res = X_all_imp, y
+        pos_weight = (y == 0).sum() / max((y == 1).sum(), 1)
+        extra_params["scale_pos_weight"] = pos_weight
 
     if regression:
         best = lgb.LGBMRegressor(
@@ -460,7 +468,7 @@ def train_one(
             ]
             hold_score = roc_auc_score(y_hold, hold_pred)
         label = "Holdout-MAE" if regression else "Holdout-AUC"
-        print(f"{label}: {hold_score:.4f}")
+        logging.info(f"{label}: {hold_score:.4f}")
 
     feat_imp = getattr(best, "feature_importances_", None)
 
@@ -491,16 +499,17 @@ def train_one(
         model_path,
         compress=3,
     )
+    study.trials_dataframe().to_csv(model_path.parent / "optuna_trials.csv", index=False)
     score_label = "CV-MAE" if regression else "CV-AUC"
-    print(
-        f"✔ Saved: {model_path.name}  ({score_label} {study.best_value:.4f}, th {best_th:.3f})"
+    logging.info(
+        f"✔ Saved: {model_path.name}  ({score_label} {study.best_value:.4f}, th{best_th:.3f})"
     )
 
     # 5-8  打印前 15 个重要特征
     if feat_imp is not None:
         imp = pd.Series(feat_imp, index=feat_use).sort_values(ascending=False)
         imp.to_csv(model_path.with_suffix(".feat_imp.csv"))
-        print(imp.head(15).to_string())
+        logging.info(imp.head(15).to_string())
 
 
 # ---------- 6. 周期 × 方向 × 符号 训练循环 ----------
@@ -525,10 +534,11 @@ for sym in symbols:
                 subset = df_rng[df_rng["open_time"].dt.hour == 0]
             else:
                 subset = df_rng
+            subset = drop_price_outliers(subset)
 
             for tag, tgt_col in targets.items():
                 file_name = f"model_{period}_{tag}.pkl"
-                print(
+                logging.info(
                     f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}"
                 )
                 out_dir = Path("models") / sym if sym is not None else Path("models")
@@ -544,4 +554,4 @@ for sym in symbols:
                     regression=(tag == "vol"),
                 )
 
-print("\n✅  All models finished.")
+logging.info("\n✅  All models finished.")
