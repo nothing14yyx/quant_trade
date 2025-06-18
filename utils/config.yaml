@@ -134,29 +134,31 @@ feature_cols:
     - volume_cg_ratio_4h
     - fg_index_d1
 
-  d1:      # ⇩ 23 → 12
+  d1:        # 14 features（原 12 + 2 条补充）
     # ── 主周期（日线）动量 ──
-    - macd_hist_d1           # MACD 拐点
-    - atr_chg_d1             # ATR 绝对变化
-    - atr_pct_d1             # ATR 百分比变化
-    - hv_30d_d1              # 30 天历史波动率
+    - macd_hist_d1             # MACD 拐点
+    - atr_chg_d1               # ATR 绝对变化
+    - atr_pct_d1               # ATR 百分比变化
+    - hv_30d_d1                # 30 天历史波动率
 
     # ── 波动 / 通道 ──
-    - kc_width_pct_chg_d1    # Keltner 带宽变化
-    - bb_width_chg_d1        # Bollinger 带宽变化
+    - kc_width_pct_chg_d1      # Keltner 带宽变化
+    - bb_width_chg_d1          # Bollinger 带宽变化
+    - hv_14d_d1                # ★补充：14 天波动率，刻画中期波动
+    - atr_pct_ratio_1h_4h      # ★补充：1 h / 4 h ATR 比例，跨周期压缩
 
     # ── 宏观 / 量价 ──
-    - fg_index_d1            # 恐慌贪婪指数
-    - cg_market_cap_roc_d1   # 市值变化率（日）
-    - vol_breakout_d1        # OBV 突破
-    - vol_ma_ratio_long_d1   # 日线量能均值差
+    - fg_index_d1              # 恐慌贪婪指数
+    - cg_market_cap_roc_d1     # 市值变化率（日）
+    - vol_breakout_d1          # OBV 突破
+    - vol_ma_ratio_long_d1     # 日线量能均值差
 
-    # ── 跨周期领先信号（仅保留 1 条 1 h） ──
-    - pct_chg1_1h            # 高频领先动量
+    # ── 跨周期领先信号 ──
+    - pct_chg1_1h              # 高频领先动量（唯一保留的 1 h 信号）
 
     # ── 时间哑变量 ──
     - day_of_week
-
+    -
 train_settings:
   by_symbol: false
   min_rows: 500
@@ -228,9 +230,9 @@ model_params:
     bagging_fraction: 0.80
     bagging_freq: 1
   d1:                       # ≈2.2 万行
-    num_boost_round: 250
-    min_data_in_leaf: 400
-    feature_fraction: 0.70
+    num_boost_round: 220
+    min_data_in_leaf: 450
+    feature_fraction: 0.60
     bagging_fraction: 0.80
     bagging_freq: 1
 
