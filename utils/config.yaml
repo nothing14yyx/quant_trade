@@ -104,63 +104,58 @@ feature_cols:
     - kurtosis_1h
     - skewness_1h
 
-
-  4h:      # 共 30 条
+  4h:      # ⇩ 30 → 18
+    # ── 4 h 级动量 ──
     - pct_chg1_4h
     - pct_chg3_4h
     - pct_chg6_4h
-    - rsi_slope_4h
-    - rsi_diff_1h_4h
-    - macd_hist_diff_1h_d1
-    - cci_delta_4h
-    - atr_pct_ratio_1h_4h
-    - bb_width_chg_4h
+
+    # ── 跨周期动量 / 波动 ──
+    - rsi_slope_4h          # 4 h RSI 斜率
+    - rsi_diff_1h_4h        # 1 h-4 h RSI 差分
+    - cci_delta_4h          # 4 h CCI 变化
+    - cci_delta_1h          # 1 h CCI 变化（保留唯一 1 h 动量）
+    - macd_hist_diff_1h_d1  # 1 h-日线 MACD 背离
+    - atr_pct_ratio_1h_4h   # 1 h/4 h ATR 比例
+
+    # ── 波动 / 通道 ──
     - hv_7d_4h
     - hv_30d_4h
-    - volume_cg_ratio_4h
+    - bb_width_chg_4h
+    - vol_ratio_1h_4h       # 量能压缩 / 扩张
+
+    # ── 形态 ──
     - upper_wick_ratio_4h
     - lower_wick_ratio_4h
     - long_lower_shadow_4h
-    - skewness_4h
-    - kurtosis_4h
-    - vol_ma_ratio_long_1h
-    - vol_roc_4h
-    - vol_breakout_4h
-    - vol_ratio_1h_4h
-    - cg_total_volume_roc_4h
-    - cg_market_cap_roc_4h
-    - fg_index_d1
-    - funding_rate_anom_d1
-    - hour_of_day
-    - day_of_week
-    - atr_chg_4h
-    - cci_1h
-    - cci_delta_1h
 
-  d1:      # 共 23 条
-    - pct_chg1_1h
-    - cci_delta_1h
-    - macd_hist_d1
-    - hv_30d_d1
-    - kc_width_pct_chg_d1
-    - atr_chg_d1
-    - atr_pct_d1
+    # ── 宏观 / 量价 ──
+    - cg_market_cap_roc_4h
+    - volume_cg_ratio_4h
     - fg_index_d1
-    - cg_market_cap_roc_d1
-    - vol_ma_ratio_long_d1
-    - vol_ratio_4h_d1
-    - vol_breakout_d1
-    - rsi_diff_1h_4h
-    - upper_wick_ratio_d1
-    - lower_wick_ratio_d1
-    - skewness_d1
-    - kurtosis_d1
-    - vol_roc_d1
+
+  d1:      # ⇩ 23 → 12
+    # ── 主周期（日线）动量 ──
+    - macd_hist_d1           # MACD 拐点
+    - atr_chg_d1             # ATR 绝对变化
+    - atr_pct_d1             # ATR 百分比变化
+    - hv_30d_d1              # 30 天历史波动率
+
+    # ── 波动 / 通道 ──
+    - kc_width_pct_chg_d1    # Keltner 带宽变化
+    - bb_width_chg_d1        # Bollinger 带宽变化
+
+    # ── 宏观 / 量价 ──
+    - fg_index_d1            # 恐慌贪婪指数
+    - cg_market_cap_roc_d1   # 市值变化率（日）
+    - vol_breakout_d1        # OBV 突破
+    - vol_ma_ratio_long_d1   # 日线量能均值差
+
+    # ── 跨周期领先信号（仅保留 1 条 1 h） ──
+    - pct_chg1_1h            # 高频领先动量
+
+    # ── 时间哑变量 ──
     - day_of_week
-    - hv_14d_d1
-    - bb_width_chg_d1
-    - atr_pct_ratio_1h_4h
-    - hv_7d_4h
 
 train_settings:
   by_symbol: false
@@ -223,9 +218,9 @@ model_params:
     bagging_fraction: 0.80
     bagging_freq: 1
   4h:                       # ≈13 万行
-    num_boost_round: 350
-    min_data_in_leaf: 1000
-    feature_fraction: 0.75
+    num_boost_round: 280
+    min_data_in_leaf: 1500
+    feature_fraction: 0.65
     bagging_fraction: 0.80
     bagging_freq: 1
   d1:                       # ≈2.2 万行
