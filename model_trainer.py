@@ -478,7 +478,7 @@ def train_one(
             "threshold": best_th,
             "rename_map": rename_map,
             "sampled": bool(use_ts_smote),
-            "version": datetime.datetime.utcnow().strftime("%Y%m%d"),
+            "version": datetime.datetime.now(datetime.UTC).strftime("%Y%m%d"),
         },
         model_path,
         compress=3,

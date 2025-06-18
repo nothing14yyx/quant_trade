@@ -115,7 +115,7 @@ class RobustSignalGenerator:
             "macd_hist_1h",
             "ema_diff_1h",
             "atr_pct_1h",
-            "vol_ma_ratio_1h",
+            "vol_ma_ratio_long_1h",
             "funding_rate_1h",
         ],
         "4h": ["rsi_4h", "macd_hist_4h", "ema_diff_4h"],
