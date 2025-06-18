@@ -137,53 +137,45 @@ feature_cols:
     - volume_cg_ratio_4h
     - fg_index_d1
 
-
-  d1: # up / down / vol 全部引用这一组
+  d1: # up / down / vol 共用
     # 日线动量 / 波动
-    - macd_hist_d1
-    - atr_chg_d1
-    - atr_pct_d1
-    - hv_30d_d1
-    - hv_14d_d1
-
-    # 通道压缩 / 扩张
+    - pct_chg1_1h
+    - pct_chg3_1h
     - kc_width_pct_chg_d1
-    - bb_width_chg_d1
+    - hv_14d_d1
     - atr_pct_ratio_1h_4h
 
-    # 宏观 / 量价
-    - fg_index_d1
-    - cg_market_cap_roc_d1
-    - vol_breakout_d1
-    - vol_ma_ratio_long_d1
+    # 趋势 / 形态
+    - bear_streak_1h
+    - ichimoku_cloud_thickness_4h
+    - ema_diff_d1
+    - upper_wick_ratio_4h
+    - kurtosis_d1
 
-    # 高频领先信号（保留两条）
-    - pct_chg1_1h
-    - cci_delta_1h
+    # 成交量 / 量价
+    - vol_roc_1h
+    - vol_ratio_4h_d1
 
-    # 多空情绪差
+    # 跨周期差分
     - rsi_diff_1h_4h
 
-    # 形态 / 极值
-    - lower_wick_ratio_1h
-    - upper_wick_ratio_4h
+    # 宏观 / 情绪
+    - cg_market_cap_roc_d1
+    - fg_index_d1
 
-    # 时间哑变量
-    - day_of_week
 
 train_settings:
   by_symbol: false
   min_rows: 500
   time_ranges: []
-  ts_smote: true
-#  ts_smote_group_freq: 4h
-  hold_days: 7
-  periods: ["4h"]       # 例: ["4h", "d1"] 为空则训练全部
+  ts_smote: false
+  hold_days: 3
+  periods: ["d1"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
     1h: 10
     4h: 10
-    d1: 15
+    d1: 30
 
 param_space:
   1h:
@@ -195,6 +187,7 @@ param_space:
     subsample: [0.8, 1.0]
     cbt: [0.6, 0.9]
     lambda_l2: [0.0, 0.5]
+    scale_pos_weight: [1.1, 1.5]
   4h:
     lr:   [0.02, 0.06]     # 学习率保持
     nl:   [31, 127]
@@ -204,6 +197,7 @@ param_space:
     subsample: [0.70, 0.9]
     cbt:  [0.45, 0.60]     # = feature_fraction，原 0.6-0.9
     lambda_l2: [4.0, 8.0]  # 原 0.5-4.0，正则更强
+    scale_pos_weight: [1.1, 1.5]
   d1:
     lr: [0.02, 0.06]
     nl: [64, 128]
@@ -243,12 +237,12 @@ model_params:
     bagging_fraction: 0.70
     bagging_freq: 1
   d1:                       # ≈2.2 万行
-    num_boost_round: 220
-    min_data_in_leaf: 500
+    num_boost_round: 260
+    min_data_in_leaf: 600
     feature_fraction: 0.58
     bagging_fraction: 0.80
     bagging_freq: 1
-    lambda_l2: 3.0            # ★ 新增，固定 L2
+    lambda_l2: 5.0            # ★ 新增，固定 L2
     scale_pos_weight: 6       # ★ 新增，补偿空头稀缺
 
 # Δ-boost 配置：关键指标与参数
