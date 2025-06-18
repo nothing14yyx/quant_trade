@@ -157,11 +157,10 @@ class RobustSignalGenerator:
             self.models[period] = {}
             for direction, path in path_dict.items():
                 loaded = joblib.load(path)
-                # loaded = {"model": LGBMClassifier, "features": [...训练时的列名列表...]}
-                # >>>>> 修改点：同时保存 model 和 features
+                # loaded = {"pipeline": Pipeline, "features": [...训练时的列名列表...]}
                 self.models[period][direction] = {
-                    "model":   loaded["model"],
-                    "features": loaded["features"]
+                    "pipeline": loaded["pipeline"],
+                    "features": loaded["features"],
                 }
 
         # 保存各时间周期对应的特征列（但后面不再直接用它；实际推理要以 loaded["features"] 为准）
@@ -475,8 +474,8 @@ class RobustSignalGenerator:
 
         X_up = _build_df(model_up)
         X_down = _build_df(model_down)
-        prob_up = model_up["model"].predict_proba(X_up)[:, 1]
-        prob_down = model_down["model"].predict_proba(X_down)[:, 1]
+        prob_up = model_up["pipeline"].predict_proba(X_up)[:, 1]
+        prob_down = model_down["pipeline"].predict_proba(X_down)[:, 1]
         denom = prob_up + prob_down
         ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
         ai_score = np.clip(ai_score, -1.0, 1.0)
@@ -486,7 +485,7 @@ class RobustSignalGenerator:
 
     def get_vol_prediction(self, features, model_dict):
         """根据回归模型预测未来波动率"""
-        lgb_model = model_dict["model"]
+        lgb_model = model_dict["pipeline"]
         train_cols = model_dict["features"]
 
         row_data = {col: [features.get(col, 0)] for col in train_cols}
