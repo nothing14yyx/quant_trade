@@ -296,7 +296,12 @@ def train_one(
         )(name, lo, hi, log=log)
 
     def objective(trial: optuna.Trial):
-        params = {**fixed_in_yaml}
+        base_params = {
+            k: v
+            for k, v in fixed_params.items()
+            if k not in ("objective", "metric", "early_stopping_rounds")
+        }
+        params = {**base_params, **fixed_in_yaml}
         if "num_boost_round" in params and "n_estimators" not in params:
             params["n_estimators"] = params["num_boost_round"]
         if "min_data_in_leaf" in params and "min_child_samples" not in params:
@@ -305,8 +310,10 @@ def train_one(
             params["colsample_bytree"] = params["feature_fraction"]
         if "bagging_fraction" in params and "subsample" not in params:
             params["subsample"] = params["bagging_fraction"]
-        if "lambda_l2" in params and "reg_lambda" not in params:
-            params["reg_lambda"] = params["lambda_l2"]
+        # ---- λ2 正则处理 -----------------------------
+        if "lambda_l2" not in fixed_in_yaml:
+            params["lambda_l2"] = suggest(trial, "lambda_l2")
+        params["reg_lambda"] = params.pop("lambda_l2")
 
         if "learning_rate" not in fixed_in_yaml:
             params["learning_rate"] = suggest(trial, "lr")
@@ -322,8 +329,6 @@ def train_one(
             params["subsample"] = suggest(trial, "subsample")
         if "colsample_bytree" not in fixed_in_yaml and "feature_fraction" not in fixed_in_yaml:
             params["colsample_bytree"] = suggest(trial, "cbt")
-        if "reg_lambda" not in fixed_in_yaml and "lambda_l2" not in fixed_in_yaml:
-            params["reg_lambda"] = suggest(trial, "reg_lambda")
 
         n_boost_rounds = params.get("n_estimators", params.get("num_boost_round"))
         fold_scores: list[float] = []
@@ -429,10 +434,7 @@ def train_one(
                 "feature_fraction",
                 fixed_in_yaml.get("colsample_bytree", 1.0),
             ),
-            "reg_lambda": fixed_in_yaml.get(
-                "lambda_l2",
-                fixed_in_yaml.get("reg_lambda", 0.0),
-            ),
+            "lambda_l2": fixed_in_yaml.get("lambda_l2", 0.0),
         }
         best_value = float("nan")
     else:
@@ -470,12 +472,13 @@ def train_one(
                 "colsample_bytree", fixed_in_yaml.get("feature_fraction", 1.0)
             ),
         ),
-        "reg_lambda": raw_params.get(
-            "reg_lambda",
-            fixed_in_yaml.get("reg_lambda", fixed_in_yaml.get("lambda_l2", 0.0)),
+        "lambda_l2": raw_params.get(
+            "lambda_l2",
+            fixed_in_yaml.get("lambda_l2", 0.0),
         ),
     }
     best_params.update(fixed_in_yaml)
+    best_params["reg_lambda"] = best_params.pop("lambda_l2")
 
     # ----- 依据最后一折重新训练最佳模型 -----
     _, va_idx = splits[-1]
