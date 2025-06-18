@@ -157,6 +157,9 @@ class RobustSignalGenerator:
             self.models[period] = {}
             for direction, path in path_dict.items():
                 loaded = joblib.load(path)
+                pipe = loaded["pipeline"]
+                if hasattr(pipe, "set_output"):
+                    pipe.set_output(transform="pandas")
                 # loaded = {"pipeline": Pipeline, "features": [...训练时的列名列表...]}
                 self.models[period][direction] = {
                     "pipeline": loaded["pipeline"],
