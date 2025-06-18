@@ -200,6 +200,8 @@ use_ts_smote = bool(train_cfg.get("ts_smote", False))
 ts_smote_group_freq = train_cfg.get("ts_smote_group_freq")
 hold_days = int(train_cfg.get("hold_days", 0))
 n_trials_cfg = train_cfg.get("n_trials", 10)
+selected_periods = set(train_cfg.get("periods", [])) or None
+selected_tags = set(train_cfg.get("tags", [])) or None
 
 param_space_all = cfg["param_space"]
 fixed_params = cfg["fixed_params"]
@@ -597,6 +599,8 @@ for sym in symbols:
         df_rng = drop_price_outliers(df_rng)
 
         for period, cols in feature_cols.items():
+            if selected_periods and period not in selected_periods:
+                continue
             if period == "4h":
                 subset = df_rng[df_rng["open_time"].dt.hour % 4 == 0]
             elif period == "d1":
@@ -605,6 +609,8 @@ for sym in symbols:
                 subset = df_rng
 
             for tag, tgt_col in targets.items():
+                if selected_tags and tag not in selected_tags:
+                    continue
                 file_name = f"model_{period}_{tag}.pkl"
                 logging.info(
                     f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}"
