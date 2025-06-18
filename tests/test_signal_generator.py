@@ -772,7 +772,7 @@ def test_position_size_range_regime():
                               raw_features_1h=f1h,
                               raw_features_4h=f4h,
                               raw_features_d1=fd1)
-    grad = sigmoid_dir(res['score'], 0.12, 0.05)
+    grad = sigmoid_dir(res['score'], 0.1, 0.05)
     expected = 0.1 + 0.4 * abs(grad)
     assert res['position_size'] == pytest.approx(expected)
 

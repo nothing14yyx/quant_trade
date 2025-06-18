@@ -1351,7 +1351,11 @@ class RobustSignalGenerator:
         fused_score = float(np.clip(fused_score, -1, 1))
 
         cfg_th_sig = self.signal_threshold_cfg
-        grad_dir = sigmoid_dir(fused_score, cfg_th_sig.get('base_th', 0.12), cfg_th_sig.get('gamma', 0.05))
+        grad_dir = sigmoid_dir(
+            fused_score,
+            base_th,
+            cfg_th_sig.get('gamma', 0.05),
+        )
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
 
         if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
