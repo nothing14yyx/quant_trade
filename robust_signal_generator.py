@@ -221,7 +221,7 @@ class RobustSignalGenerator:
         self.oi_scale = oi_cfg.get("scale", 0.8)
         self.max_same_direction_rate = oi_cfg.get("crowding_threshold", 0.85)
         self.veto_level = cfg.get("veto_level", 0.7)
-        self.flip_coeff = cfg.get("flip_coeff", 0.5)
+        self.flip_coeff = cfg.get("flip_coeff", 0.8)
         self.min_weight_ratio = min_weight_ratio
 
         # 静态因子权重（后续可由动态IC接口进行更新）
@@ -273,7 +273,7 @@ class RobustSignalGenerator:
 
         # 缓存上一周期的原始特征，便于计算指标变化量
         self._prev_raw = {p: None for p in ("1h", "4h", "d1")}
-
+        self._raw_history = {p: deque(maxlen=2) for p in ("1h", "4h", "d1")}
         # 定时更新因子权重
         self.start_weight_update_thread()
 
@@ -349,8 +349,8 @@ class RobustSignalGenerator:
             setattr(self, name, 0.7)
             return 0.7
         if name == "flip_coeff":
-            setattr(self, name, 0.5)
-            return 0.5
+            setattr(self, name, 0.8)
+            return 0.8
         if name == "signal_threshold_cfg":
             val = {
                 "base_th": 0.12,
@@ -1193,7 +1193,7 @@ class RobustSignalGenerator:
                 )
 
         # ===== 新指标：短周期动量与盘口失衡 =====
-        raw1h = raw_features_1h or features_1h
+        # raw1h = raw_features_1h or features_1h
         mom5 = raw1h.get('mom_5m_roll1h')
         mom15 = raw1h.get('mom_15m_roll1h')
 
