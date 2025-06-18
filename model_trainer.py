@@ -441,14 +441,37 @@ def train_one(
         best_value = study.best_value
 
     best_params = {
-        "learning_rate": raw_params["lr"],
-        "num_leaves": raw_params["nl"],
-        "n_estimators": raw_params["ne"],
-        "max_depth": raw_params["md"],
-        "min_child_samples": raw_params["mcs"],
-        "subsample": raw_params["subsample"],
-        "colsample_bytree": raw_params["cbt"],
-        "reg_lambda": raw_params["reg_lambda"],
+        "learning_rate": raw_params.get(
+            "lr", fixed_in_yaml.get("learning_rate", 0.05)
+        ),
+        "num_leaves": raw_params.get("nl", fixed_in_yaml.get("num_leaves", 63)),
+        "n_estimators": raw_params.get(
+            "ne",
+            fixed_in_yaml.get(
+                "n_estimators", fixed_in_yaml.get("num_boost_round", 400)
+            ),
+        ),
+        "max_depth": raw_params.get("md", fixed_in_yaml.get("max_depth", -1)),
+        "min_child_samples": raw_params.get(
+            "mcs",
+            fixed_in_yaml.get(
+                "min_child_samples", fixed_in_yaml.get("min_data_in_leaf", 20)
+            ),
+        ),
+        "subsample": raw_params.get(
+            "subsample",
+            fixed_in_yaml.get("subsample", fixed_in_yaml.get("bagging_fraction", 1.0)),
+        ),
+        "colsample_bytree": raw_params.get(
+            "cbt",
+            fixed_in_yaml.get(
+                "colsample_bytree", fixed_in_yaml.get("feature_fraction", 1.0)
+            ),
+        ),
+        "reg_lambda": raw_params.get(
+            "reg_lambda",
+            fixed_in_yaml.get("reg_lambda", fixed_in_yaml.get("lambda_l2", 0.0)),
+        ),
     }
     best_params.update(fixed_in_yaml)
 
