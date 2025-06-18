@@ -164,7 +164,7 @@ train_settings:
   ts_smote: true
   ts_smote_group_freq: 1d
   hold_days: 7
-  periods: []       # 例: ["4h", "d1"] 为空则训练全部
+  periods: ["4h", "d1"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
     1h: 10
@@ -180,7 +180,7 @@ param_space:
     mcs: [50, 150]
     subsample: [0.8, 1.0]
     cbt: [0.6, 0.9]
-    reg_lambda: [0.0, 0.5]
+    lambda_l2: [0.0, 0.5]
   4h:
     lr: [0.02, 0.06]
     nl: [31, 127]
@@ -189,7 +189,7 @@ param_space:
     mcs: [50, 120]
     subsample: [0.8, 1.0]
     cbt: [0.6, 0.9]
-    reg_lambda: [0.0, 0.5]
+    lambda_l2: [0.5, 4.0]
   d1:
     lr: [0.005, 0.03]
     nl: [64, 160]
@@ -198,7 +198,7 @@ param_space:
     mcs: [40, 100]
     subsample: [0.85, 1.0]
     cbt: [0.6, 0.9]
-    reg_lambda: [0.0, 0.5]
+    lambda_l2: [0.0, 0.5]
 
 fixed_params:
   objective:
@@ -209,6 +209,7 @@ fixed_params:
     up: "auc"
     down: "auc"
     vol: "l1"
+  lambda_l2: 2.0
   early_stopping_rounds: 40
   n_jobs: -1
 
@@ -223,6 +224,7 @@ model_params:
     num_boost_round: 280
     min_data_in_leaf: 1500
     feature_fraction: 0.65
+    lambda_l2: 3.0
     bagging_fraction: 0.80
     bagging_freq: 1
   d1:                       # ≈2.2 万行
