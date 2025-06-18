@@ -104,69 +104,81 @@ feature_cols:
     - kurtosis_1h
     - skewness_1h
 
-  4h:      # ⇩ 30 → 18
-    # ── 4 h 级动量 ──
+  4h:
+    # 4 h 动量
     - pct_chg1_4h
     - pct_chg3_4h
     - pct_chg6_4h
 
-    # ── 跨周期动量 / 波动 ──
-    - rsi_slope_4h          # 4 h RSI 斜率
-    - rsi_diff_1h_4h        # 1 h-4 h RSI 差分
-    - cci_delta_4h          # 4 h CCI 变化
-    - cci_delta_1h          # 1 h CCI 变化（保留唯一 1 h 动量）
-    - macd_hist_diff_1h_d1  # 1 h-日线 MACD 背离
-    - atr_pct_ratio_1h_4h   # 1 h/4 h ATR 比例
+    # 至多一条 1 h 领先
+    - pct_chg1_1h
 
-    # ── 波动 / 通道 ──
+    # 跨周期动量 / 波动
+    - rsi_slope_4h
+    - rsi_diff_1h_4h
+    - cci_delta_4h
+    - macd_hist_diff_1h_d1
+    - atr_pct_ratio_1h_4h
+
+    # 波动 / 通道
     - hv_7d_4h
     - hv_30d_4h
     - bb_width_chg_4h
-    - vol_ratio_1h_4h       # 量能压缩 / 扩张
+    - vol_ratio_1h_4h
+    - vol_breakout_4h          # ★ 放量节点 → 回补
 
-    # ── 形态 ──
+    # 形态
     - upper_wick_ratio_4h
     - lower_wick_ratio_4h
     - long_lower_shadow_4h
 
-    # ── 宏观 / 量价 ──
-    - cg_market_cap_roc_4h
+    # 宏观 / 量价
+    - cg_market_cap_roc_4h     # ★ 缺失已久 → 回补
     - volume_cg_ratio_4h
     - fg_index_d1
 
-  d1:        # 14 features（原 12 + 2 条补充）
-    # ── 主周期（日线）动量 ──
-    - macd_hist_d1             # MACD 拐点
-    - atr_chg_d1               # ATR 绝对变化
-    - atr_pct_d1               # ATR 百分比变化
-    - hv_30d_d1                # 30 天历史波动率
 
-    # ── 波动 / 通道 ──
-    - kc_width_pct_chg_d1      # Keltner 带宽变化
-    - bb_width_chg_d1          # Bollinger 带宽变化
-    - hv_14d_d1                # ★补充：14 天波动率，刻画中期波动
-    - atr_pct_ratio_1h_4h      # ★补充：1 h / 4 h ATR 比例，跨周期压缩
+  d1: # up / down / vol 全部引用这一组
+    # 日线动量 / 波动
+    - macd_hist_d1
+    - atr_chg_d1
+    - atr_pct_d1
+    - hv_30d_d1
+    - hv_14d_d1
 
-    # ── 宏观 / 量价 ──
-    - fg_index_d1              # 恐慌贪婪指数
-    - cg_market_cap_roc_d1     # 市值变化率（日）
-    - vol_breakout_d1          # OBV 突破
-    - vol_ma_ratio_long_d1     # 日线量能均值差
+    # 通道压缩 / 扩张
+    - kc_width_pct_chg_d1
+    - bb_width_chg_d1
+    - atr_pct_ratio_1h_4h
 
-    # ── 跨周期领先信号 ──
-    - pct_chg1_1h              # 高频领先动量（唯一保留的 1 h 信号）
+    # 宏观 / 量价
+    - fg_index_d1
+    - cg_market_cap_roc_d1
+    - vol_breakout_d1
+    - vol_ma_ratio_long_d1
 
-    # ── 时间哑变量 ──
+    # 高频领先信号（保留两条）
+    - pct_chg1_1h
+    - cci_delta_1h
+
+    # 多空情绪差
+    - rsi_diff_1h_4h
+
+    # 形态 / 极值
+    - lower_wick_ratio_1h
+    - upper_wick_ratio_4h
+
+    # 时间哑变量
     - day_of_week
-    -
+
 train_settings:
   by_symbol: false
   min_rows: 500
   time_ranges: []
   ts_smote: true
-  ts_smote_group_freq: 1d
+#  ts_smote_group_freq: 4h
   hold_days: 7
-  periods: ["4h", "d1"]       # 例: ["4h", "d1"] 为空则训练全部
+  periods: ["4h"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
     1h: 10
@@ -184,23 +196,24 @@ param_space:
     cbt: [0.6, 0.9]
     lambda_l2: [0.0, 0.5]
   4h:
-    lr: [0.02, 0.06]
-    nl: [31, 127]
-    ne: [300, 700]
-    md: [4, 10]
-    mcs: [50, 120]
-    subsample: [0.8, 1.0]
-    cbt: [0.6, 0.9]
-    lambda_l2: [0.5, 4.0]
+    lr:   [0.02, 0.06]     # 学习率保持
+    nl:   [31, 127]
+    ne:   [140, 260]       # ← 原 300-700，减小以防过拟
+    md:   [4, 10]
+    mcs:  [1500, 3000]     # ← 原 50-120，增大叶子样本
+    subsample: [0.70, 0.9]
+    cbt:  [0.45, 0.60]     # = feature_fraction，原 0.6-0.9
+    lambda_l2: [4.0, 8.0]  # 原 0.5-4.0，正则更强
   d1:
-    lr: [0.005, 0.03]
-    nl: [64, 160]
-    ne: [250, 400]
+    lr: [0.02, 0.06]
+    nl: [64, 128]
+    ne: [180, 260]
     md: [4, 10]
-    mcs: [40, 100]
-    subsample: [0.85, 1.0]
-    cbt: [0.6, 0.9]
-    lambda_l2: [0.0, 0.5]
+    mcs: [400, 800]
+    subsample: [0.75, 0.9]
+    cbt: [0.50, 0.65]          # feature_fraction
+    lambda_l2: [2.0, 6.0]
+    scale_pos_weight: [4, 8]   # 让 Optuna 一起调
 
 fixed_params:
   objective:
@@ -223,18 +236,20 @@ model_params:
     bagging_fraction: 0.80
     bagging_freq: 1
   4h:                       # ≈13 万行
-    num_boost_round: 280
-    min_data_in_leaf: 1500
-    feature_fraction: 0.65
-    lambda_l2: 3.0
-    bagging_fraction: 0.80
+    num_boost_round: 140      # ← 原 160
+    min_data_in_leaf: 2200    # 不变
+    feature_fraction: 0.48    # ← 原 0.50
+    lambda_l2: 7.0            # ← 原 6.0
+    bagging_fraction: 0.70
     bagging_freq: 1
   d1:                       # ≈2.2 万行
     num_boost_round: 220
-    min_data_in_leaf: 450
-    feature_fraction: 0.60
+    min_data_in_leaf: 500
+    feature_fraction: 0.58
     bagging_fraction: 0.80
     bagging_freq: 1
+    lambda_l2: 3.0            # ★ 新增，固定 L2
+    scale_pos_weight: 6       # ★ 新增，补偿空头稀缺
 
 # Δ-boost 配置：关键指标与参数
 delta_boost:
