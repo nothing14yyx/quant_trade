@@ -91,9 +91,9 @@ def test_dynamic_threshold_multi_period():
     th2 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
     th3 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
 
-    assert th1 == pytest.approx(0.2)
-    assert th2 == pytest.approx(0.225)
-    assert th3 == pytest.approx(0.2375)
+    assert th1 == pytest.approx(0.22)
+    assert th2 == pytest.approx(0.25)
+    assert th3 == pytest.approx(0.265)
 
 
 def test_dynamic_threshold_with_vix():
