@@ -144,27 +144,29 @@ class RobustSignalGenerator:
         feature_cols_1h,
         feature_cols_4h,
         feature_cols_d1,
-        history_window=660,
+        history_window=220,
         symbol_categories=None,
         config_path=CONFIG_PATH,
         core_keys=None,
         delta_params=None,
-        min_weight_ratio=0.2,
+        min_weight_ratio=0.3,
     ):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
+        self.calibrators = {}
         for period, path_dict in model_paths.items():
             self.models[period] = {}
+            self.calibrators[period] = {}
             for direction, path in path_dict.items():
                 loaded = joblib.load(path)
                 pipe = loaded["pipeline"]
                 if hasattr(pipe, "set_output"):
                     pipe.set_output(transform="pandas")
-                # loaded = {"pipeline": Pipeline, "features": [...训练时的列名列表...]}
                 self.models[period][direction] = {
                     "pipeline": loaded["pipeline"],
                     "features": loaded["features"],
                 }
+                self.calibrators[period][direction] = loaded.get("calibrator")
 
         # 保存各时间周期对应的特征列（但后面不再直接用它；实际推理要以 loaded["features"] 为准）
         self.feature_cols_1h = feature_cols_1h
@@ -317,8 +319,23 @@ class RobustSignalGenerator:
             setattr(self, name, self.VOTE_PARAMS.copy())
             return getattr(self, name)
         if name == "min_weight_ratio":
-            setattr(self, name, 0.2)
-            return 0.2
+            setattr(self, name, 0.3)
+            return 0.3
+        if name == "_cooldown":
+            setattr(self, name, 0)
+            return 0
+        if name == "_raw_history":
+            val = {p: deque(maxlen=2) for p in ("1h", "4h", "d1")}
+            setattr(self, name, val)
+            return val
+        if name == "calibrators":
+            val = {p: {"up": None, "down": None} for p in ("1h", "4h", "d1")}
+            setattr(self, name, val)
+            return val
+        if name == "ic_scores":
+            val = {k: 1 for k in self.base_weights}
+            setattr(self, name, val)
+            return val
         if name == "exit_lag_bars":
             setattr(self, name, EXIT_LAG_BARS_DEFAULT)
             return EXIT_LAG_BARS_DEFAULT
@@ -373,13 +390,24 @@ class RobustSignalGenerator:
         avg_adx = np.nanmean([adx1, adx4, adxd])
         return "trend" if avg_adx >= 25 else "range"
 
-    def calc_period_weights(self, adx1, adx4, adxd):
-        """根据各周期ADX分配权重"""
-        w1 = 0.6 + 0.4 * min(adx1, 50) / 50
-        w4 = 0.3 + 0.4 * min(adx4, 50) / 50
-        wd = 0.1 + 0.4 * min(adxd, 50) / 50
-        total = w1 + w4 + wd
-        return w1 / total, w4 / total, wd / total
+    def get_ic_period_weights(self, ic_scores):
+        """根据近一周 IC 加权各周期"""
+        w1 = ic_scores.get("1h", 0)
+        w4 = ic_scores.get("4h", 0)
+        wd = ic_scores.get("d1", 0)
+        w1, w4, wd = [max(v, 0) for v in (w1, w4, wd)]
+        s = w1 + w4 + wd
+        if s == 0:
+            w1, w4, wd = 3, 2, 1
+        else:
+            w1 = w1 or 1e-6
+            w4 = w4 or 1e-6
+            wd = wd or 1e-6
+        base = np.array([3, 2, 1], dtype=float)
+        ic_arr = np.array([w1, w4, wd], dtype=float)
+        weights = base * ic_arr
+        weights = weights / weights.sum()
+        return float(weights[0]), float(weights[1]), float(weights[2])
 
     def set_symbol_categories(self, mapping):
         """更新币种与板块的映射"""
@@ -427,7 +455,7 @@ class RobustSignalGenerator:
                 continue
             base = k.split("_", 2)[0]
             _, _, inc = self.delta_params.get(base, (0, 1, 0))
-            boost += np.clip(inc * np.sign(val), -0.03, 0.03)
+            boost += np.clip(inc * np.sign(val), -0.06, 0.06)
         return score * (1 + boost)
 
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> int:
@@ -458,7 +486,7 @@ class RobustSignalGenerator:
         return float(np.clip(pos, 0.0, 1.0))
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
-    def get_ai_score(self, features, model_up, model_down):
+    def get_ai_score(self, features, model_up, model_down, calibrator_up=None, calibrator_down=None):
         """根据上下两个方向模型的概率输出计算 AI 得分"""
 
         def _build_df(model_dict):
@@ -479,6 +507,10 @@ class RobustSignalGenerator:
         X_down = _build_df(model_down)
         prob_up = model_up["pipeline"].predict_proba(X_up)[:, 1]
         prob_down = model_down["pipeline"].predict_proba(X_down)[:, 1]
+        if calibrator_up is not None:
+            prob_up = calibrator_up.transform(prob_up)
+        if calibrator_down is not None:
+            prob_down = calibrator_down.transform(prob_down)
         denom = prob_up + prob_down
         ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
         ai_score = np.clip(ai_score, -1.0, 1.0)
@@ -628,7 +660,7 @@ class RobustSignalGenerator:
 
         return self.ic_scores
 
-    def dynamic_weight_update(self, halflife=50):
+    def dynamic_weight_update(self, halflife=20):
         """根据因子IC的指数加权均值更新权重"""
         with self._lock:
             if not hasattr(self, "ic_history"):
@@ -687,23 +719,24 @@ class RobustSignalGenerator:
         vix_proxy=None,
         base=0.12,
         regime=None,
+        low_base=None,
     ):
         """根据历史 ATR、ADX、预测波动率及恐慌指数动态计算阈值"""
 
         thres = float(base)
 
         # ===== 波动性贡献 =====
-        thres += min(0.08, abs(atr) * 3)
+        thres += min(0.08, abs(atr) * 4)
         if atr_4h is not None:
-            thres += 0.5 * min(0.08, abs(atr_4h) * 3)
+            thres += 0.5 * min(0.08, abs(atr_4h) * 4)
         if atr_d1 is not None:
-            thres += 0.25 * min(0.08, abs(atr_d1) * 3)
+            thres += 0.25 * min(0.08, abs(atr_d1) * 4)
         if pred_vol is not None:
-            thres += min(0.05, abs(pred_vol) * 3)
+            thres += min(0.05, abs(pred_vol) * 4)
         if pred_vol_4h is not None:
-            thres += 0.5 * min(0.05, abs(pred_vol_4h) * 3)
+            thres += 0.5 * min(0.05, abs(pred_vol_4h) * 4)
         if pred_vol_d1 is not None:
-            thres += 0.25 * min(0.05, abs(pred_vol_d1) * 3)
+            thres += 0.25 * min(0.05, abs(pred_vol_d1) * 4)
 
         # ===== 趋势强度贡献 =====
         thres += min(0.08, max(adx - 20, 0) * 0.004)
@@ -729,7 +762,8 @@ class RobustSignalGenerator:
         elif regime == "range":
             thres -= 0.02
 
-        low_base = self.signal_threshold_cfg.get('low_base', DEFAULT_LOW_BASE)
+        if low_base is None:
+            low_base = self.signal_threshold_cfg.get('low_base', DEFAULT_LOW_BASE)
         thres = max(thres, low_base)
 
         # 阈值已按波动动态计算，无上限封顶。
@@ -787,7 +821,10 @@ class RobustSignalGenerator:
         rank_intensity = max(0.0, rank_pct - 0.8) / 0.2
         intensity = min(1.0, max(ratio_intensity, rank_intensity))
 
-        return 1.0 - 0.5 * intensity
+        factor = 1.0 - 0.5 * intensity
+        dd = getattr(self, "_equity_drawdown", 0.0)
+        factor *= max(0.6, 1 - dd)
+        return factor
 
     def apply_oi_overheat_protection(self, fused_score, oi_chg, th_oi):
         """根据 OI 变化率奖励或惩罚分数"""
@@ -847,23 +884,35 @@ class RobustSignalGenerator:
 
         details = {}
 
-        deltas = {
-            "1h": self._calc_deltas(
-                raw_f1h, self._prev_raw["1h"], self.core_keys["1h"]
-            ),
-            "4h": self._calc_deltas(
-                raw_f4h, self._prev_raw["4h"], self.core_keys["4h"]
-            ),
-            "d1": self._calc_deltas(
-                raw_fd1, self._prev_raw["d1"], self.core_keys["d1"]
-            ),
-        }
+        if self._cooldown > 0:
+            self._cooldown -= 1
+
+        deltas = {}
+        for p, raw, keys in [
+            ("1h", raw_f1h, self.core_keys["1h"]),
+            ("4h", raw_f4h, self.core_keys["4h"]),
+            ("d1", raw_fd1, self.core_keys["d1"]),
+        ]:
+            hist = self._raw_history.get(p, deque(maxlen=2))
+            prev = hist[0] if len(hist) == 2 else self._prev_raw.get(p)
+            deltas[p] = self._calc_deltas(raw, prev, keys)
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores = {}
         vol_preds = {}
         for p, feats in [('1h', features_1h), ('4h', features_4h), ('d1', features_d1)]:
-            ai_scores[p] = self.get_ai_score(feats, self.models[p]['up'], self.models[p]['down'])
+            cal_up = self.calibrators.get(p, {}).get('up')
+            cal_down = self.calibrators.get(p, {}).get('down')
+            try:
+                ai_scores[p] = self.get_ai_score(
+                    feats,
+                    self.models[p]['up'],
+                    self.models[p]['down'],
+                    calibrator_up=cal_up,
+                    calibrator_down=cal_down,
+                )
+            except TypeError:
+                ai_scores[p] = self.get_ai_score(feats, self.models[p]['up'], self.models[p]['down'])
             if 'vol' in self.models[p]:
                 vol_preds[p] = self.get_vol_prediction(feats, self.models[p]['vol'])
             else:
@@ -907,10 +956,12 @@ class RobustSignalGenerator:
             consensus_dir != 0 and np.sign(score_1h) == np.sign(score_4h) and not consensus_all
         )
 
-        adx1 = (raw_features_1h or features_1h).get('adx_1h', 0)
-        adx4 = (raw_features_4h or features_4h).get('adx_4h', 0)
-        adxd = (raw_features_d1 or features_d1).get('adx_d1', 0)
-        w1, w4, w_d1 = self.calc_period_weights(adx1, adx4, adxd)
+        ic_periods = {
+            "1h": self.ic_scores.get("1h", 1.0),
+            "4h": self.ic_scores.get("4h", 1.0),
+            "d1": self.ic_scores.get("d1", 1.0),
+        }
+        w1, w4, w_d1 = self.get_ic_period_weights(ic_periods)
 
         # ---- 额外逻辑：情绪与交易量等修正 ----
         scores = {'1h': score_1h, '4h': score_4h, 'd1': score_d1}
@@ -1170,6 +1221,8 @@ class RobustSignalGenerator:
             self._prev_raw["1h"] = raw_f1h
             self._prev_raw["4h"] = raw_f4h
             self._prev_raw["d1"] = raw_fd1
+            for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+                self._raw_history.setdefault(p, deque(maxlen=2)).append(raw)
             return {
                 'signal': 0,
                 'score': float('nan'),
@@ -1303,6 +1356,8 @@ class RobustSignalGenerator:
                 self._prev_raw["1h"] = raw_f1h
                 self._prev_raw["4h"] = raw_f4h
                 self._prev_raw["d1"] = raw_fd1
+                for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+                    self._raw_history.setdefault(p, deque(maxlen=2)).append(raw)
                 return {
                     'signal': 0,
                     'score': fused_score,
@@ -1371,6 +1426,11 @@ class RobustSignalGenerator:
                     fused_score,
                 )
                 direction = self._last_signal
+
+        if self._cooldown > 0 and direction * self._last_signal == -1:
+            direction = 0
+        elif self._last_signal != 0 and direction * self._last_signal == -1 and direction != 0:
+            self._cooldown = 3
 
         # 阶梯退出逻辑
         prev_vote = getattr(self, '_prev_vote', 0)
@@ -1462,8 +1522,8 @@ class RobustSignalGenerator:
             atr_pct_4h = raw_features_4h['atr_pct_4h']
         else:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
-        atr_abs = max(atr_1h, atr_pct_4h) * price
-        atr_abs = max(atr_abs, 0.003 * price)
+        atr_abs = np.hypot(atr_1h, atr_pct_4h) * price
+        atr_abs = max(atr_abs, 0.005 * price)
         tp_dir = 1 if direction >= 0 else -1
         take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
 
@@ -1476,6 +1536,8 @@ class RobustSignalGenerator:
         self._prev_raw["1h"] = raw_f1h
         self._prev_raw["4h"] = raw_f4h
         self._prev_raw["d1"] = raw_fd1
+        for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+            self._raw_history.setdefault(p, deque(maxlen=2)).append(raw)
         logger.info(
             "[%s] base_th=%.3f, funding_conflicts=%d, fused=%.4f",
             symbol,
