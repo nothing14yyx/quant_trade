@@ -157,11 +157,13 @@ class RobustSignalGenerator:
             self.models[period] = {}
             for direction, path in path_dict.items():
                 loaded = joblib.load(path)
-                # loaded = {"model": LGBMClassifier, "features": [...训练时的列名列表...]}
-                # >>>>> 修改点：同时保存 model 和 features
+                # 部分旧模型保存为{"pipeline": ..., "features": [...]}
+                model_obj = loaded.get("model") or loaded.get("pipeline")
+                if model_obj is None:
+                    raise KeyError(f"model/pipeline not found in {path}")
                 self.models[period][direction] = {
-                    "model":   loaded["model"],
-                    "features": loaded["features"]
+                    "model": model_obj,
+                    "features": loaded.get("features", [])
                 }
 
         # 保存各时间周期对应的特征列（但后面不再直接用它；实际推理要以 loaded["features"] 为准）
