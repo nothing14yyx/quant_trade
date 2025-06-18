@@ -721,54 +721,45 @@ class RobustSignalGenerator:
         regime=None,
         low_base=None,
     ):
-        """根据历史 ATR、ADX、预测波动率及恐慌指数动态计算阈值"""
+        """根据历史波动、趋势强度和市场情绪动态计算阈值"""
 
-        thres = float(base)
+        import numpy as np
 
-        # ===== 波动性贡献 =====
-        thres += min(0.08, abs(atr) * 4)
-        if atr_4h is not None:
-            thres += 0.5 * min(0.08, abs(atr_4h) * 4)
-        if atr_d1 is not None:
-            thres += 0.25 * min(0.08, abs(atr_d1) * 4)
-        if pred_vol is not None:
-            thres += min(0.05, abs(pred_vol) * 4)
-        if pred_vol_4h is not None:
-            thres += 0.5 * min(0.05, abs(pred_vol_4h) * 4)
-        if pred_vol_d1 is not None:
-            thres += 0.25 * min(0.05, abs(pred_vol_d1) * 4)
+        th = float(base)
 
-        # ===== 趋势强度贡献 =====
-        thres += min(0.08, max(adx - 20, 0) * 0.004)
+        # === 波动因子：max 避免双计 ===
+        main_vol = max(abs(atr), abs(pred_vol or 0.0))
+        th += min(0.10, main_vol * 4)
+        if atr_4h is not None or pred_vol_4h is not None:
+            th += 0.5 * min(0.06, max(abs(atr_4h or 0), abs(pred_vol_4h or 0)) * 3)
+        if atr_d1 is not None or pred_vol_d1 is not None:
+            th += 0.25 * min(0.06, max(abs(atr_d1 or 0), abs(pred_vol_d1 or 0)) * 3)
+
+        # === 趋势强度 ===
+        th += min(0.12, max(adx - 25, 0) * 0.005)
         if adx_4h is not None:
-            thres += 0.5 * min(0.08, max(adx_4h - 20, 0) * 0.004)
+            th += 0.5 * min(0.12, max(adx_4h - 25, 0) * 0.005)
         if adx_d1 is not None:
-            thres += 0.25 * min(0.08, max(adx_d1 - 20, 0) * 0.004)
+            th += 0.25 * min(0.12, max(adx_d1 - 25, 0) * 0.005)
 
-        # ===== 资金费率贡献 =====
-        thres += min(0.05, abs(funding) * 5)
-
-        # ===== 恐慌指数贡献 =====
+        # === 资金费率 / 恐慌指数 ===
+        th += min(0.08, abs(funding) * 8)
         if vix_proxy is not None:
-            thres += min(0.05, max(0.0, vix_proxy) * 0.05)
+            th += min(0.08, max(vix_proxy, 0.0) * 0.08)
 
-        # ===== 历史分位阈值补充 =====
+        # === 历史 80 分位兜底 ===
         if len(self.history_scores) > 100:
-            quantile_th = np.quantile(np.abs(self.history_scores), 0.88)
-            thres = max(thres, quantile_th)
+            th = max(th, np.quantile(np.abs(self.history_scores), 0.80))
 
+        # === 市场状态微调 ===
         if regime == "trend":
-            thres += 0.01
+            th += 0.015
         elif regime == "range":
-            thres -= 0.02
+            th -= 0.020
 
         if low_base is None:
-            low_base = self.signal_threshold_cfg.get('low_base', DEFAULT_LOW_BASE)
-        thres = max(thres, low_base)
-
-        # 阈值已按波动动态计算，无上限封顶。
-        # 本函数已删除 min/max 上限，下界托底 0.13。
-        return thres
+            low_base = self.signal_threshold_cfg.get('low_base', 0.10)
+        return max(th, low_base)
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """按固定顺序加权合并各因子得分"""
@@ -785,7 +776,7 @@ class RobustSignalGenerator:
             + factor_scores['funding'] * weights['funding']
         )
 
-        return float(np.tanh(fused_score))
+        return float(fused_score)
 
     def consensus_check(self, s1, s2, s3, min_agree=2):
         # 多周期方向共振（如调研建议），可加全分歧减弱等逻辑

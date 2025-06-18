@@ -38,7 +38,7 @@ def make_dummy_rsg():
         'roc_low': -20,
         'roc_high': 100,
     }
-    rsg.ob_th_params = {'min_ob_th': 0.15, 'dynamic_factor': 0.08}
+    rsg.ob_th_params = {'min_ob_th': 0.10, 'dynamic_factor': 0.08}
     rsg.risk_score_cap = 5.0
     rsg.cfg = {
         'signal_threshold': {
@@ -47,7 +47,7 @@ def make_dummy_rsg():
             'gamma': 0.05,
             'min_pos': 0.10,
         },
-        'ob_threshold': {'min_ob_th': 0.15},
+        'ob_threshold': {'min_ob_th': 0.10},
     }
     rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
     return rsg
@@ -82,7 +82,7 @@ def test_get_dynamic_oi_threshold():
 def test_dynamic_threshold_upper_bound():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0.1, 50, 0.02)
-    assert th == pytest.approx(0.33)
+    assert th == pytest.approx(0.42)
 
 
 def test_dynamic_threshold_multi_period():
@@ -91,9 +91,9 @@ def test_dynamic_threshold_multi_period():
     th2 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
     th3 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
 
-    assert th1 == pytest.approx(0.22)
-    assert th2 == pytest.approx(0.25)
-    assert th3 == pytest.approx(0.265)
+    assert th1 == pytest.approx(0.20)
+    assert th2 == pytest.approx(0.215)
+    assert th3 == pytest.approx(0.2225)
 
 
 def test_dynamic_threshold_with_vix():
@@ -316,7 +316,7 @@ def test_combine_score_weight_names():
     )
 
     fused = rsg.combine_score(ai, factor_scores, weights)
-    assert fused == pytest.approx(np.tanh(expected))
+    assert fused == pytest.approx(expected)
 
 
 def test_generate_signal_with_external_metrics():
@@ -597,7 +597,7 @@ def test_sentiment_reweight_and_guard():
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
     assert res['details']['score_1h'] == pytest.approx(-0.03899, rel=1e-3)
-    assert res['details']['score_4h'] == pytest.approx(0.19738, rel=1e-3)
+    assert res['details']['score_4h'] == pytest.approx(0.2, rel=1e-3)
 
 
 def test_volume_and_funding_penalties():
