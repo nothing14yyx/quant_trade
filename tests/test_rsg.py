@@ -43,7 +43,7 @@ def make_rsg():
         'roc_low': -20,
         'roc_high': 100,
     }
-    rsg.ob_th_params = {'min_ob_th': 0.15, 'dynamic_factor': 0.08}
+    rsg.ob_th_params = {'min_ob_th': 0.10, 'dynamic_factor': 0.08}
     rsg.risk_score_cap = 5.0
     return rsg
 
