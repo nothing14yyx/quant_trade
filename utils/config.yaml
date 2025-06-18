@@ -177,6 +177,8 @@ train_settings:
   ts_smote: true
   ts_smote_group_freq: 1d
   hold_days: 7
+  periods: []       # 例: ["4h", "d1"] 为空则训练全部
+  tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
     1h: 10
     4h: 10
