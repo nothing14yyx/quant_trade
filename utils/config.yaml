@@ -170,7 +170,7 @@ train_settings:
   time_ranges: []
   ts_smote: false
   hold_days: 3
-  periods: ["d1"]       # 例: ["4h", "d1"] 为空则训练全部
+  periods: ["1h","4h","d1"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
     1h: 10
