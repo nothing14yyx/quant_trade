@@ -1,6 +1,7 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
+import numpy as np
 from robust_signal_generator import RobustSignalGenerator
 
 
@@ -28,14 +29,15 @@ def test_detect_market_regime():
     assert rsg.detect_market_regime(10, 15, 20) == "range"
 
 
-def test_calc_period_weights():
+def test_get_ic_period_weights():
     rsg = make_rsg()
-    w1, w4, wd = rsg.calc_period_weights(30, 10, 25)
-    exp_w1 = 0.6 + 0.4 * min(30, 50) / 50
-    exp_w4 = 0.3 + 0.4 * min(10, 50) / 50
-    exp_wd = 0.1 + 0.4 * min(25, 50) / 50
-    total = exp_w1 + exp_w4 + exp_wd
-    assert w1 == pytest.approx(exp_w1 / total)
-    assert w4 == pytest.approx(exp_w4 / total)
-    assert wd == pytest.approx(exp_wd / total)
+    ic = {"1h": 1.0, "4h": 0.5, "d1": 0.2}
+    w1, w4, wd = rsg.get_ic_period_weights(ic)
+    base = np.array([3, 2, 1], dtype=float)
+    ic_arr = np.array([1.0, 0.5, 0.2])
+    expected = base * ic_arr
+    expected /= expected.sum()
+    assert w1 == pytest.approx(expected[0])
+    assert w4 == pytest.approx(expected[1])
+    assert wd == pytest.approx(expected[2])
     assert pytest.approx(w1 + w4 + wd) == 1.0
