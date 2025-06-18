@@ -203,6 +203,7 @@ n_trials_cfg = train_cfg.get("n_trials", 10)
 
 param_space_all = cfg["param_space"]
 fixed_params = cfg["fixed_params"]
+model_params = cfg.get("model_params", {})
 
 # ---------- 2. 读取特征大表并按时间排序 ----------
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time"])
@@ -282,6 +283,7 @@ def train_one(
 
     space = param_space_all.get(period, param_space_all["1h"])
     n_trials = n_trials_cfg[period] if isinstance(n_trials_cfg, dict) else n_trials_cfg
+    fixed_in_yaml = model_params.get(period, {})
     early_stop_rounds = fixed_params["early_stopping_rounds"]
 
     def suggest(trial: optuna.Trial, name: str):
@@ -292,18 +294,36 @@ def train_one(
         )(name, lo, hi, log=log)
 
     def objective(trial: optuna.Trial):
-        params = {
-            "learning_rate": suggest(trial, "lr"),
-            "num_leaves": suggest(trial, "nl"),
-            "n_estimators": suggest(trial, "ne"),
-            "max_depth": suggest(trial, "md"),
-            "min_child_samples": suggest(trial, "mcs"),
-            "subsample": suggest(trial, "subsample"),
-            "colsample_bytree": suggest(trial, "cbt"),
-            "reg_lambda": suggest(trial, "reg_lambda"),
-        }
+        params = {**fixed_in_yaml}
+        if "num_boost_round" in params and "n_estimators" not in params:
+            params["n_estimators"] = params["num_boost_round"]
+        if "min_data_in_leaf" in params and "min_child_samples" not in params:
+            params["min_child_samples"] = params["min_data_in_leaf"]
+        if "feature_fraction" in params and "colsample_bytree" not in params:
+            params["colsample_bytree"] = params["feature_fraction"]
+        if "bagging_fraction" in params and "subsample" not in params:
+            params["subsample"] = params["bagging_fraction"]
+        if "lambda_l2" in params and "reg_lambda" not in params:
+            params["reg_lambda"] = params["lambda_l2"]
 
-        n_boost_rounds = params.get("n_estimators")
+        if "learning_rate" not in fixed_in_yaml:
+            params["learning_rate"] = suggest(trial, "lr")
+        if "num_leaves" not in fixed_in_yaml:
+            params["num_leaves"] = suggest(trial, "nl")
+        if "num_boost_round" not in fixed_in_yaml and "n_estimators" not in fixed_in_yaml:
+            params["n_estimators"] = suggest(trial, "ne")
+        if "max_depth" not in fixed_in_yaml:
+            params["max_depth"] = suggest(trial, "md")
+        if "min_child_samples" not in fixed_in_yaml and "min_data_in_leaf" not in fixed_in_yaml:
+            params["min_child_samples"] = suggest(trial, "mcs")
+        if "subsample" not in fixed_in_yaml and "bagging_fraction" not in fixed_in_yaml:
+            params["subsample"] = suggest(trial, "subsample")
+        if "colsample_bytree" not in fixed_in_yaml and "feature_fraction" not in fixed_in_yaml:
+            params["colsample_bytree"] = suggest(trial, "cbt")
+        if "reg_lambda" not in fixed_in_yaml and "lambda_l2" not in fixed_in_yaml:
+            params["reg_lambda"] = suggest(trial, "reg_lambda")
+
+        n_boost_rounds = params.get("n_estimators", params.get("num_boost_round"))
         fold_scores: list[float] = []
 
         for fold_i, (tr_idx, va_idx) in enumerate(splits):
@@ -324,8 +344,12 @@ def train_one(
                 )
             else:
                 X_res_imp, y_res = X_tr_imp, y_tr
-                pos_weight = min((y_tr == 0).sum() / max((y_tr == 1).sum(), 1), 50)
-                extra_params["scale_pos_weight"] = pos_weight
+                if (
+                    "scale_pos_weight" not in fixed_in_yaml
+                    and "class_weight" not in fixed_in_yaml
+                ):
+                    pos_weight = min((y_tr == 0).sum() / max((y_tr == 1).sum(), 1), 50)
+                    extra_params["scale_pos_weight"] = pos_weight
 
             task = "vol" if regression else tag
             params.update({
@@ -381,10 +405,41 @@ def train_one(
         pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=1500)
     else:
         pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=2000)
-    study = optuna.create_study(direction="maximize", pruner=pruner)
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    trials_df = pd.DataFrame()
+    if n_trials == 0:
+        raw_params = {
+            "lr": fixed_in_yaml.get("learning_rate", 0.05),
+            "nl": fixed_in_yaml.get("num_leaves", 63),
+            "ne": fixed_in_yaml.get(
+                "num_boost_round",
+                fixed_in_yaml.get("n_estimators", 400),
+            ),
+            "md": fixed_in_yaml.get("max_depth", -1),
+            "mcs": fixed_in_yaml.get(
+                "min_child_samples",
+                fixed_in_yaml.get("min_data_in_leaf", 20),
+            ),
+            "subsample": fixed_in_yaml.get(
+                "subsample",
+                fixed_in_yaml.get("bagging_fraction", 1.0),
+            ),
+            "cbt": fixed_in_yaml.get(
+                "feature_fraction",
+                fixed_in_yaml.get("colsample_bytree", 1.0),
+            ),
+            "reg_lambda": fixed_in_yaml.get(
+                "lambda_l2",
+                fixed_in_yaml.get("reg_lambda", 0.0),
+            ),
+        }
+        best_value = float("nan")
+    else:
+        study = optuna.create_study(direction="maximize", pruner=pruner)
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+        raw_params = study.best_params
+        trials_df = study.trials_dataframe()
+        best_value = study.best_value
 
-    raw_params = study.best_params
     best_params = {
         "learning_rate": raw_params["lr"],
         "num_leaves": raw_params["nl"],
@@ -395,6 +450,7 @@ def train_one(
         "colsample_bytree": raw_params["cbt"],
         "reg_lambda": raw_params["reg_lambda"],
     }
+    best_params.update(fixed_in_yaml)
 
     # ----- 依据最后一折重新训练最佳模型 -----
     _, va_idx = splits[-1]
@@ -404,7 +460,11 @@ def train_one(
 
     extra_params: dict[str, float] = {}
     X_res_imp, y_res = X_all_imp, y
-    if not regression:
+    if (
+        not regression
+        and "scale_pos_weight" not in fixed_in_yaml
+        and "class_weight" not in fixed_in_yaml
+    ):
         pos_weight = min((y == 0).sum() / max((y == 1).sum(), 1), 50)
         extra_params["scale_pos_weight"] = pos_weight
 
@@ -483,9 +543,10 @@ def train_one(
         model_path,
         compress=3,
     )
-    study.trials_dataframe().to_csv(model_path.parent / "optuna_trials.csv", index=False)
+    if not trials_df.empty:
+        trials_df.to_csv(model_path.parent / "optuna_trials.csv", index=False)
     score_label = "CV-MAE" if regression else "CV-AUC"
-    best_val = abs(study.best_value) if regression else study.best_value
+    best_val = abs(best_value) if regression else best_value
     logging.info(
         f"✔ Saved: {model_path.name}  ({score_label} {best_val:.4f}, th{best_th:.3f})"
     )
