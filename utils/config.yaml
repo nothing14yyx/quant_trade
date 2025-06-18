@@ -280,7 +280,7 @@ vote_system:
 
 # === 调参选项 ===
 sentiment_alpha: 0.5
-cap_positive_scale: 0.7
+cap_positive_scale: 0.85
 volume_guard:
   weak_scale: 0.85
   over_scale: 0.9
@@ -289,7 +289,7 @@ volume_guard:
   roc_low: -20
   roc_high: 100
 ob_threshold:
-  min_ob_th: 0.15
+  min_ob_th: 0.10
   dynamic_factor: 0.08
 risk_score_cap: 5.0
 exit_lag_bars: 1
@@ -297,6 +297,10 @@ quantile: 0.88
 vote:
   strong_min: 3
   conf_min: 0.25
+signal_filters:
+  confidence_vote: 0.33
+  ob_th_min: 0.10
+  require_strong_confirm_4h: false
 oi_protection:
   scale: 0.9
   crowding_threshold: 0.90
