@@ -298,9 +298,10 @@ class Scheduler:
                     self.safe_call, self.update_oi_and_order_book, self.symbols
                 )
             )
-            tasks.append(
-                self.executor.submit(self.safe_call, self.update_klines, self.symbols, "1h")
+            update_future = self.executor.submit(
+                self.safe_call, self.update_klines, self.symbols, "1h"
             )
+            tasks.append(update_future)
             if now.hour % 4 == 0:
                 tasks.append(
                     self.executor.submit(
@@ -318,8 +319,11 @@ class Scheduler:
                 self.safe_call(self.update_daily_data, self.symbols)
                 self.safe_call(self.update_features)
                 self.safe_call(self.update_ic_scores_from_db)
+            update_future.result()
             tasks.append(
-                self.executor.submit(self.safe_call, self.generate_signals, self.symbols)
+                self.executor.submit(
+                    self.safe_call, self.generate_signals, self.symbols
+                )
             )
 
         for f in tasks:
