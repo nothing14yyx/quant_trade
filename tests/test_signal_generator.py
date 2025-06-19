@@ -120,7 +120,7 @@ def test_consensus_check():
 
 def test_crowding_protection():
     rsg = make_dummy_rsg()
-    factor = rsg.crowding_protection([0.9, 0.8, 0.85, -0.2]*8, 0.95, base_th=0.2)
+    factor = rsg.crowding_protection([0.9, 0.8, 0.85, -0.2]*13, 0.95, base_th=0.2)
     assert factor == pytest.approx(0.5)
     factor2 = rsg.crowding_protection([0.1, -0.2]*15, 0.15, base_th=0.2)
     assert factor2 == pytest.approx(1.0)
