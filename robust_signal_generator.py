@@ -148,7 +148,7 @@ class RobustSignalGenerator:
     }
 
     VOTE_PARAMS = {
-        "weight_ai": 2.0,
+        "weight_ai": 3,
         "strong_min": 3,
         "conf_min": 0.25,
     }
@@ -508,8 +508,8 @@ class RobustSignalGenerator:
         atr,
         volume,
         win: int = 3,
-        atr_mult: float = 1.2,
-        vol_mult: float = 1.3,
+        atr_mult: float = 1.05,
+        vol_mult: float = 1.10,
     ) -> int:
         """V 型急反转检测"""
 
@@ -519,7 +519,7 @@ class RobustSignalGenerator:
         slope_now, slope_prev = pct[-1], pct[-win:].mean()
         amp = max(price_series[-win - 1 :]) - min(price_series[-win - 1 :])
         cond_amp = amp > atr_mult * atr
-        cond_vol = (volume or 1) > vol_mult
+        cond_vol = (volume or 1) >= vol_mult
         if np.sign(slope_now) != np.sign(slope_prev) and cond_amp and cond_vol:
             return int(np.sign(slope_now))
         return 0
@@ -548,10 +548,13 @@ class RobustSignalGenerator:
             if missing:
                 logging.debug("get_ai_score missing columns: %s", missing)
             df = pd.DataFrame(row)
-            return df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
+            df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
+            return df, missing
 
-        X_up = _build_df(model_up)
-        X_down = _build_df(model_down)
+        X_up, missing_up = _build_df(model_up)
+        X_down, missing_down = _build_df(model_down)
+        if len(missing_up) > 3 or len(missing_down) > 3:
+            return 0.0
         prob_up = model_up["pipeline"].predict_proba(X_up)[:, 1]
         prob_down = model_down["pipeline"].predict_proba(X_down)[:, 1]
         if calibrator_up is not None:
@@ -845,9 +848,6 @@ class RobustSignalGenerator:
         if not scores or len(scores) < 30:
             return 1.0
 
-        if getattr(self, "_volume_checked", False):
-            return 1.0
-
         arr = np.array(scores, dtype=float)
         mask = np.abs(arr) >= base_th * 0.8
         arr = arr[mask]
@@ -1073,48 +1073,45 @@ class RobustSignalGenerator:
                 vol_roc_1h,
                 scores['1h'],
             )
-        self._volume_checked = True
-
         if raw4h is not None:
             vol_ratio_4h = raw4h.get('vol_ma_ratio_4h')
             vol_roc_4h = raw4h.get('vol_roc_4h')
-            if not self._volume_checked:
-                old_4h = scores['4h']
-                scores['4h'] = volume_guard(
-                    old_4h,
+            old_4h = scores['4h']
+            scores['4h'] = volume_guard(
+                old_4h,
+                vol_ratio_4h,
+                vol_roc_4h,
+                **self.volume_guard_params,
+            )
+            if old_4h != scores['4h']:
+                logging.debug(
+                    "volume guard %s 4h ratio=%.3f roc=%.3f -> %.3f",
+                    coin,
                     vol_ratio_4h,
                     vol_roc_4h,
-                    **self.volume_guard_params,
+                    scores['4h'],
                 )
-                if old_4h != scores['4h']:
-                    logging.debug(
-                        "volume guard %s 4h ratio=%.3f roc=%.3f -> %.3f",
-                        coin,
-                        vol_ratio_4h,
-                        vol_roc_4h,
-                        scores['4h'],
-                    )
         else:
             vol_roc_4h = None
 
         vol_ratio_d1 = raw_fd1.get('vol_ma_ratio_d1')
         vol_roc_d1 = raw_fd1.get('vol_roc_d1')
-        if not self._volume_checked:
-            old_d1 = scores['d1']
-            scores['d1'] = volume_guard(
-                old_d1,
+        old_d1 = scores['d1']
+        scores['d1'] = volume_guard(
+            old_d1,
+            vol_ratio_d1,
+            vol_roc_d1,
+            **self.volume_guard_params,
+        )
+        if old_d1 != scores['d1']:
+            logging.debug(
+                "volume guard %s d1 ratio=%.3f roc=%.3f -> %.3f",
+                coin,
                 vol_ratio_d1,
                 vol_roc_d1,
-                **self.volume_guard_params,
+                scores['d1'],
             )
-            if old_d1 != scores['d1']:
-                logging.debug(
-                    "volume guard %s d1 ratio=%.3f roc=%.3f -> %.3f",
-                    coin,
-                    vol_ratio_d1,
-                    vol_roc_d1,
-                    scores['d1'],
-                )
+        self._volume_checked = True
 
 
 
@@ -1349,7 +1346,7 @@ class RobustSignalGenerator:
 
         # ===== 9. 极端行情保护 =====
         crowding_factor = 1.0
-        if all_scores_list is not None:
+        if not oi_overheat and all_scores_list is not None:
             crowding_factor = self.crowding_protection(all_scores_list, fused_score, base_th)
             fused_score *= crowding_factor
         if th_oi is not None:
