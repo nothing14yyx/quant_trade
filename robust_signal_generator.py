@@ -460,13 +460,19 @@ class RobustSignalGenerator:
             stop_loss = price + sl_mult * atr
         return float(take_profit), float(stop_loss)
 
+    def _base_key(self, k: str) -> str:
+        for key in self.delta_params:
+            if k.startswith(key):
+                return key
+        return k.split('_', 1)[0]
+
     def _calc_deltas(self, curr: dict, prev: dict, keys: list) -> dict:
         """根据配置计算关键指标变化量"""
         deltas = {}
         if prev is None:
             return {f"{k}_delta": 0.0 for k in keys}
         for k in keys:
-            base = k.split("_", 1)[0]
+            base = self._base_key(k)
             th, scale, _ = self.delta_params.get(base, (0, 1, 0))
             delta_raw = curr.get(k, 0) - prev.get(k, 0)
             deltas[f"{k}_delta"] = (
@@ -480,7 +486,7 @@ class RobustSignalGenerator:
         for k, val in deltas.items():
             if val == 0:
                 continue
-            base = k.split("_", 2)[0]
+            base = self._base_key(k)
             _, _, inc = self.delta_params.get(base, (0, 1, 0))
             boost += np.clip(inc * np.sign(val), -0.06, 0.06)
         return score * (1 + boost)
@@ -1040,20 +1046,6 @@ class RobustSignalGenerator:
                     scores[p],
                 )
 
-        sentiment_combined = (
-            w1 * fs['1h']['sentiment']
-            + w4 * fs['4h']['sentiment']
-            + w_d1 * fs['d1']['sentiment']
-        )
-        if sentiment_combined <= -0.5:
-            logging.debug(
-                "combined sentiment %.3f <= -0.5 for %s -> cap positive scores",
-                sentiment_combined,
-                coin,
-            )
-            for p in scores:
-                if scores[p] > 0:
-                    scores[p] *= self.cap_positive_scale
 
         # volume guard-rail
         raw1h = raw_features_1h or features_1h
@@ -1554,8 +1546,9 @@ class RobustSignalGenerator:
             atr_pct_4h = features_4h.get('atr_pct_4h', 0)
         atr_abs = np.hypot(atr_1h, atr_pct_4h) * price
         atr_abs = max(atr_abs, 0.005 * price)
-        tp_dir = 1 if direction >= 0 else -1
-        take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, tp_dir)
+        take_profit = stop_loss = None
+        if direction != 0:
+            take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, direction)
 
         # ===== 14. 最终返回 =====
         details['grad_dir'] = float(grad_dir)
