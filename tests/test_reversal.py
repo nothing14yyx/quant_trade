@@ -61,7 +61,7 @@ def make_rsg():
 def test_detect_reversal():
     gen = RobustSignalGenerator.__new__(RobustSignalGenerator)
     prices = np.array([100, 95, 92, 98])
-    assert gen.detect_reversal(prices, atr=2, volume=2.0) == 1
+    assert gen.detect_reversal(prices, atr=0.02, volume=2.0) == 1
 
 
 def test_flip_on_reversal():
@@ -73,7 +73,7 @@ def test_flip_on_reversal():
         {'close': 92},
         {'close': 90},
     ])
-    feats_1h = {'close': 94, 'atr_pct_1h': 2, 'adx_1h': 0,
+    feats_1h = {'close': 94, 'atr_pct_1h': 0.02, 'adx_1h': 0,
                 'funding_rate_1h': 0, 'vol_ma_ratio_1h': 2.0}
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
