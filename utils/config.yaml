@@ -312,6 +312,6 @@ signal_threshold:
   gamma: 0.05        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
   low_base: 0.06
-  # base_th / low_base 单位为得分，detect_reversal 已按百分比 ATR 处理
-  rev_boost: 0.25      # detect_reversal 命中时加分
+  # base_th / low_base 单位为 fused_score
+  rev_boost: 0.30      # detect_reversal 命中时加分
   rev_th_mult: 0.60    # 急反转时降低门槛
