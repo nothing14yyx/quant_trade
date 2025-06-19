@@ -235,9 +235,10 @@ class RobustSignalGenerator:
         self.exit_lag_bars = cfg.get("exit_lag_bars", EXIT_LAG_BARS_DEFAULT)
         oi_cfg = cfg.get("oi_protection", {})
         self.oi_scale = oi_cfg.get("scale", 0.8)
-        self.max_same_direction_rate = oi_cfg.get("crowding_threshold", 0.85)
+        self.max_same_direction_rate = oi_cfg.get("crowding_threshold", 0.90)
         self.veto_level = cfg.get("veto_level", 0.7)
-        self.flip_coeff = cfg.get("flip_coeff", 0.8)
+        self.flip_coeff = cfg.get("flip_coeff", 0.5)
+        self.th_down_d1 = self.cfg.get("th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
 
         # 静态因子权重（后续可由动态IC接口进行更新）
@@ -289,7 +290,7 @@ class RobustSignalGenerator:
 
         # 缓存上一周期的原始特征，便于计算指标变化量
         self._prev_raw = {p: None for p in ("1h", "4h", "d1")}
-        self._raw_history = {p: deque(maxlen=2) for p in ("1h", "4h", "d1")}
+
         # 定时更新因子权重
         self.start_weight_update_thread()
 
@@ -372,8 +373,15 @@ class RobustSignalGenerator:
             setattr(self, name, 0.7)
             return 0.7
         if name == "flip_coeff":
-            setattr(self, name, 0.8)
-            return 0.8
+            setattr(self, name, 0.5)
+            return 0.5
+        if name == "cfg":
+            val = {}
+            setattr(self, name, val)
+            return val
+        if name == "th_down_d1":
+            setattr(self, name, 0.74)
+            return 0.74
         if name == "signal_threshold_cfg":
             val = {
                 "base_th": 0.08,
@@ -825,7 +833,7 @@ class RobustSignalGenerator:
             th -= 0.020
 
         if reversal:
-            th *= 0.8
+            th *= self.signal_threshold_cfg.get('rev_th_mult', 0.60)
 
         if low_base is None:
             low_base = self.signal_threshold_cfg.get('low_base', 0.10)
@@ -991,8 +999,7 @@ class RobustSignalGenerator:
                 vol_preds[p] = None
 
         # d1 空头阈值特殊规则
-        th_down_d1 = 0.70
-        if ai_scores['d1'] < 0 and abs(ai_scores['d1']) < th_down_d1:
+        if ai_scores['d1'] < 0 and abs(ai_scores['d1']) < self.th_down_d1:
             ai_scores['d1'] = 0.0
 
         # ===== 2. 计算多因子部分的分数 =====
@@ -1242,7 +1249,7 @@ class RobustSignalGenerator:
                 )
 
         # ===== 新指标：短周期动量与盘口失衡 =====
-        # raw1h = raw_features_1h or features_1h
+        raw1h = raw_features_1h or features_1h
         mom5 = raw1h.get('mom_5m_roll1h')
         mom15 = raw1h.get('mom_15m_roll1h')
 
@@ -1426,7 +1433,7 @@ class RobustSignalGenerator:
         vol_breakout_val = raw_f1h.get('vol_breakout_1h')
         vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
 
-        th = 0.38
+        th = self.ai_dir_eps
         if ai_scores['1h'] >= th:
             ai_dir = 1
         elif ai_scores['1h'] <= -th:
@@ -1577,6 +1584,10 @@ class RobustSignalGenerator:
         for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
             maxlen = 4 if p == "1h" else 2
             self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
+        filters = self.cfg.get('signal_filters', {})
+        confidence_vote = filters.get('confidence_vote', 0.33)
+        if details.get("confidence_vote", 1.0) < confidence_vote:
+            direction, pos_size = 0, 0.0
         logger.info(
             "[%s] base_th=%.3f, funding_conflicts=%d, fused=%.4f",
             symbol,
