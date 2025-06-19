@@ -35,13 +35,29 @@ def softmax(x):
     return ex / ex.sum()
 
 
-def adjust_score(score: float, sentiment: float, alpha: float = 0.5) -> float:
-    """根据情绪值调整分数"""
+def adjust_score(
+    score: float,
+    sentiment: float,
+    alpha: float = 0.5,
+    *,
+    cap_scale: float = 0.7,
+    cap_threshold: float = -0.5,
+) -> float:
+    """根据情绪值调整分数并在负面过强时进一步削弱"""
+
     if abs(sentiment) <= 0.5:
         return score
+
     scale = 1 + alpha * np.sign(score) * sentiment
     scale = float(np.clip(scale, 0.6, 1.5))
-    return score * scale
+    adjusted = score * scale
+
+    if (sentiment <= cap_threshold and score > 0) or (
+        sentiment >= 0.5 and score < 0
+    ):
+        adjusted *= cap_scale
+
+    return adjusted
 
 
 def volume_guard(
@@ -90,7 +106,7 @@ def fused_to_risk(
     cap: float = 5.0,
 ) -> float:
     """按安全分母计算并限制 risk score"""
-    denom = max(abs(logic_score * env_score), 1e-6)
+    denom = max(abs(logic_score), 1e-6)
     risk = abs(fused_score) / denom
     return min(risk, cap)
 
@@ -324,8 +340,15 @@ class RobustSignalGenerator:
         if name == "_cooldown":
             setattr(self, name, 0)
             return 0
+        if name == "_volume_checked":
+            setattr(self, name, False)
+            return False
         if name == "_raw_history":
-            val = {p: deque(maxlen=2) for p in ("1h", "4h", "d1")}
+            val = {
+                "1h": deque(maxlen=4),
+                "4h": deque(maxlen=2),
+                "d1": deque(maxlen=2),
+            }
             setattr(self, name, val)
             return val
         if name == "calibrators":
@@ -357,6 +380,8 @@ class RobustSignalGenerator:
                 "gamma": 0.05,
                 "min_pos": 0.10,
                 "low_base": DEFAULT_LOW_BASE,
+                "rev_boost": 0.25,
+                "rev_th_mult": 0.70,
             }
             setattr(self, name, val)
             return val
@@ -458,23 +483,45 @@ class RobustSignalGenerator:
             boost += np.clip(inc * np.sign(val), -0.06, 0.06)
         return score * (1 + boost)
 
-    def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> int:
-        """根据1h MA5 与 MA20 判断多空方向"""
+    def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> float:
+        """根据1h MA5 与 MA20 判断并返回分数乘数"""
 
         sma5 = features.get('sma_5_1h')
         sma20 = features.get('sma_20_1h')
         ma_ratio = features.get('ma_ratio_5_20', 1.0)
         if sma5 is None or sma20 is None:
-            return 0
+            return 1.0
 
         slope = 0.0
         if sma_20_1h_prev not in (None, 0):
             slope = (sma20 - sma_20_1h_prev) / sma_20_1h_prev
 
-        if ma_ratio > 1.02 and slope > 0:
-            return 1
-        if ma_ratio < 0.98 and slope < 0:
-            return -1
+        if (ma_ratio > 1.02 and slope > 0) or (ma_ratio < 0.98 and slope < 0):
+            return 1.1
+        if (ma_ratio > 1.02 and slope < 0) or (ma_ratio < 0.98 and slope > 0):
+            return 0.7
+        return 1.0
+
+    def detect_reversal(
+        self,
+        price_series,
+        atr,
+        volume,
+        win: int = 3,
+        atr_mult: float = 1.2,
+        vol_mult: float = 1.3,
+    ) -> int:
+        """V 型急反转检测"""
+
+        if len(price_series) < win + 1 or atr is None:
+            return 0
+        pct = np.diff(price_series) / price_series[:-1]
+        slope_now, slope_prev = pct[-1], pct[-win:].mean()
+        amp = max(price_series[-win - 1 :]) - min(price_series[-win - 1 :])
+        cond_amp = amp > atr_mult * atr
+        cond_vol = (volume or 1) > vol_mult
+        if np.sign(slope_now) != np.sign(slope_prev) and cond_amp and cond_vol:
+            return int(np.sign(slope_now))
         return 0
 
     def get_position_size(self, score, base=0.1, coeff=0.9):
@@ -720,6 +767,7 @@ class RobustSignalGenerator:
         base=0.12,
         regime=None,
         low_base=None,
+        reversal=False,
     ):
         """根据历史波动、趋势强度和市场情绪动态计算阈值"""
 
@@ -757,6 +805,9 @@ class RobustSignalGenerator:
         elif regime == "range":
             th -= 0.020
 
+        if reversal:
+            th *= 0.8
+
         if low_base is None:
             low_base = self.signal_threshold_cfg.get('low_base', 0.10)
         return max(th, low_base)
@@ -792,6 +843,9 @@ class RobustSignalGenerator:
     def crowding_protection(self, scores, current_score, base_th=0.2):
         """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
         if not scores or len(scores) < 30:
+            return 1.0
+
+        if getattr(self, "_volume_checked", False):
             return 1.0
 
         arr = np.array(scores, dtype=float)
@@ -875,6 +929,18 @@ class RobustSignalGenerator:
 
         details = {}
 
+        self._volume_checked = False
+
+        price_hist = [r.get('close') for r in self._raw_history.get('1h', [])]
+        price_hist.append(raw_f1h.get('close'))
+        price_hist = [p for p in price_hist if p is not None][-4:]
+        rev_dir = self.detect_reversal(
+            np.array(price_hist, dtype=float),
+            raw_f1h.get('atr_pct_1h'),
+            raw_f1h.get('vol_ma_ratio_1h'),
+        )
+        skip_flip = False
+
         if self._cooldown > 0:
             self._cooldown -= 1
 
@@ -884,7 +950,8 @@ class RobustSignalGenerator:
             ("4h", raw_f4h, self.core_keys["4h"]),
             ("d1", raw_fd1, self.core_keys["d1"]),
         ]:
-            hist = self._raw_history.get(p, deque(maxlen=2))
+            maxlen = 4 if p == "1h" else 2
+            hist = self._raw_history.get(p, deque(maxlen=maxlen))
             prev = hist[0] if len(hist) == 2 else self._prev_raw.get(p)
             deltas[p] = self._calc_deltas(raw, prev, keys)
 
@@ -1006,45 +1073,48 @@ class RobustSignalGenerator:
                 vol_roc_1h,
                 scores['1h'],
             )
+        self._volume_checked = True
 
         if raw4h is not None:
             vol_ratio_4h = raw4h.get('vol_ma_ratio_4h')
             vol_roc_4h = raw4h.get('vol_roc_4h')
-            old_4h = scores['4h']
-            scores['4h'] = volume_guard(
-                old_4h,
-                vol_ratio_4h,
-                vol_roc_4h,
-                **self.volume_guard_params,
-            )
-            if old_4h != scores['4h']:
-                logging.debug(
-                    "volume guard %s 4h ratio=%.3f roc=%.3f -> %.3f",
-                    coin,
+            if not self._volume_checked:
+                old_4h = scores['4h']
+                scores['4h'] = volume_guard(
+                    old_4h,
                     vol_ratio_4h,
                     vol_roc_4h,
-                    scores['4h'],
+                    **self.volume_guard_params,
                 )
+                if old_4h != scores['4h']:
+                    logging.debug(
+                        "volume guard %s 4h ratio=%.3f roc=%.3f -> %.3f",
+                        coin,
+                        vol_ratio_4h,
+                        vol_roc_4h,
+                        scores['4h'],
+                    )
         else:
             vol_roc_4h = None
 
         vol_ratio_d1 = raw_fd1.get('vol_ma_ratio_d1')
         vol_roc_d1 = raw_fd1.get('vol_roc_d1')
-        old_d1 = scores['d1']
-        scores['d1'] = volume_guard(
-            old_d1,
-            vol_ratio_d1,
-            vol_roc_d1,
-            **self.volume_guard_params,
-        )
-        if old_d1 != scores['d1']:
-            logging.debug(
-                "volume guard %s d1 ratio=%.3f roc=%.3f -> %.3f",
-                coin,
+        if not self._volume_checked:
+            old_d1 = scores['d1']
+            scores['d1'] = volume_guard(
+                old_d1,
                 vol_ratio_d1,
                 vol_roc_d1,
-                scores['d1'],
+                **self.volume_guard_params,
             )
+            if old_d1 != scores['d1']:
+                logging.debug(
+                    "volume guard %s d1 ratio=%.3f roc=%.3f -> %.3f",
+                    coin,
+                    vol_ratio_d1,
+                    vol_roc_d1,
+                    scores['d1'],
+                )
 
 
 
@@ -1084,22 +1154,9 @@ class RobustSignalGenerator:
         fused_score *= conf
 
         prev_ma20 = (raw_features_1h or features_1h).get('sma_20_1h_prev')
-        ma_dir = self.ma_cross_logic(raw_features_1h or features_1h, prev_ma20)
-        if ma_dir != 0:
-            if np.sign(fused_score) == 0:
-                fused_score += 0.1 * ma_dir
-            elif np.sign(fused_score) == ma_dir:
-                fused_score *= 1.1
-            else:
-                fused_score *= 0.7
-
-        ratio = (raw_features_1h or features_1h).get('ma_ratio_5_20')
-        sma20 = (raw_features_1h or features_1h).get('sma_20_1h')
-        slope = 0.0
-        if prev_ma20 not in (None, 0):
-            slope = (sma20 - prev_ma20) / prev_ma20
-        if ratio is not None and ((ratio > 1.02 and slope < 0) or (ratio < 0.98 and slope > 0)):
-            fused_score -= 0.3
+        ma_coeff = self.ma_cross_logic(raw_features_1h or features_1h, prev_ma20)
+        fused_score *= ma_coeff
+        details['ma_cross'] = int(np.sign(ma_coeff - 1.0))
 
         logic_score = fused_score
         env_score = 1.0
@@ -1213,7 +1270,8 @@ class RobustSignalGenerator:
             self._prev_raw["4h"] = raw_f4h
             self._prev_raw["d1"] = raw_fd1
             for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                self._raw_history.setdefault(p, deque(maxlen=2)).append(raw)
+                maxlen = 4 if p == "1h" else 2
+                self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
             return {
                 'signal': 0,
                 'score': float('nan'),
@@ -1266,9 +1324,16 @@ class RobustSignalGenerator:
             vix_proxy=vix_p,
             regime=regime,
             base=cfg_th.get('base_th', 0.12),
+            reversal=bool(rev_dir),
         )
         details['regime'] = regime
         details['dynamic_th_final'] = base_th
+        if rev_dir != 0:
+            fused_score += cfg_th.get('rev_boost', 0.25) * rev_dir
+            base_th *= cfg_th.get('rev_th_mult', 0.70)
+            details['reversal_flag'] = rev_dir
+            self._cooldown = 0
+            skip_flip = True
         # ===== 8. 资金费率惩罚 =====
         funding_conflicts = 0
         for p, raw_f in [('1h', raw_f1h), ('4h', raw_f4h), ('d1', raw_fd1)]:
@@ -1329,7 +1394,6 @@ class RobustSignalGenerator:
             'confidence': confidence,
             'short_momentum': short_mom,
             'ob_imbalance': ob_imb,
-            'ma_cross': ma_dir,
             'logic_score': logic_score,
             'env_score': env_score,
             'risk_score': risk_score,
@@ -1337,26 +1401,7 @@ class RobustSignalGenerator:
 
 
         if regime == "range" and consensus_dir == 0:
-            # 允许 1h 与 4h 共振即通过
-            if np.sign(score_1h) == np.sign(score_4h) and score_1h * score_4h != 0:
-                pass
-            else:
-                logging.debug("Range regime without consensus -> no trade")
-                self._last_signal = 0
-                self._last_score = fused_score
-                self._prev_raw["1h"] = raw_f1h
-                self._prev_raw["4h"] = raw_f4h
-                self._prev_raw["d1"] = raw_fd1
-                for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                    self._raw_history.setdefault(p, deque(maxlen=2)).append(raw)
-                return {
-                    'signal': 0,
-                    'score': fused_score,
-                    'position_size': 0.0,
-                    'take_profit': None,
-                    'stop_loss': None,
-                    'details': details,
-                }
+            skip_flip = True
 
         if ob_imb is not None:
             details['order_book_imbalance'] = float(ob_imb)
@@ -1408,8 +1453,11 @@ class RobustSignalGenerator:
 
         if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
             last_score = getattr(self, '_last_score', 0.0)
-            flip_th = base_th + max(0.05, self.flip_coeff * abs(last_score))
-            if abs(fused_score) < max(flip_th, 1.2 * atr_1h):
+            if skip_flip:
+                flip_th = base_th
+            else:
+                flip_th = max(base_th, self.flip_coeff * abs(last_score), 1.2 * atr_1h)
+            if abs(fused_score) < flip_th:
                 logging.debug(
                     "Flip prevented for %s: last=%s current=%.3f",
                     coin,
@@ -1494,13 +1542,6 @@ class RobustSignalGenerator:
 
 
         details['order_book_momentum'] = ob_imb
-        ob_th = self.ob_th_params['min_ob_th']
-        if ob_imb is not None and abs(ob_imb) > ob_th:
-            weight = max(0.2, 1 - (abs(ob_imb) - ob_th) / ob_th)
-            if np.sign(ob_imb) != direction:
-                pos_size *= weight
-            else:
-                pos_size *= 1 + (1 - weight)
 
         if direction == 1 and scores["4h"] < -self.veto_level:
             direction, pos_size = 0, 0.0
@@ -1528,7 +1569,8 @@ class RobustSignalGenerator:
         self._prev_raw["4h"] = raw_f4h
         self._prev_raw["d1"] = raw_fd1
         for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-            self._raw_history.setdefault(p, deque(maxlen=2)).append(raw)
+            maxlen = 4 if p == "1h" else 2
+            self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
         logger.info(
             "[%s] base_th=%.3f, funding_conflicts=%d, fused=%.4f",
             symbol,
