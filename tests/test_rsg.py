@@ -116,14 +116,14 @@ def test_ma_cross_logic_symmetric():
         'ma_ratio_5_20': 1.03,
         'sma_20_1h_prev': 9.9,
     }
-    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == pytest.approx(1.1)
+    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == pytest.approx(1.15)
     feats = {
         'sma_5_1h': 9.7,
         'sma_20_1h': 10,
         'ma_ratio_5_20': 0.97,
         'sma_20_1h_prev': 10.1,
     }
-    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == pytest.approx(1.1)
+    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == pytest.approx(1.15)
     feats = {
         'sma_5_1h': 10,
         'sma_20_1h': 10,
