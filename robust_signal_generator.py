@@ -106,7 +106,7 @@ def fused_to_risk(
     cap: float = 5.0,
 ) -> float:
     """按安全分母计算并限制 risk score"""
-    denom = max(abs(logic_score), 1e-6)
+    denom = max(abs(logic_score) * max(abs(env_score), 1e-6), 1e-6)
     risk = abs(fused_score) / denom
     return min(risk, cap)
 
@@ -568,9 +568,9 @@ class RobustSignalGenerator:
         prob_up = model_up["pipeline"].predict_proba(X_up)[:, 1]
         prob_down = model_down["pipeline"].predict_proba(X_down)[:, 1]
         if calibrator_up is not None:
-            prob_up = calibrator_up.transform(prob_up)
+            prob_up = calibrator_up.transform(prob_up.reshape(-1, 1)).ravel()
         if calibrator_down is not None:
-            prob_down = calibrator_down.transform(prob_down)
+            prob_down = calibrator_down.transform(prob_down.reshape(-1, 1)).ravel()
         denom = prob_up + prob_down
         ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
         ai_score = np.clip(ai_score, -1.0, 1.0)
@@ -1317,13 +1317,12 @@ class RobustSignalGenerator:
             reversal=bool(rev_dir),
         )
         details['regime'] = regime
-        details['dynamic_th_final'] = base_th
         if rev_dir != 0:
             fused_score += cfg_th.get('rev_boost', 0.25) * rev_dir
-            base_th *= cfg_th.get('rev_th_mult', 0.70)
             details['reversal_flag'] = rev_dir
             self._cooldown = 0
             skip_flip = True
+        details['dynamic_th_final'] = base_th
         # ===== 8. 资金费率惩罚 =====
         funding_conflicts = 0
         for p, raw_f in [('1h', raw_f1h), ('4h', raw_f4h), ('d1', raw_fd1)]:
