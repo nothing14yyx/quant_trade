@@ -276,7 +276,7 @@ vote_system:
   weight_ai: 3
   strong_min: 3
   conf_min: 0.25
-  ai_dir_eps: 0.02
+  ai_dir_eps: 0.04
 
 # === 调参选项 ===
 sentiment_alpha: 0.5
