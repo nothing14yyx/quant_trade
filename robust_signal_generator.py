@@ -22,10 +22,10 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 EXIT_LAG_BARS_DEFAULT = 1
 
 # AI 投票与仓位参数默认值
-DEFAULT_AI_DIR_EPS = 0.07     # AI 方向阈值
+DEFAULT_AI_DIR_EPS = 0.04     # AI 方向阈值
 DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
 DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
-DEFAULT_LOW_BASE = 0.10       # 动态阈值下限
+DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
 
 
 def softmax(x):
@@ -150,7 +150,7 @@ class RobustSignalGenerator:
     VOTE_PARAMS = {
         "weight_ai": 3,
         "strong_min": 3,
-        "conf_min": 0.25,
+        "conf_min": 0.30,
     }
 
     def __init__(
@@ -376,12 +376,12 @@ class RobustSignalGenerator:
             return 0.8
         if name == "signal_threshold_cfg":
             val = {
-                "base_th": 0.12,
+                "base_th": 0.08,
                 "gamma": 0.05,
                 "min_pos": 0.10,
                 "low_base": DEFAULT_LOW_BASE,
-                "rev_boost": 0.25,
-                "rev_th_mult": 0.70,
+                "rev_boost": 0.30,
+                "rev_th_mult": 0.60,
             }
             setattr(self, name, val)
             return val
@@ -789,12 +789,18 @@ class RobustSignalGenerator:
         th = float(base)
 
         # === 波动因子：max 避免双计 ===
+        vol_th = 0.0
         main_vol = max(abs(atr), abs(pred_vol or 0.0))
-        th += min(0.10, main_vol * 4)
+        vol_th += min(0.10, main_vol * 4)
         if atr_4h is not None or pred_vol_4h is not None:
-            th += 0.5 * min(0.06, max(abs(atr_4h or 0), abs(pred_vol_4h or 0)) * 3)
+            vol_th += 0.5 * min(
+                0.06, max(abs(atr_4h or 0), abs(pred_vol_4h or 0)) * 3
+            )
         if atr_d1 is not None or pred_vol_d1 is not None:
-            th += 0.25 * min(0.06, max(abs(atr_d1 or 0), abs(pred_vol_d1 or 0)) * 3)
+            vol_th += 0.25 * min(
+                0.06, max(abs(atr_d1 or 0), abs(pred_vol_d1 or 0)) * 3
+            )
+        th += vol_th * 1.2
 
         # === 趋势强度 ===
         th += min(0.12, max(adx - 25, 0) * 0.005)
@@ -855,7 +861,7 @@ class RobustSignalGenerator:
 
     def crowding_protection(self, scores, current_score, base_th=0.2):
         """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
-        if not scores or len(scores) < 50:
+        if not scores or len(scores) < 70:
             return 1.0
 
         arr = np.array(scores, dtype=float)
@@ -983,6 +989,11 @@ class RobustSignalGenerator:
                 vol_preds[p] = self.get_vol_prediction(feats, self.models[p]['vol'])
             else:
                 vol_preds[p] = None
+
+        # d1 空头阈值特殊规则
+        th_down_d1 = 0.70
+        if ai_scores['d1'] < 0 and abs(ai_scores['d1']) < th_down_d1:
+            ai_scores['d1'] = 0.0
 
         # ===== 2. 计算多因子部分的分数 =====
         # 若提供了未标准化的原始特征，则优先用于多因子逻辑计算，
@@ -1415,8 +1426,13 @@ class RobustSignalGenerator:
         vol_breakout_val = raw_f1h.get('vol_breakout_1h')
         vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
 
-        ai_dir = 1 if ai_scores['1h'] > self.ai_dir_eps else \
-                 -1 if ai_scores['1h'] < -self.ai_dir_eps else 0
+        th = 0.38
+        if ai_scores['1h'] >= th:
+            ai_dir = 1
+        elif ai_scores['1h'] <= -th:
+            ai_dir = -1
+        else:
+            ai_dir = 0
 
         vote = 4 * ob_dir + 2 * short_mom_dir + self.vote_params['weight_ai'] * ai_dir + vol_breakout_dir
         strong_confirm_vote = abs(vote) >= self.vote_params['strong_min']

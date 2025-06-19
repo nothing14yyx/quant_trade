@@ -82,7 +82,7 @@ def test_get_dynamic_oi_threshold():
 def test_dynamic_threshold_upper_bound():
     rsg = make_dummy_rsg()
     th = rsg.dynamic_threshold(0.1, 50, 0.02)
-    assert th == pytest.approx(0.42)
+    assert th == pytest.approx(0.44)
 
 
 def test_dynamic_threshold_multi_period():
@@ -91,9 +91,9 @@ def test_dynamic_threshold_multi_period():
     th2 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
     th3 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
 
-    assert th1 == pytest.approx(0.20)
-    assert th2 == pytest.approx(0.215)
-    assert th3 == pytest.approx(0.2225)
+    assert th1 == pytest.approx(0.216)
+    assert th2 == pytest.approx(0.234)
+    assert th3 == pytest.approx(0.243)
 
 
 def test_dynamic_threshold_with_vix():
@@ -120,7 +120,7 @@ def test_consensus_check():
 
 def test_crowding_protection():
     rsg = make_dummy_rsg()
-    factor = rsg.crowding_protection([0.9, 0.8, 0.85, -0.2]*13, 0.95, base_th=0.2)
+    factor = rsg.crowding_protection([0.9, 0.8, 0.85, -0.2]*18, 0.95, base_th=0.2)
     assert factor == pytest.approx(0.5)
     factor2 = rsg.crowding_protection([0.1, -0.2]*15, 0.15, base_th=0.2)
     assert factor2 == pytest.approx(1.0)
