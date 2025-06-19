@@ -429,7 +429,7 @@ class RobustSignalGenerator:
             th = float(np.quantile(np.abs(self.oi_change_history), quantile))
         if pred_vol is not None:
             th += min(0.1, abs(pred_vol) * 0.5)
-        return max(th, 0.25)
+        return max(th, 0.30)
 
     def detect_market_regime(self, adx1, adx4, adxd):
         """简易市场状态判别：根据平均ADX判断震荡或趋势"""
@@ -821,7 +821,7 @@ class RobustSignalGenerator:
             vol_th += 0.25 * min(
                 0.06, max(abs(atr_d1 or 0), abs(pred_vol_d1 or 0)) * 3
             )
-        th += vol_th * 1.4
+        th += vol_th * 1.5
 
         # === 趋势强度 ===
         th += min(0.12, max(adx - 25, 0) * 0.005)
