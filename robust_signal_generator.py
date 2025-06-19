@@ -22,7 +22,19 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 EXIT_LAG_BARS_DEFAULT = 1
 
 # AI 投票与仓位参数默认值
-DEFAULT_AI_DIR_EPS = 0.04     # AI 方向阈值
+
+
+def _load_default_ai_dir_eps(path: Path) -> float:
+    """从配置文件读取 ai_dir_eps，若失败则返回 0.04"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("vote_system", {}).get("ai_dir_eps", 0.04)
+    except Exception:
+        return 0.04
+
+
+DEFAULT_AI_DIR_EPS = _load_default_ai_dir_eps(CONFIG_PATH)
 DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
 DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
 DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
@@ -394,8 +406,9 @@ class RobustSignalGenerator:
             setattr(self, name, val)
             return val
         if name == "ai_dir_eps":
-            setattr(self, name, DEFAULT_AI_DIR_EPS)
-            return DEFAULT_AI_DIR_EPS
+            val = self.cfg.get("vote_system", {}).get("ai_dir_eps", DEFAULT_AI_DIR_EPS)
+            setattr(self, name, val)
+            return val
         if name == "pos_coeff_range":
             setattr(self, name, DEFAULT_POS_K_RANGE)
             return DEFAULT_POS_K_RANGE
@@ -416,7 +429,7 @@ class RobustSignalGenerator:
             th = float(np.quantile(np.abs(self.oi_change_history), quantile))
         if pred_vol is not None:
             th += min(0.1, abs(pred_vol) * 0.5)
-        return max(th, 0.18)
+        return max(th, 0.25)
 
     def detect_market_regime(self, adx1, adx4, adxd):
         """简易市场状态判别：根据平均ADX判断震荡或趋势"""
@@ -513,9 +526,9 @@ class RobustSignalGenerator:
             slope = (sma20 - sma_20_1h_prev) / sma_20_1h_prev
 
         if (ma_ratio > 1.02 and slope > 0) or (ma_ratio < 0.98 and slope < 0):
-            return 1.1
+            return 1.15
         if (ma_ratio > 1.02 and slope < 0) or (ma_ratio < 0.98 and slope > 0):
-            return 0.7
+            return 0.85
         return 1.0
 
     def detect_reversal(
@@ -869,7 +882,7 @@ class RobustSignalGenerator:
 
     def crowding_protection(self, scores, current_score, base_th=0.2):
         """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
-        if not scores or len(scores) < 50:
+        if not scores or len(scores) < 30:
             return 1.0
 
         arr = np.array(scores, dtype=float)
