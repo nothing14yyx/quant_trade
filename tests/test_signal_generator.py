@@ -516,9 +516,9 @@ def test_ma_cross_logic_overbought_threshold():
         'ma_ratio_5_20': 1.12,
         'sma_20_1h_prev': 9.9,
     }
-    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == 1
+    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == pytest.approx(1.1)
     feats['ma_ratio_5_20'] = 1.06
-    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == 1
+    assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == pytest.approx(1.1)
 
 
 def test_dynamic_threshold_regime():
