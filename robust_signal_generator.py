@@ -441,6 +441,8 @@ class RobustSignalGenerator:
 
     def compute_tp_sl(self, price, atr, direction, tp_mult=1.5, sl_mult=1.0):
         """计算止盈止损价格"""
+        if direction == 0:
+            return None, None
         if price is None or price <= 0:
             return None, None            # 价格异常直接放弃
         if atr is None or atr == 0:
@@ -518,8 +520,10 @@ class RobustSignalGenerator:
         pct = np.diff(price_series) / price_series[:-1]
         slope_now, slope_prev = pct[-1], pct[-win:].mean()
         amp = max(price_series[-win - 1 :]) - min(price_series[-win - 1 :])
-        cond_amp = amp > atr_mult * atr
-        cond_vol = (volume or 1) >= vol_mult
+        price_base = price_series[-2] or price_series[-1]
+        amp_pct = amp / price_base if price_base else 0
+        cond_amp = amp_pct > atr_mult * atr
+        cond_vol = (volume is None) or (volume >= vol_mult)
         if np.sign(slope_now) != np.sign(slope_prev) and cond_amp and cond_vol:
             return int(np.sign(slope_now))
         return 0
@@ -845,7 +849,7 @@ class RobustSignalGenerator:
 
     def crowding_protection(self, scores, current_score, base_th=0.2):
         """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
-        if not scores or len(scores) < 30:
+        if not scores or len(scores) < 50:
             return 1.0
 
         arr = np.array(scores, dtype=float)
@@ -928,8 +932,6 @@ class RobustSignalGenerator:
         raw_fd1 = raw_features_d1 or features_d1
 
         details = {}
-
-        self._volume_checked = False
 
         price_hist = [r.get('close') for r in self._raw_history.get('1h', [])]
         price_hist.append(raw_f1h.get('close'))
@@ -1111,7 +1113,6 @@ class RobustSignalGenerator:
                 vol_roc_d1,
                 scores['d1'],
             )
-        self._volume_checked = True
 
 
 
