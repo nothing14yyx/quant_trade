@@ -808,7 +808,7 @@ class RobustSignalGenerator:
             vol_th += 0.25 * min(
                 0.06, max(abs(atr_d1 or 0), abs(pred_vol_d1 or 0)) * 3
             )
-        th += vol_th * 1.2
+        th += vol_th * 1.4
 
         # === 趋势强度 ===
         th += min(0.12, max(adx - 25, 0) * 0.005)
@@ -869,7 +869,7 @@ class RobustSignalGenerator:
 
     def crowding_protection(self, scores, current_score, base_th=0.2):
         """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
-        if not scores or len(scores) < 70:
+        if not scores or len(scores) < 50:
             return 1.0
 
         arr = np.array(scores, dtype=float)
