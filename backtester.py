@@ -5,7 +5,7 @@ import numpy as np
 import yaml
 from sqlalchemy import create_engine
 from robust_signal_generator import RobustSignalGenerator
-from utils.helper import calc_features_raw
+from utils.helper import calc_features_raw, collect_feature_cols
 
 # 配置文件路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
@@ -13,9 +13,9 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 # ====== 配置特征字段（从 config.yaml 读取）======
 with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
     _cfg = yaml.safe_load(_f)
-FEATURE_COLS_1H = _cfg.get("feature_cols", {}).get("1h", [])
-FEATURE_COLS_4H = _cfg.get("feature_cols", {}).get("4h", [])
-FEATURE_COLS_D1 = _cfg.get("feature_cols", {}).get("d1", [])
+FEATURE_COLS_1H = collect_feature_cols(_cfg, "1h")
+FEATURE_COLS_4H = collect_feature_cols(_cfg, "4h")
+FEATURE_COLS_D1 = collect_feature_cols(_cfg, "d1")
 
 # 预训练模型路径
 MODEL_PATHS = {
