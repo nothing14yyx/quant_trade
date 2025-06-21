@@ -29,9 +29,9 @@ engine = create_engine(
 )
 
 fs_cfg = cfg.get("feature_selector", {})
-targets = fs_cfg.get("targets")
-if not targets:
-    targets = [fs_cfg.get("target", "target")]
+targets = fs_cfg.get("targets") or fs_cfg.get("target", "target")
+if not isinstance(targets, list):
+    targets = [targets]
 TOP_N = fs_cfg.get("top_n", 30)
 
 # 与 FeatureEngineer 保持同步的未来字段列表，避免选入泄漏特征
