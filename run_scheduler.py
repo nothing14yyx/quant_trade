@@ -22,6 +22,7 @@ from generate_signal_from_db import (
     load_symbol_categories,
 )
 from robust_signal_generator import RobustSignalGenerator
+from utils.helper import collect_feature_cols
 from sqlalchemy import text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -83,9 +84,9 @@ class Scheduler:
         )
         self.sg = RobustSignalGenerator(
             model_paths=cfg["models"],
-            feature_cols_1h=cfg.get("feature_cols", {}).get("1h", []),
-            feature_cols_4h=cfg.get("feature_cols", {}).get("4h", []),
-            feature_cols_d1=cfg.get("feature_cols", {}).get("d1", []),
+            feature_cols_1h=collect_feature_cols(cfg, "1h"),
+            feature_cols_4h=collect_feature_cols(cfg, "4h"),
+            feature_cols_d1=collect_feature_cols(cfg, "d1"),
         )
         categories = load_symbol_categories(self.engine)
         self.sg.set_symbol_categories(categories)
