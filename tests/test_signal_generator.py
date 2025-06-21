@@ -111,6 +111,18 @@ def test_dynamic_threshold_with_computed_vix():
     assert th > base_th
 
 
+def test_dynamic_threshold_recovery():
+    rsg = make_dummy_rsg()
+    rsg.th_window = 50
+    rsg.history_scores.extend([5.0] * 120)
+    th_high = rsg.dynamic_threshold(0, 0, 0)
+    assert th_high >= 5
+    for _ in range(60):
+        rsg.history_scores.append(0.1)
+    th_normal = rsg.dynamic_threshold(0, 0, 0)
+    assert th_normal == pytest.approx(0.12)
+
+
 def test_consensus_check():
     rsg = make_dummy_rsg()
     assert rsg.consensus_check(0.2, 0.3, 0.1) == 1
