@@ -25,9 +25,9 @@ MODEL_PATHS = {
     ('4h', 'up'):   'models/model_4h_up.pkl',
     ('4h', 'down'): 'models/model_4h_down.pkl',
     ('4h', 'vol'):  'models/model_4h_vol.pkl',
-    ('d1', 'up'):   'models/model_1d_up.pkl',
-    ('d1', 'down'): 'models/model_1d_down.pkl',
-    ('d1', 'vol'):  'models/model_1d_vol.pkl',
+    ('d1', 'up'):   'models/model_d1_up.pkl',
+    ('d1', 'down'): 'models/model_d1_down.pkl',
+    ('d1', 'vol'):  'models/model_d1_vol.pkl',
 }
 
 # 将上面的 (period, direction) 键值对转换为嵌套字典
