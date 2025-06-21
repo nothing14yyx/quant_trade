@@ -15,6 +15,9 @@
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
 -   新增 `ma_cross_logic`，会检查 `sma_5_1h` 与 `sma_20_1h` 的形态，
     在多空信号一致时适度放大得分，方向相反时则削弱或保持观望。
+-   新增 `th_window` 与 `th_decay` 参数，用于控制动态阈值参考的历史得分
+    数量及衰减程度，默认 `th_window=150`、`th_decay=1.0`，
+    可根据策略需求适当调小窗口或衰减系数。
 - **Backtester**：依据生成的信号回测策略表现。
 - **FeatureSelector**：综合 AUC、SHAP 与 Permutation Importance 评分，筛选去冗余的核心特征。
 
