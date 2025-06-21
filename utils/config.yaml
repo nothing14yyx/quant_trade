@@ -40,7 +40,7 @@ feature_engineering:
 
 feature_selector:
   target: target_up   # 也可换 target_up
-  top_n: 100             # 每周期保留前 N
+  top_n: 50             # 每周期保留前 N
 
 models:
   1h:
