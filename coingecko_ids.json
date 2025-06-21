@@ -127,5 +127,13 @@
   "POLUSDT": "polygon-ecosystem-token",
   "ALGOUSDT": "algorand",
   "KMNOUSDT": "kamino",
-  "AERGOUSDT": "aergo"
+  "AERGOUSDT": "aergo",
+  "FUNUSDT": "funfair",
+  "SIRENUSDT": "siren-2",
+  "MYXUSDT": "myx-finance",
+  "MAGICUSDT": "magic",
+  "LAYERUSDT": "solayer",
+  "ZKJUSDT": "polyhedra-network",
+  "SPKUSDT": "spark-2",
+  "TUSDT": "bitcoin"
 }

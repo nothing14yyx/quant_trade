@@ -20,7 +20,7 @@ from utils.ratelimiter import RateLimiter  # 你的限速器
 from utils.helper import calc_order_book_features
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 
 
 def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
