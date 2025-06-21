@@ -4,6 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 from collections import deque
 import threading
+import numpy as np
 
 from robust_signal_generator import RobustSignalGenerator
 
@@ -55,6 +56,38 @@ def test_dynamic_weight_non_negative_sum_one():
     weights = rsg.dynamic_weight_update()
     assert all(w >= 0 for w in weights.values())
     assert pytest.approx(sum(weights.values()), rel=1e-6) == 1.0
+
+
+def test_dynamic_weight_recent_ic_priority():
+    rsg = make_rsg()
+    rsg.ic_history['ai'].extend([0.0, 1.0, 2.0])
+    for k in rsg.ic_history:
+        if k != 'ai':
+            rsg.ic_history[k].extend([1.0, 1.0, 1.0])
+
+    weights = rsg.dynamic_weight_update(halflife=1)
+
+    arr = np.array([0.0, 1.0, 2.0], dtype=float)
+    decay = np.log(0.5) / 1
+    w = np.exp(decay * np.arange(len(arr))[::-1])
+    w /= w.sum()
+    ic_avg_ai = float(np.nansum(arr * w))
+    base_ai = rsg.base_weights['ai']
+    raw_ai = max(base_ai * rsg.min_weight_ratio, base_ai * (1 + ic_avg_ai))
+
+    total = raw_ai
+    for k in rsg.base_weights:
+        if k == 'ai':
+            continue
+        base_k = rsg.base_weights[k]
+        arr2 = np.array([1.0, 1.0, 1.0], dtype=float)
+        w2 = np.exp(decay * np.arange(len(arr2))[::-1])
+        w2 /= w2.sum()
+        ic_avg_k = float(np.nansum(arr2 * w2))
+        total += max(base_k * rsg.min_weight_ratio, base_k * (1 + ic_avg_k))
+
+    expected_ai = raw_ai / total
+    assert weights['ai'] == pytest.approx(expected_ai)
 
 
 def test_compute_tp_sl_fallback():

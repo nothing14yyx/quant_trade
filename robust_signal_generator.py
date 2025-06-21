@@ -763,7 +763,7 @@ class RobustSignalGenerator:
                 hist = self.ic_history.get(k)
                 if hist:
                     arr = np.array(hist, dtype=float)
-                    weights = np.exp(decay * np.arange(len(arr)))
+                    weights = np.exp(decay * np.arange(len(arr))[::-1])
                     weights /= weights.sum()
                     ic_avg.append(float(np.nansum(arr * weights)))
                 else:
