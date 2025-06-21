@@ -61,107 +61,305 @@ database:
 
 feature_cols:
 
-  1h:            # 43 个  (-2)
-    - pct_chg1_1h
-    - pct_chg3_1h
-    - pct_chg6_1h
-    - pct_chg3_4h
-    - pct_chg6_4h
-    - cci_1h
-    - cci_delta_1h
-    - macd_hist_1h
-    - rsi_diff_1h_4h
-    - rsi_slope_4h
-    - atr_chg_1h
-    - atr_pct_ratio_1h_4h
-    - bb_width_chg_1h
-    - bb_width_ratio_1h_4h
-    - hv_7d_1h
-    - hv_14d_d1
-    - upper_wick_ratio_1h
-    - lower_wick_ratio_1h
-    - long_upper_shadow_1h
-    - long_lower_shadow_1h
-    - bear_streak_1h
-    - bull_streak_1h
-    - close_spread_1h_4h
-    - lower_wick_ratio_4h
-    - vol_ma_ratio_long_1h
-    - vol_roc_1h
-    - vol_breakout_1h
-    - volume_cg_ratio_1h
-    - obv_delta_1h
-    - vol_profile_density_1h
-    - cg_total_volume_roc_1h
-    - cg_market_cap_roc_1h
-    - fg_index_d1
-    - btc_correlation_1h_1h
-    - eth_correlation_1h_1h
-    - cg_market_cap_roc_d1
-    - donchian_perc_d1
-    - hour_of_day
-    - day_of_week
-    - kurtosis_1h
-    - skewness_1h
+  1h:
+    up:
+      - pct_chg1_1h
+      - pct_chg3_1h
+      - pct_chg6_1h
+      - pct_chg3_4h
+      - pct_chg6_4h
+      - cci_1h
+      - cci_delta_1h
+      - macd_hist_1h
+      - rsi_diff_1h_4h
+      - rsi_slope_4h
+      - atr_chg_1h
+      - atr_pct_ratio_1h_4h
+      - bb_width_chg_1h
+      - bb_width_ratio_1h_4h
+      - hv_7d_1h
+      - hv_14d_d1
+      - upper_wick_ratio_1h
+      - lower_wick_ratio_1h
+      - long_upper_shadow_1h
+      - long_lower_shadow_1h
+      - bear_streak_1h
+      - bull_streak_1h
+      - close_spread_1h_4h
+      - lower_wick_ratio_4h
+      - vol_ma_ratio_long_1h
+      - vol_roc_1h
+      - vol_breakout_1h
+      - volume_cg_ratio_1h
+      - obv_delta_1h
+      - vol_profile_density_1h
+      - cg_total_volume_roc_1h
+      - cg_market_cap_roc_1h
+      - fg_index_d1
+      - btc_correlation_1h_1h
+      - eth_correlation_1h_1h
+      - cg_market_cap_roc_d1
+      - donchian_perc_d1
+      - hour_of_day
+      - day_of_week
+      - kurtosis_1h
+      - skewness_1h
+    down:
+      - pct_chg1_1h
+      - pct_chg3_1h
+      - pct_chg6_1h
+      - pct_chg3_4h
+      - pct_chg6_4h
+      - cci_1h
+      - cci_delta_1h
+      - macd_hist_1h
+      - rsi_diff_1h_4h
+      - rsi_slope_4h
+      - atr_chg_1h
+      - atr_pct_ratio_1h_4h
+      - bb_width_chg_1h
+      - bb_width_ratio_1h_4h
+      - hv_7d_1h
+      - hv_14d_d1
+      - upper_wick_ratio_1h
+      - lower_wick_ratio_1h
+      - long_upper_shadow_1h
+      - long_lower_shadow_1h
+      - bear_streak_1h
+      - bull_streak_1h
+      - close_spread_1h_4h
+      - lower_wick_ratio_4h
+      - vol_ma_ratio_long_1h
+      - vol_roc_1h
+      - vol_breakout_1h
+      - volume_cg_ratio_1h
+      - obv_delta_1h
+      - vol_profile_density_1h
+      - cg_total_volume_roc_1h
+      - cg_market_cap_roc_1h
+      - fg_index_d1
+      - btc_correlation_1h_1h
+      - eth_correlation_1h_1h
+      - cg_market_cap_roc_d1
+      - donchian_perc_d1
+      - hour_of_day
+      - day_of_week
+      - kurtosis_1h
+      - skewness_1h
+    vol:
+      - pct_chg1_1h
+      - pct_chg3_1h
+      - pct_chg6_1h
+      - pct_chg3_4h
+      - pct_chg6_4h
+      - cci_1h
+      - cci_delta_1h
+      - macd_hist_1h
+      - rsi_diff_1h_4h
+      - rsi_slope_4h
+      - atr_chg_1h
+      - atr_pct_ratio_1h_4h
+      - bb_width_chg_1h
+      - bb_width_ratio_1h_4h
+      - hv_7d_1h
+      - hv_14d_d1
+      - upper_wick_ratio_1h
+      - lower_wick_ratio_1h
+      - long_upper_shadow_1h
+      - long_lower_shadow_1h
+      - bear_streak_1h
+      - bull_streak_1h
+      - close_spread_1h_4h
+      - lower_wick_ratio_4h
+      - vol_ma_ratio_long_1h
+      - vol_roc_1h
+      - vol_breakout_1h
+      - volume_cg_ratio_1h
+      - obv_delta_1h
+      - vol_profile_density_1h
+      - cg_total_volume_roc_1h
+      - cg_market_cap_roc_1h
+      - fg_index_d1
+      - btc_correlation_1h_1h
+      - eth_correlation_1h_1h
+      - cg_market_cap_roc_d1
+      - donchian_perc_d1
+      - hour_of_day
+      - day_of_week
+      - kurtosis_1h
+      - skewness_1h
 
   4h:
-    # 4 h 动量
-    - pct_chg1_4h
-    - pct_chg3_4h
-    - pct_chg6_4h
+    up:
+      - pct_chg1_4h
+      - pct_chg3_4h
+      - pct_chg6_4h
 
-    # 至多一条 1 h 领先
-    - pct_chg1_1h
+      # 至多一条 1 h 领先
+      - pct_chg1_1h
 
-    # 跨周期动量 / 波动
-    - rsi_slope_4h
-    - rsi_diff_1h_4h
-    - cci_delta_4h
-    - macd_hist_diff_1h_d1
-    - atr_pct_ratio_1h_4h
+      # 跨周期动量 / 波动
+      - rsi_slope_4h
+      - rsi_diff_1h_4h
+      - cci_delta_4h
+      - macd_hist_diff_1h_d1
+      - atr_pct_ratio_1h_4h
 
-    # 波动 / 通道
-    - hv_7d_4h
-    - hv_30d_4h
-    - bb_width_chg_4h
-    - vol_ratio_1h_4h
-    - vol_breakout_4h          # ★ 放量节点 → 回补
+      # 波动 / 通道
+      - hv_7d_4h
+      - hv_30d_4h
+      - bb_width_chg_4h
+      - vol_ratio_1h_4h
+      - vol_breakout_4h          # ★ 放量节点 → 回补
 
-    # 形态
-    - upper_wick_ratio_4h
-    - lower_wick_ratio_4h
-    - long_lower_shadow_4h
+      # 形态
+      - upper_wick_ratio_4h
+      - lower_wick_ratio_4h
+      - long_lower_shadow_4h
 
-    # 宏观 / 量价
-    - cg_market_cap_roc_4h     # ★ 缺失已久 → 回补
-    - volume_cg_ratio_4h
-    - fg_index_d1
+      # 宏观 / 量价
+      - cg_market_cap_roc_4h     # ★ 缺失已久 → 回补
+      - volume_cg_ratio_4h
+      - fg_index_d1
+    down:
+      - pct_chg1_4h
+      - pct_chg3_4h
+      - pct_chg6_4h
 
-  d1: # up / down / vol 共用
-    # 日线动量 / 波动
-    - pct_chg1_1h
-    - pct_chg3_1h
-    - kc_width_pct_chg_d1
-    - hv_14d_d1
-    - atr_pct_ratio_1h_4h
+      # 至多一条 1 h 领先
+      - pct_chg1_1h
 
-    # 趋势 / 形态
-    - bear_streak_1h
-    - ichimoku_cloud_thickness_4h
-    - ema_diff_d1
-    - upper_wick_ratio_4h
-    - kurtosis_d1
+      # 跨周期动量 / 波动
+      - rsi_slope_4h
+      - rsi_diff_1h_4h
+      - cci_delta_4h
+      - macd_hist_diff_1h_d1
+      - atr_pct_ratio_1h_4h
 
-    # 成交量 / 量价
-    - vol_roc_1h
-    - vol_ratio_4h_d1
+      # 波动 / 通道
+      - hv_7d_4h
+      - hv_30d_4h
+      - bb_width_chg_4h
+      - vol_ratio_1h_4h
+      - vol_breakout_4h          # ★ 放量节点 → 回补
 
-    # 跨周期差分
-    - rsi_diff_1h_4h
+      # 形态
+      - upper_wick_ratio_4h
+      - lower_wick_ratio_4h
+      - long_lower_shadow_4h
 
-    # 宏观 / 情绪
-    - cg_market_cap_roc_d1
-    - fg_index_d1
+      # 宏观 / 量价
+      - cg_market_cap_roc_4h     # ★ 缺失已久 → 回补
+      - volume_cg_ratio_4h
+      - fg_index_d1
+    vol:
+      - pct_chg1_4h
+      - pct_chg3_4h
+      - pct_chg6_4h
+
+      # 至多一条 1 h 领先
+      - pct_chg1_1h
+
+      # 跨周期动量 / 波动
+      - rsi_slope_4h
+      - rsi_diff_1h_4h
+      - cci_delta_4h
+      - macd_hist_diff_1h_d1
+      - atr_pct_ratio_1h_4h
+
+      # 波动 / 通道
+      - hv_7d_4h
+      - hv_30d_4h
+      - bb_width_chg_4h
+      - vol_ratio_1h_4h
+      - vol_breakout_4h          # ★ 放量节点 → 回补
+
+      # 形态
+      - upper_wick_ratio_4h
+      - lower_wick_ratio_4h
+      - long_lower_shadow_4h
+
+      # 宏观 / 量价
+      - cg_market_cap_roc_4h     # ★ 缺失已久 → 回补
+      - volume_cg_ratio_4h
+      - fg_index_d1
+
+  d1:
+    up:
+      # 日线动量 / 波动
+      - pct_chg1_1h
+      - pct_chg3_1h
+      - kc_width_pct_chg_d1
+      - hv_14d_d1
+      - atr_pct_ratio_1h_4h
+
+      # 趋势 / 形态
+      - bear_streak_1h
+      - ichimoku_cloud_thickness_4h
+      - ema_diff_d1
+      - upper_wick_ratio_4h
+      - kurtosis_d1
+
+      # 成交量 / 量价
+      - vol_roc_1h
+      - vol_ratio_4h_d1
+
+      # 跨周期差分
+      - rsi_diff_1h_4h
+
+      # 宏观 / 情绪
+      - cg_market_cap_roc_d1
+      - fg_index_d1
+    down:
+      # 日线动量 / 波动
+      - pct_chg1_1h
+      - pct_chg3_1h
+      - kc_width_pct_chg_d1
+      - hv_14d_d1
+      - atr_pct_ratio_1h_4h
+
+      # 趋势 / 形态
+      - bear_streak_1h
+      - ichimoku_cloud_thickness_4h
+      - ema_diff_d1
+      - upper_wick_ratio_4h
+      - kurtosis_d1
+
+      # 成交量 / 量价
+      - vol_roc_1h
+      - vol_ratio_4h_d1
+
+      # 跨周期差分
+      - rsi_diff_1h_4h
+
+      # 宏观 / 情绪
+      - cg_market_cap_roc_d1
+      - fg_index_d1
+    vol:
+      # 日线动量 / 波动
+      - pct_chg1_1h
+      - pct_chg3_1h
+      - kc_width_pct_chg_d1
+      - hv_14d_d1
+      - atr_pct_ratio_1h_4h
+
+      # 趋势 / 形态
+      - bear_streak_1h
+      - ichimoku_cloud_thickness_4h
+      - ema_diff_d1
+      - upper_wick_ratio_4h
+      - kurtosis_d1
+
+      # 成交量 / 量价
+      - vol_roc_1h
+      - vol_ratio_4h_d1
+
+      # 跨周期差分
+      - rsi_diff_1h_4h
+
+      # 宏观 / 情绪
+      - cg_market_cap_roc_d1
+      - fg_index_d1
 
 
 train_settings:
