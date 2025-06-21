@@ -243,6 +243,18 @@ if not feature_cols:
 if "1d" in feature_cols:
     feature_cols["d1"] = feature_cols.pop("1d")
 
+feature_cols_nested: dict[str, dict[str, list[str]]] = {}
+for period, cols in feature_cols.items():
+    if isinstance(cols, list):
+        feature_cols_nested[period] = {tag: cols for tag in ("up", "down", "vol")}
+    elif isinstance(cols, dict):
+        feature_cols_nested[period] = {}
+        for tag in ("up", "down", "vol"):
+            feature_cols_nested[period][tag] = cols.get(tag, [])
+    else:
+        raise ValueError("feature_cols 配置格式有误")
+feature_cols = feature_cols_nested
+
 # ---------- 4. 目标列 ----------
 targets = {"up": "target_up", "down": "target_down", "vol": "future_volatility"}
 
@@ -624,7 +636,7 @@ for sym in symbols:
             df_rng = df_rng[df_rng["open_time"] < pd.to_datetime(rng["end"])]
         df_rng = drop_price_outliers(df_rng)
 
-        for period, cols in feature_cols.items():
+        for period, tag_cols in feature_cols.items():
             if selected_periods and period not in selected_periods:
                 continue
             if period == "4h":
@@ -646,7 +658,7 @@ for sym in symbols:
                 out_file = out_dir / file_name
                 train_one(
                     subset.copy(),
-                    cols,
+                    tag_cols.get(tag, []),
                     tgt_col,
                     out_file,
                     period,
