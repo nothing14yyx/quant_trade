@@ -39,22 +39,25 @@ feature_engineering:
   eth_symbol: "ETHUSDT"
 
 feature_selector:
-  target: [target_up, target_down, future_volatility]   # 也可换 target_up
+  target: [target, future_volatility, future_max_rise, future_max_drawdown]
   top_n: 30             # 每周期保留前 N
 
 models:
   1h:
-    up: models/model_1h_up.pkl
-    down: models/model_1h_down.pkl
+    cls: models/model_1h_cls.pkl
     vol: models/model_1h_vol.pkl
+    rise: models/model_1h_rise.pkl
+    drawdown: models/model_1h_drawdown.pkl
   4h:
-    up: models/model_4h_up.pkl
-    down: models/model_4h_down.pkl
+    cls: models/model_4h_cls.pkl
     vol: models/model_4h_vol.pkl
+    rise: models/model_4h_rise.pkl
+    drawdown: models/model_4h_drawdown.pkl
   d1:
-    up: models/model_d1_up.pkl
-    down: models/model_d1_down.pkl
+    cls: models/model_d1_cls.pkl
     vol: models/model_d1_vol.pkl
+    rise: models/model_d1_rise.pkl
+    drawdown: models/model_d1_drawdown.pkl
 
 database:
   uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
@@ -409,13 +412,15 @@ param_space:
 
 fixed_params:
   objective:
-    up: "binary"
-    down: "binary"
+    cls: "multiclass"
     vol: "regression"
+    rise: "regression"
+    drawdown: "regression"
   metric:
-    up: "auc"
-    down: "auc"
+    cls: "multi_logloss"
     vol: "l1"
+    rise: "l1"
+    drawdown: "l1"
   lambda_l2: 2.0
   early_stopping_rounds: 40
   n_jobs: -1
