@@ -64,8 +64,11 @@ boll_perc_4h_isnan
 boll_perc_d1
 boll_perc_d1_isnan
 btc_close
+btc_close_isnan
 btc_correlation_1h_1h
+btc_correlation_1h_1h_isnan
 btc_correlation_1h_4h
+btc_correlation_1h_4h_isnan
 bull_streak_1h
 bull_streak_1h_isnan
 bull_streak_4h
@@ -211,6 +214,7 @@ ichimoku_cloud_thickness_1h_isnan
 ichimoku_cloud_thickness_4h
 ichimoku_cloud_thickness_4h_isnan
 ichimoku_cloud_thickness_d1
+ichimoku_cloud_thickness_d1_isnan
 ichimoku_conversion_1h
 ichimoku_conversion_1h_isnan
 ichimoku_conversion_4h
