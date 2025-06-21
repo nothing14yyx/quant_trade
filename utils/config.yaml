@@ -20,7 +20,7 @@ data_loader:
   topn: 100             # 获取成交额排名前N的合约
   interval: "1h"       # 主周期K线
   aux_interval: ["5m", "15m", "4h", "1d"]   # 辅助周期K线
-  start:  # 起始日期 例如"2024-06-01" 默认获取一年
+  start:  "2024-06-09" # 起始日期 例如"2024-06-01" 默认获取一年
   end:     # 结束日期
   cache_dir: "data/klines"
   sentiment_cache: "data/sentiment"
@@ -39,8 +39,8 @@ feature_engineering:
   eth_symbol: "ETHUSDT"
 
 feature_selector:
-  target: target_up   # 也可换 target_up
-  top_n: 50             # 每周期保留前 N
+  target: [target_up, target_down, future_volatility]   # 也可换 target_up
+  top_n: 30             # 每周期保留前 N
 
 models:
   1h:
