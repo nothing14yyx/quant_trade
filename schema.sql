@@ -190,6 +190,7 @@ CREATE TABLE `features` (
     `funding_rate_feat` DOUBLE,
     `funding_rate_x` DOUBLE,
     `funding_rate_y` DOUBLE,
+    `target` DOUBLE,
     `future_max_drawdown` DOUBLE,
     `future_max_rise` DOUBLE,
     `future_volatility` DOUBLE,
