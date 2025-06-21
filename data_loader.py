@@ -651,7 +651,11 @@ class DataLoader:
     # ───────────────────────────── 选币逻辑 ───────────────────────────────
     def get_top_symbols(self, n: Optional[int] = None) -> List[str]:
         # 1. 拉所有“处于TRADING状态”的永续USDT合约
-        info = self.client.futures_exchange_info()
+        info = _safe_retry(
+            lambda: self.client.futures_exchange_info(),
+            retries=self.retries,
+            backoff=self.backoff,
+        )
         trading_perp_usdt = {
             s['symbol'] for s in info['symbols']
             if s['status'] == 'TRADING'
