@@ -21,8 +21,10 @@
 `RobustSignalGenerator` 提供 `update_ic_scores(df, window=None, group_by=None)`
 接口，可在启动回测或模拟时传入近期历史数据，按时间窗口或币种分组滚动计算
 因子 IC，并据此自动更新权重。
-`run_scheduler.py` 在启动和每天零点都会从 `features` 表读取最近 1000 条记录，
-自动调用该接口更新因子权重，无需手动操作。
+`run_scheduler.py` 在启动并根据 `ic_update_interval_hours` 配置定期
+从 `features` 表读取最近 `ic_update_rows` 条记录，自动调用该接口更新因子权重。
+默认间隔为 24 小时，仍会在午夜执行，与旧版保持兼容。可根据数据量和市场波动
+适当调整更新频率。
 
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置，
 其中 `api_key`、`api_secret`、`COINGECKO_API_KEY` 与 MySQL `password` 均支持通过环境变量传入。

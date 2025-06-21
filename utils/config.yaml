@@ -316,3 +316,7 @@ signal_threshold:
   # base_th / low_base 单位为 fused_score
   rev_boost: 0.30      # detect_reversal 命中时加分
   rev_th_mult: 0.60    # 急反转时降低门槛
+
+# 因子 IC 分数更新设置
+ic_update_rows: 1000          # 从 features 表读取的记录数
+ic_update_interval_hours: 24  # 多少小时刷新一次权重，默认为每日
