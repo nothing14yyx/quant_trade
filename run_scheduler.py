@@ -98,6 +98,8 @@ class Scheduler:
         self.symbols = []
         self.next_symbols_refresh = datetime.now(UTC)
         self.ic_update_limit = cfg.get("ic_update_rows", 1000)
+        self.ic_update_interval = cfg.get("ic_update_interval_hours", 24)
+        self.next_ic_update = datetime.now(UTC)
 
     def initial_sync(self):
         """启动时检查并更新所有关键数据，然后生成一次交易信号"""
@@ -111,6 +113,7 @@ class Scheduler:
         self.safe_call(self.update_daily_data, self.symbols)
         self.safe_call(self.update_ic_scores_from_db)
         self.safe_call(self.generate_signals, self.symbols)
+        self.next_ic_update = self._calc_next_ic_update(datetime.now(UTC))
         
     def safe_call(self, func, *args, **kwargs):
         """Execute func with error logging."""
@@ -184,6 +187,11 @@ class Scheduler:
             logging.info("[update_ic_scores] %s", self.sg.current_weights)
         except Exception as e:
             logging.exception("update_ic_scores_from_db failed: %s", e)
+
+    def _calc_next_ic_update(self, now):
+        if self.ic_update_interval == 24:
+            return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return (now + timedelta(hours=self.ic_update_interval)).replace(minute=0, second=0, microsecond=0)
 
     def generate_signals(self, symbols):
         logging.info("generating signals for %s symbols", len(symbols))
@@ -292,6 +300,14 @@ class Scheduler:
             tasks.append(
                 self.executor.submit(self.safe_call, self.update_klines, self.symbols, "15m")
             )
+        if now >= self.next_ic_update:
+            tasks.append(
+                self.executor.submit(
+                    self.safe_call, self.update_ic_scores_from_db
+                )
+            )
+            self.next_ic_update = self._calc_next_ic_update(now)
+
         if minute == 0:
             tasks.append(
                 self.executor.submit(
@@ -318,7 +334,6 @@ class Scheduler:
                 self.safe_call(self.update_klines, self.symbols, "1d")
                 self.safe_call(self.update_daily_data, self.symbols)
                 self.safe_call(self.update_features)
-                self.safe_call(self.update_ic_scores_from_db)
             update_future.result()
             tasks.append(
                 self.executor.submit(
