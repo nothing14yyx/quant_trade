@@ -5,6 +5,23 @@ import pandas_ta as ta
 import json
 
 
+def collect_feature_cols(cfg: dict, period: str) -> list[str]:
+    """\
+    根据 config 中的 ``feature_cols`` 字段返回指定周期的特征列表。
+
+    兼容 ``{"1h": [..]}`` 与 ``{"1h": {"up": [...]}}`` 两种格式，
+    后者会合并各标签的特征并去重后返回。
+    """
+    cols = cfg.get("feature_cols", {}).get(period, [])
+    if isinstance(cols, dict):
+        union = set()
+        for v in cols.values():
+            if isinstance(v, list):
+                union.update(v)
+        cols = sorted(union)
+    return cols
+
+
 def _safe_ta(func, *args, index=None, cols=None, **kwargs):
     """调用 pandas_ta 指标函数, 在数据不足时返回指定 dtype 的 DataFrame。"""
     try:
