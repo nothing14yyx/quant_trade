@@ -233,25 +233,14 @@ class FeatureEngineer:
 
             up_ret = fut_hi / close - 1
             down_ret = fut_lo / close - 1
-            g["target_up"] = (up_ret >= th_up).astype(float)
-            g["target_down"] = (down_ret <= th_down).astype(float)
-            if n_bins and n_bins > 1:
-                bins_up = np.quantile(up_ret.dropna(), np.linspace(0, 1, n_bins + 1))
-                bins_down = np.quantile(
-                    down_ret.dropna(), np.linspace(0, 1, n_bins + 1)
-                )
-                g["target_up_multi"] = pd.cut(
-                    up_ret, bins=bins_up, labels=False, include_lowest=True
-                )
-                g["target_down_multi"] = pd.cut(
-                    down_ret, bins=bins_down, labels=False, include_lowest=True
-                )
+            target = np.where(
+                up_ret >= th_up, 2, np.where(down_ret <= th_down, 0, 1)
+            )
+            g["target"] = target.astype(float)
             g["future_volatility"] = close.pct_change().rolling(n).std().shift(-n)
             g["future_max_rise"] = fut_hi / close - 1
             g["future_max_drawdown"] = fut_lo / close - 1
-            drop_cols = ["target_up", "target_down", "future_volatility"]
-            if n_bins and n_bins > 1:
-                drop_cols += ["target_up_multi", "target_down_multi"]
+            drop_cols = ["target", "future_volatility"]
             g.loc[g.tail(n).index, drop_cols] = np.nan
             results.append(g)
 
@@ -378,8 +367,7 @@ class FeatureEngineer:
             "taker_buy_base",
             "taker_buy_quote",
             "symbol",
-            "target_up",
-            "target_down",
+            "target",
         ] + FUTURE_COLS
         base_cols_exist = [c for c in base_cols if c in df_all.columns]
         other_cols = [c for c in df_all.columns if c not in base_cols_exist]

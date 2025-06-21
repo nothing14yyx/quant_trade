@@ -10,7 +10,7 @@ import pandas as pd
 import datetime
 import logging
 from pathlib import Path
-from sklearn.metrics import roc_auc_score, mean_absolute_error
+from sklearn.metrics import mean_absolute_error, log_loss
 from sklearn.metrics import precision_recall_curve
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -246,17 +246,22 @@ if "1d" in feature_cols:
 feature_cols_nested: dict[str, dict[str, list[str]]] = {}
 for period, cols in feature_cols.items():
     if isinstance(cols, list):
-        feature_cols_nested[period] = {tag: cols for tag in ("up", "down", "vol")}
+        feature_cols_nested[period] = {tag: cols for tag in ("cls", "vol", "rise", "drawdown")}
     elif isinstance(cols, dict):
         feature_cols_nested[period] = {}
-        for tag in ("up", "down", "vol"):
-            feature_cols_nested[period][tag] = cols.get(tag, [])
+        for tag in ("cls", "vol", "rise", "drawdown"):
+            feature_cols_nested[period][tag] = cols.get(tag, []) or cols.get("up", [])
     else:
         raise ValueError("feature_cols 配置格式有误")
 feature_cols = feature_cols_nested
 
 # ---------- 4. 目标列 ----------
-targets = {"up": "target_up", "down": "target_down", "vol": "future_volatility"}
+targets = {
+    "cls": "target",
+    "vol": "future_volatility",
+    "rise": "future_max_rise",
+    "drawdown": "future_max_drawdown",
+}
 
 
 # ---------- 辅助：剔除极端异常样本 ----------
@@ -386,7 +391,7 @@ def train_one(
                 )
             else:
                 X_res_imp, y_res = X_tr_imp, y_tr
-                if (
+                if y_tr.nunique() == 2 and (
                     "scale_pos_weight" not in fixed_in_yaml
                     and "class_weight" not in fixed_in_yaml
                 ):
@@ -399,6 +404,8 @@ def train_one(
                 "metric": fixed_params["metric"][task],
                 "n_jobs": fixed_params["n_jobs"],
             })
+            if not regression and params["objective"] == "multiclass":
+                params["num_class"] = 3
 
             if regression:
                 model = lgb.LGBMRegressor(
@@ -418,7 +425,7 @@ def train_one(
                 X_res_imp,
                 y_res,
                 eval_set=[(X_va_imp, y_va)],
-                eval_metric="l1" if regression else "auc",
+                eval_metric="l1" if regression else "multi_logloss",
                 callbacks=[
                     lgb.early_stopping(early_stop_rounds, verbose=False),
                     OffsetLightGBMPruningCallback(
@@ -434,8 +441,8 @@ def train_one(
                 preds = model.predict(X_va_imp, num_iteration=model.best_iteration_)
                 fold_scores.append(-mean_absolute_error(y_va, preds))
             else:
-                preds = model.predict_proba(X_va_imp, num_iteration=model.best_iteration_)[:, 1]
-                fold_scores.append(roc_auc_score(y_va, preds))
+                preds = model.predict_proba(X_va_imp, num_iteration=model.best_iteration_)
+                fold_scores.append(-log_loss(y_va, preds))
 
         return float(np.mean(fold_scores))
 
@@ -537,6 +544,8 @@ def train_one(
         "metric": fixed_params["metric"][task],
         "n_jobs": fixed_params["n_jobs"],
     })
+    if not regression and best_params["objective"] == "multiclass":
+        best_params["num_class"] = 3
 
     if regression:
         best = lgb.LGBMRegressor(
@@ -556,7 +565,7 @@ def train_one(
         X_res_imp,
         y_res,
         eval_set=[(X_va_imp, y_va)],
-        eval_metric="l1" if regression else "auc",
+        eval_metric="l1" if regression else "multi_logloss",
         callbacks=[
             lgb.early_stopping(early_stop_rounds, verbose=False),
             lgb.log_evaluation(period=50),
@@ -569,19 +578,18 @@ def train_one(
         if regression:
             hold_pred = best.predict(X_hold_imp, num_iteration=best.best_iteration_)
             hold_score = mean_absolute_error(y_hold, hold_pred)
+            label = "Holdout-MAE"
         else:
-            hold_pred = best.predict_proba(X_hold_imp, num_iteration=best.best_iteration_)[
-                :, 1
-            ]
-            hold_score = roc_auc_score(y_hold, hold_pred)
-        label = "Holdout-MAE" if regression else "Holdout-AUC"
+            hold_pred = best.predict_proba(X_hold_imp, num_iteration=best.best_iteration_)
+            hold_score = log_loss(y_hold, hold_pred)
+            label = "Holdout-LogLoss"
         logging.info(f"{label}: {hold_score:.4f}")
 
     feat_imp = getattr(best, "feature_importances_", None)
 
     # ----- 根据验证集寻找最佳阈值 -----
-    best_th = 0.5
-    if not regression:
+    best_th = 0.0
+    if not regression and y.nunique() == 2:
         val_proba = best.predict_proba(X_va_imp, num_iteration=best.best_iteration_)[:, 1]
         prec, rec, thr = precision_recall_curve(y_va, val_proba)
         f1 = 2 * prec * rec / (prec + rec + 1e-12)
@@ -608,8 +616,8 @@ def train_one(
     )
     if not trials_df.empty:
         trials_df.to_csv(model_path.parent / "optuna_trials.csv", index=False)
-    score_label = "CV-MAE" if regression else "CV-AUC"
-    best_val = abs(best_value) if regression else best_value
+    score_label = "CV-MAE" if regression else "CV-LogLoss"
+    best_val = abs(best_value) if regression else -best_value
     logging.info(
         f"✔ Saved: {model_path.name}  ({score_label} {best_val:.4f}, th{best_th:.3f})"
     )
@@ -663,7 +671,7 @@ for sym in symbols:
                     out_file,
                     period,
                     tag,
-                    regression=(tag == "vol"),
+                    regression=(tag in ("vol", "rise", "drawdown")),
                 )
 
 logging.info("\n✅  All models finished.")
