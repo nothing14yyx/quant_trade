@@ -8,7 +8,11 @@ import yaml
 from sqlalchemy import create_engine
 
 from robust_signal_generator import RobustSignalGenerator
-from utils.helper import calc_features_raw, calc_order_book_features
+from utils.helper import (
+    calc_features_raw,
+    calc_order_book_features,
+    collect_feature_cols,
+)
 
 from feature_engineering import calc_cross_features
 
@@ -367,9 +371,9 @@ def main(symbol: str = "ETHUSDT"):
 
     sg = RobustSignalGenerator(
         model_paths=cfg["models"],
-        feature_cols_1h=cfg.get("feature_cols", {}).get("1h", []),
-        feature_cols_4h=cfg.get("feature_cols", {}).get("4h", []),
-        feature_cols_d1=cfg.get("feature_cols", {}).get("d1", []),
+        feature_cols_1h=collect_feature_cols(cfg, "1h"),
+        feature_cols_4h=collect_feature_cols(cfg, "4h"),
+        feature_cols_d1=collect_feature_cols(cfg, "d1"),
     )
     sg.set_symbol_categories(categories)
 
