@@ -40,17 +40,40 @@ def _sanitize_feature_names(
     return df_out, sanitized, mapping
 
 
-def forward_chain_split(n_samples: int, n_splits: int = 5, gap: int = 0):
-    """Yield train and validation indices in a forward chaining manner."""
-    fold_size = n_samples // (n_splits + 1)
-    indices = np.arange(n_samples)
-    for i in range(n_splits):
-        train_end = fold_size * (i + 1)
-        val_start = train_end + gap
-        val_end = val_start + fold_size
-        if val_end > n_samples:
-            val_end = n_samples
-        yield indices[:train_end], indices[val_start:val_end]
+def forward_chain_split(time_or_n, n_splits: int = 5, gap: int = 0):
+    """Yield train and validation indices grouped by ``open_time``.
+
+    ``time_or_n`` can be either the total number of samples (backward
+    compatible) or a ``pd.Series`` of timestamps. When timestamps are
+    provided, all rows with the same time will be kept in the same split
+    to avoid information leakage.
+    """
+
+    if isinstance(time_or_n, pd.Series):
+        times = time_or_n.reset_index(drop=True)
+        unique_times = np.sort(times.unique())
+        n_groups = len(unique_times)
+        fold_size = n_groups // (n_splits + 1)
+        for i in range(n_splits):
+            train_end = fold_size * (i + 1)
+            val_start = train_end + gap
+            val_end = min(val_start + fold_size, n_groups)
+            if val_start >= n_groups:
+                break
+            train_times = unique_times[:train_end]
+            val_times = unique_times[val_start:val_end]
+            tr_idx = times.index[times.isin(train_times)].to_numpy()
+            va_idx = times.index[times.isin(val_times)].to_numpy()
+            yield tr_idx, va_idx
+    else:
+        n_samples = int(time_or_n)
+        fold_size = n_samples // (n_splits + 1)
+        indices = np.arange(n_samples)
+        for i in range(n_splits):
+            train_end = fold_size * (i + 1)
+            val_start = train_end + gap
+            val_end = min(val_start + fold_size, n_samples)
+            yield indices[:train_end], indices[val_start:val_end]
 
 
 # ---------- 自定义：只在过去样本内合成的 SMOTE ----------
@@ -278,8 +301,8 @@ def train_one(
     X = data[feat_use]
     y = data[tgt]
 
-    # 时序切分
-    splits = list(forward_chain_split(len(X), n_splits=5))
+    # 时序切分 - 按 open_time 分组，避免同一时间片落入不同集合
+    splits = list(forward_chain_split(data["open_time"], n_splits=5))
 
     imputer = SimpleImputer(strategy="median")
 
