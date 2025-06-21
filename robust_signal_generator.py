@@ -178,6 +178,8 @@ class RobustSignalGenerator:
         core_keys=None,
         delta_params=None,
         min_weight_ratio=0.3,
+        th_window=150,
+        th_decay=1.0,
     ):
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
@@ -252,6 +254,8 @@ class RobustSignalGenerator:
         self.flip_coeff = cfg.get("flip_coeff", 0.5)
         self.th_down_d1 = self.cfg.get("th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
+        self.th_window = th_window
+        self.th_decay = th_decay
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         _base_weights = {
@@ -415,6 +419,12 @@ class RobustSignalGenerator:
         if name == "pos_coeff_trend":
             setattr(self, name, DEFAULT_POS_K_TREND)
             return DEFAULT_POS_K_TREND
+        if name == "th_window":
+            setattr(self, name, 150)
+            return 150
+        if name == "th_decay":
+            setattr(self, name, 1.0)
+            return 1.0
         raise AttributeError(name)
 
 
@@ -837,7 +847,22 @@ class RobustSignalGenerator:
 
         # === 历史 80 分位兜底 ===
         if len(self.history_scores) > 100:
-            th = max(th, np.quantile(np.abs(self.history_scores), 0.80))
+            scores = list(self.history_scores)
+            if self.th_window:
+                scores = scores[-int(self.th_window):]
+            arr = np.abs(np.asarray(scores, dtype=float))
+            if arr.size:
+                if self.th_decay < 1.0:
+                    weights = self.th_decay ** np.arange(len(arr))[::-1]
+                    sorter = np.argsort(arr)
+                    arr_sorted = arr[sorter]
+                    w_sorted = weights[sorter]
+                    cumsum = np.cumsum(w_sorted)
+                    target = 0.80 * cumsum[-1]
+                    q = np.interp(target, cumsum, arr_sorted)
+                else:
+                    q = np.quantile(arr, 0.80)
+                th = max(th, q)
 
         # === 市场状态微调 ===
         if regime == "trend":
