@@ -1,7 +1,7 @@
 # feature_selector.py
 # 2025-06-03  完全替换旧版自动特征选择脚本
 # 已修改要点：
-#   1) 精简 orig_cols：不再把 interval/ignore/target_up 当作非特征列
+#   1) 精简 orig_cols：不再把 interval/ignore/target 当作非特征列
 #   2) 覆盖率过滤仅基于全表即可（保留原逻辑，但 orig_cols 中删掉无用列）
 #   3) 交叉验证改为 TimeSeriesSplit，避免随机分层导致未来泄露
 #   4) 在训练前剔除所有非数值列（尤其 datetime64），防止 LightGBM 报错
@@ -31,7 +31,7 @@ engine = create_engine(
 fs_cfg = cfg.get("feature_selector", {})
 targets = fs_cfg.get("targets")
 if not targets:
-    targets = [fs_cfg.get("target", "target_down")]
+    targets = [fs_cfg.get("target", "target")]
 TOP_N = fs_cfg.get("top_n", 30)
 
 # 与 FeatureEngineer 保持同步的未来字段列表，避免选入泄漏特征
