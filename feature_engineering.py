@@ -390,7 +390,11 @@ class FeatureEngineer:
                 df_filled = df_filled.sort_values(["symbol", "open_time"])
             else:
                 df_filled = df_filled.sort_values("open_time")
-        df_filled[feat_cols] = df_filled[feat_cols].ffill()
+        df_filled[feat_cols] = (
+            df_filled.groupby("symbol")[feat_cols].ffill()
+            if "symbol" in df_filled.columns
+            else df_filled[feat_cols].ffill()
+        )
         df_filled = df_filled.sort_index()
 
         df_out = pd.concat([df_filled, flags_df], axis=1)
