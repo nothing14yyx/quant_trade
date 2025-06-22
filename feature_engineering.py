@@ -14,6 +14,7 @@ import yaml
 from tqdm import tqdm
 from joblib import Parallel, delayed
 from sqlalchemy import create_engine
+from sklearn.metrics import mutual_info_score
 
 # 不再 import calc_features_full，而改为：
 from utils.helper import (
@@ -193,19 +194,29 @@ class FeatureEngineer:
     @staticmethod
     def add_up_down_targets(
         df: pd.DataFrame,
-        threshold: float | str | None = "balanced",
+        threshold_up: float | str | None = "balanced",
+        threshold_down: float | str | None = "balanced",
         shift_n: int | str = "dynamic",
-        vol_window: int = 24,
+        vol_window: int | dict[str, int] = 24,
         n_bins: int | None = None,
         periods: tuple[str, ...] = ("1h", "4h", "d1"),
+        *,
+        vol_window_map: dict[str, int] | None = None,
+        base_n_map: dict[str, int] | None = None,
+        threshold_up_map: dict[str, float | str | None] | None = None,
+        threshold_down_map: dict[str, float | str | None] | None = None,
+        smooth_alpha: float = 0.0,
+        classification_mode: str = "three",
+        search_method: str = "hist",
     ) -> pd.DataFrame:
         """生成涨跌与波动率等标签，无未来数据泄漏
 
-        参数 threshold 支持：
+        参数 threshold_up/threshold_down 支持：
             - float：固定阈值
-            - "auto": 使用 rolling mean 波动率 * 1.5
-            - "quantile": 使用 rolling 80% 分位波动率
-            - "balanced": 使用全局分位并控制正样本在 45%~55%
+            - "auto": rolling mean 波动率 * 1.5
+            - "quantile": rolling 80% 分位波动率
+            - "balanced": 全局分位并控制正样本 45%~55%
+            - "search": 根据历史分布或互信息自动搜索
             - None：等同于 "auto"
         """
 
@@ -213,61 +224,124 @@ class FeatureEngineer:
         results = []
         atr_col = next((c for c in df.columns if c.startswith("atr_pct")), None)
 
+        def _search_best(th_series: pd.Series, y: pd.Series) -> float:
+            """通过互信息在多个候选中搜索最佳阈值"""
+            if n_bins is None:
+                candidates = th_series.quantile([0.4, 0.5, 0.6, 0.7, 0.8]).values
+            else:
+                qs = np.linspace(0.4, 0.9, n_bins)
+                candidates = th_series.quantile(qs).values
+            best_th = candidates[0]
+            best_score = -np.inf
+            for th in candidates:
+                labels = (th_series >= th).astype(int)
+                score = mutual_info_score(labels[~y.isna()], y[~y.isna()])
+                if score > best_score:
+                    best_score = score
+                    best_th = th
+            return float(best_th)
+
         for sym, g in df.groupby("symbol", group_keys=False):
             if shift_n == "dynamic" and atr_col is not None:
                 mean_atr = g[atr_col].mean()
-                base_n = 2 if mean_atr > 0.07 else 4
+                base_n_default = 2 if mean_atr > 0.07 else 4
             elif isinstance(shift_n, int):
-                base_n = shift_n
+                base_n_default = shift_n
             else:
-                base_n = 3
+                base_n_default = 3
 
             close = g["close"]
 
             for p in periods:
                 mult = period_map.get(p, 1)
-                n = base_n * mult
-                fut_hi = close.shift(-1).rolling(n, min_periods=1).max()
-                fut_lo = close.shift(-1).rolling(n, min_periods=1).min()
+                b_n = base_n_map.get(p, base_n_default * mult) if base_n_map else base_n_default * mult
+                v_win = vol_window_map.get(p, vol_window if isinstance(vol_window, int) else vol_window.get(p, 24)) if vol_window_map or isinstance(vol_window, dict) else vol_window
+                n = b_n
 
-                if threshold in (None, "auto"):
+                price_matrix = pd.concat([close.shift(-i) for i in range(1, n + 1)], axis=1)
+                weights = np.exp(-smooth_alpha * np.arange(n))
+                weights /= weights.sum()
+                smooth_close = (price_matrix * weights).max(axis=1)
+                smooth_low = (price_matrix * weights).min(axis=1)
+                fut_hi = smooth_close
+                fut_lo = smooth_low
+
+                if threshold_up_map and p in threshold_up_map:
+                    th_up_val = threshold_up_map[p]
+                else:
+                    th_up_val = threshold_up
+                if threshold_down_map and p in threshold_down_map:
+                    th_down_val = threshold_down_map[p]
+                else:
+                    th_down_val = threshold_down
+
+                if th_up_val in (None, "auto"):
                     vol = (
-                        close.pct_change()
-                        .abs()
-                        .rolling(vol_window * mult, min_periods=1)
-                        .mean()
+                        close.pct_change().abs().rolling(v_win, min_periods=1).mean()
                     ) * 1.5
                     th_up = th_down = vol
-                elif threshold == "quantile":
+                elif th_up_val == "quantile" or th_down_val == "quantile":
                     th = (
-                        close.pct_change()
-                        .abs()
-                        .rolling(vol_window * mult, min_periods=1)
-                        .quantile(0.8)
+                        close.pct_change().abs().rolling(v_win, min_periods=1).quantile(0.8)
                     )
                     th_up = th_down = th
-                elif threshold == "balanced":
+                elif th_up_val == "balanced" or th_down_val == "balanced":
                     chg_up = fut_hi / close - 1
                     chg_down = fut_lo / close - 1
                     th_up = pd.Series(chg_up.quantile(0.55), index=g.index)
                     th_down = pd.Series(chg_down.quantile(0.45), index=g.index)
+                elif th_up_val == "search" or th_down_val == "search":
+                    chg_up = fut_hi / close - 1
+                    chg_down = (fut_lo / close - 1).abs()
+                    y_true = np.sign(close.shift(-b_n) / close - 1)
+                    if th_up_val == "search":
+                        th_up = pd.Series(_search_best(chg_up, y_true), index=g.index)
+                    else:
+                        th_up = pd.Series(float(th_up_val), index=g.index)
+                    if th_down_val == "search":
+                        th_down = pd.Series(_search_best(chg_down, y_true), index=g.index)
+                    else:
+                        th_down = pd.Series(float(th_down_val), index=g.index)
                 else:
-                    th_up = th_down = pd.Series(float(threshold), index=g.index)
+                    th_up = pd.Series(float(th_up_val), index=g.index)
+                    th_down = pd.Series(float(th_down_val), index=g.index)
 
                 up_ret = fut_hi / close - 1
                 down_ret = fut_lo / close - 1
-                target = np.where(up_ret >= th_up, 2, np.where(down_ret <= th_down, 0, 1))
+
+                if classification_mode == "two":
+                    target = np.where(up_ret >= th_up, 1, 0)
+                    target = np.where(down_ret <= -th_down, 0, target)
+                elif classification_mode == "five":
+                    strong_u = th_up * 1.5
+                    strong_d = th_down * 1.5
+                    target = np.select(
+                        [down_ret <= -strong_d, down_ret <= -th_down, up_ret >= th_up, up_ret >= strong_u],
+                        [0, 1, 3, 4],
+                        default=2,
+                    )
+                else:
+                    target = np.where(up_ret >= th_up, 2, np.where(down_ret <= -th_down, 0, 1))
+
                 g[f"target_{p}"] = target.astype(float)
-                g[f"future_volatility_{p}"] = close.pct_change().rolling(n).std().shift(-n)
+                g[f"future_volatility_{p}"] = close.pct_change().rolling(b_n).std().shift(-b_n)
                 g[f"future_max_rise_{p}"] = fut_hi / close - 1
                 g[f"future_max_drawdown_{p}"] = fut_lo / close - 1
 
                 drop_cols = [f"target_{p}", f"future_volatility_{p}"]
-                g.loc[g.tail(n).index, drop_cols] = np.nan
+                g.loc[g.tail(b_n).index, drop_cols] = np.nan
 
             results.append(g)
 
         out = pd.concat(results).sort_index()
+
+        # 输出标签分布统计
+        for p in periods:
+            col = f"target_{p}"
+            if col in out.columns:
+                cnt = out[col].value_counts(dropna=True)
+                ratio = (cnt / cnt.sum()).round(4)
+                print(f"{p} 标签分布: {cnt.to_dict()} 比例: {ratio.to_dict()}")
 
         rename_map = {
             "target": "target_1h",
