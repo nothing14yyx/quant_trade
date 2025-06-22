@@ -104,7 +104,7 @@ class Scheduler:
 
     def initial_sync(self):
         """启动时检查并更新所有关键数据，然后生成一次交易信号"""
-        self.symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
+        self.symbols = self.dl.get_top_symbols()
         intervals = ["5m", "15m", "1h", "4h", "1d"]
         for iv in intervals:
             self.safe_call(self.update_klines, self.symbols, iv)
@@ -282,7 +282,7 @@ class Scheduler:
     def dispatch_tasks(self):
         now = datetime.now(UTC)
         if now >= self.next_symbols_refresh:
-            self.symbols = self.fe.get_symbols(("1h", "4h", "1d", "5m", "15m"))
+            self.symbols = self.dl.get_top_symbols()
             self.next_symbols_refresh = now + timedelta(hours=1)
 
         minute = now.minute
