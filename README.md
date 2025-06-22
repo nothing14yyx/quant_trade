@@ -18,6 +18,8 @@
 -   新增 `th_window` 与 `th_decay` 参数，用于控制动态阈值参考的历史得分
     数量及衰减程度，默认 `th_window=150`、`th_decay=1.0`，
     可根据策略需求适当调小窗口或衰减系数。
+-   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
+    帮助更准确地衡量趋势和动量强度。
 - **Backtester**：依据生成的信号回测策略表现。
 - **FeatureSelector**：综合 AUC、SHAP 与 Permutation Importance 评分，筛选去冗余的核心特征。
 
