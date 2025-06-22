@@ -304,10 +304,12 @@ def train_one(
     # 此时 data 已经继承了原始 df_all 的顺序，且原始 df_all 事先已按 open_time 排序
 
     # --- 动态特征筛选：确保足够的有效样本量 ---
+    mask_matrix = data[feat_use].notna().to_numpy()
+    current_mask = np.ones(len(data), dtype=bool)
     selected: list[str] = []
-    for col in feat_use:
-        tmp = selected + [col]
-        avail_rows = data[tmp].dropna().shape[0]
+    for i, col in enumerate(feat_use):
+        current_mask &= mask_matrix[:, i]
+        avail_rows = int(current_mask.sum())
         if avail_rows < min_samples:
             logging.info(
                 f"加入 {col} 后可用样本量仅剩 {avail_rows}，低于 {min_samples}，停止加新特征。"
