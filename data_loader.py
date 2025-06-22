@@ -876,7 +876,7 @@ class DataLoader:
                     logger.exception("[funding] worker err: %s", e)
 
         # 3. 更新 K 线（并发）
-        intervals = [self.main_iv] + self.aux_ivs + ["1d"]
+        intervals = [self.main_iv] + self.aux_ivs + ["d1"]
         logger.info("[sync] klines … (%s × %s)", len(symbols), intervals)
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             futures = [
