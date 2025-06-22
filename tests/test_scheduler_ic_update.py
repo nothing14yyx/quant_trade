@@ -29,7 +29,7 @@ def test_dispatch_ic_update(monkeypatch):
         scheduler=SimpleNamespace(enterabs=lambda *a, **k: None, queue=[]),
         executor=DummyExecutor(),
         symbols=[],
-        fe=SimpleNamespace(get_symbols=lambda ivs: []),
+        dl=SimpleNamespace(get_top_symbols=lambda n=None: []),
         safe_call=lambda func, *a, **k: func(*a, **k),
         update_oi_and_order_book=lambda syms: None,
         update_klines=lambda syms, iv: None,
