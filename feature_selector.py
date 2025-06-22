@@ -13,10 +13,13 @@ from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 import shap
+import logging
 from sqlalchemy import create_engine
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
 # ---------- 0. 读取配置 ----------
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -33,6 +36,22 @@ targets = fs_cfg.get("targets") or fs_cfg.get("target", "target")
 if not isinstance(targets, list):
     targets = [targets]
 TOP_N = fs_cfg.get("top_n", 30)
+CORR_THRESH = fs_cfg.get("corr_thresh", 0.85)
+MAX_VIF = fs_cfg.get("max_vif", 10)
+MIN_COVER_MAP = fs_cfg.get("min_cover_map", {"1h": 0.8, "4h": 0.7, "d1": 0.6})
+EARLY_STOP = fs_cfg.get("early_stopping_rounds", 30)
+USE_PERM = fs_cfg.get("use_permutation", False)
+VAR_THRESH = fs_cfg.get("var_thresh", 1e-5)
+
+logger.info(
+    "Config loaded: corr_thresh=%s, max_vif=%s, min_cover_map=%s, early_stop=%s, use_permutation=%s, var_thresh=%s",
+    CORR_THRESH,
+    MAX_VIF,
+    MIN_COVER_MAP,
+    EARLY_STOP,
+    USE_PERM,
+    VAR_THRESH,
+)
 
 # 与 FeatureEngineer 保持同步的未来字段列表，避免选入泄漏特征
 FUTURE_COLS = [
@@ -56,7 +75,6 @@ FUTURE_COLS = [
 
 # 黑名单中默认加入 FUTURE_COLS，若 config 中已包含则去重
 BLACKLIST = list({*cfg.get("feature_selector", {}).get("blacklist", []), *FUTURE_COLS})
-MIN_COVER = 0.08          # <8% 非空 → 丢弃
 ENABLE_PCA = False
 PCA_COMPONENTS = 3
 N_SPLIT   = 5
@@ -66,7 +84,15 @@ MAX_VIF_SAMPLE = 10000    # 计算 VIF 时最多抽样的行数
 df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time", "close_time"])
 
 
-def select_features(target: str) -> None:
+def select_features(
+    target: str,
+    corr_thresh: float = CORR_THRESH,
+    max_vif: float = MAX_VIF,
+    min_cover_map: dict[str, float] = MIN_COVER_MAP,
+    early_stopping_rounds: int = EARLY_STOP,
+    var_thresh: float = VAR_THRESH,
+    use_permutation: bool = USE_PERM,
+) -> None:
     orig_cols = {
         "open_time",
         "open",
@@ -87,7 +113,7 @@ def select_features(target: str) -> None:
     all_features = [
         c
         for c in df.columns
-        if c not in orig_cols and c not in BLACKLIST and not c.endswith("_isnan")
+        if c not in orig_cols and c not in BLACKLIST
     ]
 
     time_cols = {"hour_of_day", "day_of_week"}
@@ -100,7 +126,7 @@ def select_features(target: str) -> None:
     yaml_out = {}
 
     for period, cols in feature_pool.items():
-        print(f"\n========== {period} 周期 ==========")
+        logger.info("========== %s 周期 ==========", period)
         use_cols = [c for c in cols if c in df.columns]
 
         if period == "4h":
@@ -111,9 +137,10 @@ def select_features(target: str) -> None:
             df_period = df
 
         coverage = df_period[use_cols].notna().mean()
-        keep_cols = coverage[coverage >= MIN_COVER].index.tolist()
+        min_cover = float(min_cover_map.get(period, 0))
+        keep_cols = coverage[coverage >= min_cover].index.tolist()
         if not keep_cols:
-            print("无有效特征列（覆盖率 < 5%），跳过该周期。")
+            logger.info("无有效特征列（覆盖率 < %.0f%%），跳过该周期。", min_cover * 100)
             continue
 
         numeric_cols = [
@@ -123,7 +150,7 @@ def select_features(target: str) -> None:
             or pd.api.types.is_integer_dtype(df_period[c])
         ]
         if not numeric_cols:
-            print("剔除非数值列后没有剩余特征，跳过该周期。")
+            logger.info("剔除非数值列后没有剩余特征，跳过该周期。")
             continue
         keep_cols = numeric_cols
 
@@ -131,7 +158,13 @@ def select_features(target: str) -> None:
         subset = subset.sort_values("open_time").reset_index(drop=True)
 
         if len(subset) < 800:
-            print(f"样本太少（{len(subset)} < 800），跳过该周期。")
+            logger.info("样本太少（%s < 800），跳过该周期。", len(subset))
+            continue
+
+        variances = subset[keep_cols].var()
+        keep_cols = variances[variances >= var_thresh].index.tolist()
+        if not keep_cols:
+            logger.info("低方差过滤后没有剩余特征，跳过该周期。")
             continue
 
         if ENABLE_PCA and len(keep_cols) > 100:
@@ -149,13 +182,15 @@ def select_features(target: str) -> None:
         X = subset[keep_cols]
         y = subset[target]
 
-        is_cls = target == "target"
+        is_cls = target.startswith("target")
         if is_cls and y.nunique() < 2:
-            print("标签只有一个类别，跳过该周期。")
+            logger.info("标签只有一个类别，跳过该周期。")
             continue
 
         tscv = TimeSeriesSplit(n_splits=N_SPLIT)
-        shap_imp = pd.Series(0.0, index=keep_cols)
+        shap_imp = pd.Series(0.0, index=keep_cols, dtype=float)
+        perm_imp = pd.Series(0.0, index=keep_cols, dtype=float) if use_permutation else None
+        fold_cnt = 0
 
         if is_cls:
             lgb_params = dict(
@@ -190,23 +225,28 @@ def select_features(target: str) -> None:
             X_val, y_val = X.iloc[val_idx], y.iloc[val_idx]
 
             if is_cls and y_train.nunique() < 2:
-                print(f"Fold {fold} 标签只有一个类别，跳过当前折。")
+                logger.info("Fold %s 标签只有一个类别，跳过当前折。", fold)
                 continue
 
             if is_cls:
                 gbm = lgb.LGBMClassifier(**lgb_params)
-                eval_metric = "multi_logloss"
+                eval_metric = ["multi_logloss", "multi_error"]
+                metric_key = "multi_logloss"
             else:
                 gbm = lgb.LGBMRegressor(**lgb_params)
                 eval_metric = "l1"
+                metric_key = "l1"
 
             gbm.fit(
                 X_train,
                 y_train,
                 eval_set=[(X_val, y_val)],
                 eval_metric=eval_metric,
-                callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)],
+                callbacks=[lgb.early_stopping(stopping_rounds=early_stopping_rounds, verbose=False)],
             )
+            score = gbm.best_score_["valid_0"][metric_key]
+            logger.info("Fold %s %s: %.4f", fold, metric_key, score)
+            fold_cnt += 1
             try:
                 explainer = shap.TreeExplainer(gbm)
                 sv = explainer.shap_values(X_val)
@@ -214,17 +254,41 @@ def select_features(target: str) -> None:
                     sv = np.mean([np.abs(s) for s in sv], axis=0)
                 shap_imp += np.abs(sv).mean(0)
             except Exception as e:
-                print("SHAP failed:", e)
+                logger.warning("SHAP failed: %s", e)
+                shap_imp += pd.Series(gbm.feature_importances_, index=keep_cols)
 
-        shap_imp /= N_SPLIT
+            if use_permutation:
+                from sklearn.inspection import permutation_importance
+                scoring = "neg_log_loss" if is_cls else "neg_mean_absolute_error"
+                perm_res = permutation_importance(
+                    gbm,
+                    X_val,
+                    y_val,
+                    n_repeats=5,
+                    random_state=42,
+                    scoring=scoring,
+                )
+                perm_imp += perm_res.importances_mean
+
+        if fold_cnt == 0:
+            logger.info("无有效折，跳过该周期。")
+            continue
+
+        shap_imp /= fold_cnt
+        if use_permutation:
+            perm_imp /= fold_cnt
         shap_rank = shap_imp.rank(pct=True)
         shap_rank.sort_values(ascending=False, inplace=True)
+        if use_permutation:
+            perm_series = pd.Series(perm_imp, index=keep_cols)
+            perm_rank = perm_series.rank(pct=True)
+            perm_rank.sort_values(ascending=False, inplace=True)
 
         cand_feats = shap_rank.head(TOP_N * 2).index.tolist()
 
         corr = subset[cand_feats].corr().abs()
         upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
-        to_drop = [col for col in upper.columns if any(upper[col] > 0.85)]
+        to_drop = [col for col in upper.columns if any(upper[col] > corr_thresh)]
         vif_feats = [f for f in cand_feats if f not in to_drop]
 
         while True:
@@ -232,29 +296,33 @@ def select_features(target: str) -> None:
             if len(X_vif) > MAX_VIF_SAMPLE:
                 X_vif = X_vif.sample(MAX_VIF_SAMPLE, random_state=42)
             vifs = [variance_inflation_factor(X_vif[vif_feats].values, i) for i in range(len(vif_feats))]
-            max_vif = max(vifs)
-            if max_vif <= 10 or len(vif_feats) <= 1:
+            max_vif_val = max(vifs)
+            if max_vif_val <= max_vif or len(vif_feats) <= 1:
                 break
-            drop_idx = vifs.index(max_vif)
+            drop_idx = vifs.index(max_vif_val)
             dropped = vif_feats.pop(drop_idx)
-            print(f"VIF {max_vif:.2f} -> 移除 {dropped}")
+            logger.info("VIF %.2f -> 移除 %s", max_vif_val, dropped)
 
         final_feats = vif_feats[:TOP_N]
 
-        print(f"Top-{TOP_N} 特征：")
+        logger.info("Top-%s 特征：", TOP_N)
         for f in final_feats:
-            print(f"  {f:<40s}  {shap_rank[f]:.3f}")
+            logger.info("  %-40s  %.3f", f, shap_rank[f])
+        if use_permutation:
+            logger.info("Permutation Top-%s：", TOP_N)
+            for f in perm_rank.head(TOP_N).index:
+                logger.info("  %-40s  %.3f", f, perm_rank[f])
 
         yaml_out[period] = final_feats
 
     out_path = Path(f"utils/selected_features_{target.replace('target_', '')}.yaml")
     out_path.write_text(yaml.dump(yaml_out, allow_unicode=True))
-    print(f"\n✅ 已写入 {out_path.resolve()}")
+    logger.info("\n✅ 已写入 %s", out_path.resolve())
 
 
 if __name__ == "__main__":
     for t in targets:
-        print(f"\n====== 处理 {t} ======")
+        logger.info("\n====== 处理 %s ======", t)
         select_features(t)
 
 
