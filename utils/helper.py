@@ -9,8 +9,9 @@ def collect_feature_cols(cfg: dict, period: str) -> list[str]:
     """\
     根据 config 中的 ``feature_cols`` 字段返回指定周期的特征列表。
 
-    兼容 ``{"1h": [..]}`` 与 ``{"1h": {"up": [...]}}`` 两种格式，
-    后者会合并各标签的特征并去重后返回。
+    兼容 ``{"1h": [..]}``、旧版 ``{"1h": {"up": [...]}}`` 与
+    新版 ``{"1h": {"cls": [...], "vol": [...]}}`` 等格式，
+    若为字典会合并各标签的特征并去重后返回。
     """
     cols = cfg.get("feature_cols", {}).get(period, [])
     if isinstance(cols, dict):
