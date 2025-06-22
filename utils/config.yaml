@@ -32,7 +32,7 @@ feature_engineering:
   merged_dir: "data/merged"
   merged_table_path: "data/merged/merged_table.csv"
   feature_cols_path: "data/merged/feature_cols.txt"
-  topn: 50
+  topn: 100
   mode: train                        # train 或 inference
   scaler_path: scalers/all_features_scaler.json
   btc_symbol: "BTCUSDT"
@@ -521,5 +521,5 @@ signal_threshold:
   rev_th_mult: 0.60    # 急反转时降低门槛
 
 # 因子 IC 分数更新设置
-ic_update_rows: 1000          # 从 features 表读取的记录数
+ic_update_rows: 3000          # 从 features 表读取的记录数
 ic_update_interval_hours: 24  # 多少小时刷新一次权重，默认为每日
