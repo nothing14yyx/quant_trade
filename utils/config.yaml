@@ -77,81 +77,52 @@ database:
 feature_cols:
   1h:
     cls:
-      # 时间特征
-      - hour_of_day                    # 日内时段效应
-      - day_of_week                    # 周效应
-      # 波动率特征
-      - atr_pct_1h                     # 平均真实波幅占比
-      - hv_7d_1h                       # 7 日历史波动率
-      # 趋势/动量特征
-      - rsi_diff_1h_d1                 # 1h RSI 与日线差
-      - macd_hist_diff_1h_d1           # 1h MACD 直方图与日线差
-      - pct_chg3_1h                    # 3 根 K 价差
-      # 成交量特征
-      - vol_ma_ratio_long_1h           # 成交量与长期均量比
-      - vol_breakout_1h                # 成交量放量时的突破
-      # 跨周期比值
-      - atr_pct_ratio_1h_4h            # 1h ATR 与 4h ATR 比
-      - ma_ratio_1h_d1                 # 1h 均线与日线比
-      # K 线形态
-      - long_lower_shadow_1h           # 长下影线（买盘迹象）
-
-    vol:
-      # 时间特征
       - hour_of_day
       - day_of_week
-      # 波动率特征
+      - atr_pct_1h
+      - hv_7d_1h
+      - rsi_diff_1h_d1
+      - macd_hist_diff_1h_d1
+      - pct_chg3_1h
+      - vol_ma_ratio_long_1h
+      - atr_pct_ratio_1h_4h
+      - long_lower_shadow_1h
+
+    vol:
+      - hour_of_day
+      - day_of_week
       - atr_pct_1h
       - hv_7d_1h
       - hv_14d_1h
-      # 跨周期比值
       - atr_pct_ratio_1h_4h
-      - hv_30d_1h
-      # 成交量/流动性
       - vol_breakout_1h
       - vol_ma_ratio_long_1h
       - obv_delta_1h
       - vol_ratio_1h_4h
-      - cg_total_volume_roc_1h         # 总成交量环比变化率
 
     rise:
-      # 时间特征
       - hour_of_day
       - day_of_week
-      # 波动率/突破
       - atr_pct_1h
       - hv_7d_1h
       - vol_breakout_1h
-      # 动量/趋势
-      - rsi_slope_1h                   # RSI 斜率
+      - rsi_slope_1h
       - macd_hist_diff_1h_d1
-      - pct_chg6_1h                    # 6 根 K 价差
-      # 跨周期信号
+      - pct_chg6_1h
       - vol_ratio_1h_4h
-      - close_spread_1h_4h             # 收盘价差
-      # 成交量
-      - obv_delta_1h
-      # K 线形态
       - long_lower_shadow_1h
 
     drawdown:
-      # 时间特征
       - hour_of_day
       - day_of_week
-      # 波动率
       - atr_pct_1h
       - hv_7d_1h
       - atr_pct_ratio_1h_4h
-      # 动量/趋势
-      - willr_1h                       # Williams %R
-      - adx_delta_1h                   # ADX 变化幅度
+      - adx_delta_1h
       - macd_hist_diff_1h_d1
       - rsi_diff_1h_d1
-      # 成交量/流动性
       - vol_ma_ratio_long_1h
-      - vol_breakout_1h
-      # K 线形态
-      - long_upper_shadow_1h           # 长上影线（买盘耗尽）
+      - long_upper_shadow_1h
 
   4h:
     cls:
@@ -160,13 +131,11 @@ feature_cols:
       - atr_pct_4h
       - hv_7d_4h
       - long_upper_shadow_4h
-      - long_lower_shadow_4h
       - atr_pct_ratio_1h_4h
       - vol_ratio_1h_4h
       - vol_breakout_4h
       - close_spread_1h_4h
       - rsi_diff_4h_d1
-      - donchian_delta_4h
 
     vol:
       - day_of_week
@@ -174,12 +143,10 @@ feature_cols:
       - atr_pct_4h
       - hv_7d_4h
       - hv_14d_4h
-      - hv_30d_4h
-      - atr_chg_4h                     # ATR 环比变化
+      - atr_chg_4h
       - vol_ma_ratio_long_4h
       - vol_breakout_4h
       - obv_delta_4h
-      - cg_total_volume_roc_4h
       - vol_ratio_1h_4h
 
     rise:
@@ -193,11 +160,6 @@ feature_cols:
       - rsi_diff_4h_d1
       - pct_chg6_4h
       - obv_delta_4h
-      - vol_ma_ratio_long_4h
-      - ma_ratio_4h_d1
-      - vol_ratio_4h_d1
-      - close_spread_1h_4h
-      - cci_delta_4h
 
     drawdown:
       - day_of_week
@@ -207,16 +169,13 @@ feature_cols:
       - hv_14d_4h
       - adx_delta_4h
       - rsi_diff_4h_d1
-      - ma_ratio_1h_4h
-      - close_spread_1h_4h
       - vol_ma_ratio_long_4h
       - obv_delta_4h
-      - vol_breakout_4h
       - upper_wick_ratio_4h
 
   d1:
     cls:
-      - fg_index_d1_y                  # 分组索引
+      - fg_index_d1_y
       - day_of_week
       - atr_pct_d1
       - hv_7d_d1
@@ -224,40 +183,28 @@ feature_cols:
       - rsi_diff_1h_d1
       - rsi_slope_d1
       - macd_hist_diff_1h_d1
-      - adx_delta_d1
       - vol_ratio_4h_d1
-      - close_spread_1h_d1
-      - obv_delta_d1
       - upper_wick_ratio_d1
 
     vol:
       - day_of_week
-      - volume_cg_ratio_d1             # 成交量/市值比
-      - lower_wick_ratio_d1
-      - cci_delta_d1
+      - volume_cg_ratio_d1
       - kc_width_pct_chg_d1
       - rsi_diff_1h_d1
       - vol_ratio_4h_d1
-      - supertrend_dir_d1
       - rsi_diff_4h_d1
       - vol_profile_density_d1
-      - kurtosis_d1
       - hv_30d_d1
-      - funding_rate_anom_d1
 
     rise:
       - day_of_week
       - rsi_slope_d1
       - rsi_diff_1h_d1
       - bear_streak_d1
-      - bull_streak_d1
       - donchian_delta_d1
       - obv_delta_d1
-      - vol_profile_density_d1
       - long_lower_shadow_d1
-      - cci_delta_d1
       - hv_7d_d1
-      - close_spread_1h_d1
 
     drawdown:
       - day_of_week
@@ -268,9 +215,7 @@ feature_cols:
       - bear_streak_d1
       - donchian_delta_d1
       - obv_delta_d1
-      - vol_profile_density_d1
       - long_upper_shadow_d1
-      - bull_streak_d1
 
 train_settings:
   by_symbol: false
