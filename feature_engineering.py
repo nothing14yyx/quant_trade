@@ -245,8 +245,14 @@ class FeatureEngineer:
 
                 up_thr = up_ret.quantile(q_up)
                 down_thr = down_ret.quantile(q_low)
-                if not (down_thr < 0 < up_thr):
-                    raise ValueError(f"Invalid thresholds for {p}: {down_thr}, {up_thr}")
+
+                # allow both thresholds to be on the same side of zero when the
+                # market shows a persistent trend. Only ensure `down_thr` is
+                # strictly smaller than `up_thr` to avoid degenerate targets.
+                if not (down_thr < up_thr):
+                    raise ValueError(
+                        f"Invalid thresholds for {p}: {down_thr}, {up_thr}"
+                    )
 
                 if classification_mode != "three":
                     raise ValueError("Only 'three' classification_mode is supported")
