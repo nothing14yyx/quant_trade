@@ -3,6 +3,7 @@ from collections import deque
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
+from joblib import Parallel, delayed
 from tqdm import tqdm
 import optuna
 
@@ -177,6 +178,7 @@ def run_param_search(
     method: str = "grid",
     trials: int = 30,
     tune_delta: bool = False,
+    n_jobs: int = 1,
 ) -> None:
     cfg = load_config()
     engine = connect_mysql(cfg)
@@ -209,11 +211,9 @@ def run_param_search(
                 "vol_ma_ratio_inc": [0.02, 0.04],
                 "funding_rate_inc": [0.02, 0.04],
             })
-        grid = ParameterGrid(param_grid)
-        best = None
-        best_metric = -np.inf
+        grid = list(ParameterGrid(param_grid))
 
-        for params in tqdm(grid, desc="Grid Search"):
+        def eval_params(params: dict) -> tuple[float, dict, float, float]:
             base_weights = {
                 "ai": params["ai_w"],
                 "trend": params["trend_w"],
@@ -223,9 +223,7 @@ def run_param_search(
                 "sentiment": 0.05,
                 "funding": 0.05,
             }
-            th_params = {
-                "base": params["th_base"],
-            }
+            th_params = {"base": params["th_base"]}
             delta_params = base_delta.copy()
             if tune_delta:
                 delta_params["rsi"] = (
@@ -274,6 +272,15 @@ def run_param_search(
                 sg_iter,
             )
             metric = sharpe if not np.isnan(sharpe) else -np.inf
+            return metric, params, tot_ret, sharpe
+
+        results = Parallel(n_jobs=n_jobs, prefer="threads")(
+            delayed(eval_params)(p) for p in tqdm(grid, desc="Grid Search")
+        )
+
+        best = None
+        best_metric = -np.inf
+        for metric, params, tot_ret, sharpe in results:
             if metric > best_metric:
                 best_metric = metric
                 best = params
@@ -362,12 +369,19 @@ def main() -> None:
         action="store_true",
         help="同时搜索 Δ 参数增益",
     )
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=1,
+        help="并行搜索的任务数，仅对 grid 模式有效",
+    )
     args = parser.parse_args()
     run_param_search(
         rows=args.rows,
         method=args.method,
         trials=args.trials,
         tune_delta=args.tune_delta,
+        n_jobs=args.n_jobs,
     )
 
 
