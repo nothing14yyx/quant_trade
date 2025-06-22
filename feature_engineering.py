@@ -237,10 +237,6 @@ class FeatureEngineer:
                 future_prices = pd.concat(
                     [close.shift(-i) for i in range(1, base_n + 1)], axis=1
                 )
-                weights = np.exp(-smooth_alpha * np.arange(base_n))
-                weights /= weights.sum()
-                # 若需要平滑处理，可在 future_prices 上先求加权平均，
-                # 但不再将权重直接乘入极值计算
                 fut_hi = future_prices.max(axis=1)
                 fut_lo = future_prices.min(axis=1)
 
