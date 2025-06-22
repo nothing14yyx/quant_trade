@@ -137,6 +137,10 @@ def select_features(target: str) -> None:
         X = subset[keep_cols]
         y = subset[target].astype(int)
 
+        if y.nunique() < 2:
+            print("标签只有一个类别，跳过该周期。")
+            continue
+
         tscv = TimeSeriesSplit(n_splits=N_SPLIT)
         shap_imp = pd.Series(0.0, index=keep_cols)
 
@@ -158,6 +162,10 @@ def select_features(target: str) -> None:
         for fold, (tr_idx, val_idx) in enumerate(tscv.split(X, y), 1):
             X_train, y_train = X.iloc[tr_idx], y.iloc[tr_idx]
             X_val, y_val = X.iloc[val_idx], y.iloc[val_idx]
+
+            if y_train.nunique() < 2:
+                print(f"Fold {fold} 标签只有一个类别，跳过当前折。")
+                continue
 
             pw = min((y_train == 0).sum() / max((y_train == 1).sum(), 1), 50)
             lgb_params["scale_pos_weight"] = pw
