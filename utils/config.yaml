@@ -175,6 +175,7 @@ feature_cols:
 
   d1:
     cls:
+      # 分类要兼顾周期、波动、动量、形态，参考top20
       - fg_index_d1_y
       - day_of_week
       - atr_pct_d1
@@ -183,10 +184,13 @@ feature_cols:
       - rsi_diff_1h_d1
       - rsi_slope_d1
       - macd_hist_diff_1h_d1
+      - close_spread_1h_d1         # 新增，cls重要性高且区分盘面结构
       - vol_ratio_4h_d1
+      - ichimoku_cloud_thickness_d1 # 新增，top10且稳健
       - upper_wick_ratio_d1
 
     vol:
+      # 以成交量、波动率、形态互补为主
       - day_of_week
       - volume_cg_ratio_d1
       - kc_width_pct_chg_d1
@@ -195,8 +199,11 @@ feature_cols:
       - rsi_diff_4h_d1
       - vol_profile_density_d1
       - hv_30d_d1
+      - atr_pct_d1                  # 新增，补充波动率信号
+      - hv_7d_d1                    # 新增，补充短期波动度
 
     rise:
+      # 以趋势、波动、K线形态为主
       - day_of_week
       - rsi_slope_d1
       - rsi_diff_1h_d1
@@ -205,17 +212,24 @@ feature_cols:
       - obv_delta_d1
       - long_lower_shadow_d1
       - hv_7d_d1
+      - macd_hist_diff_1h_d1        # 新增，动量信号top10
+      - vol_breakout_d1             # 新增，捕捉异动机会
 
     drawdown:
+      # 强化形态、波动率、趋势高排名特征
       - day_of_week
       - atr_pct_d1
       - hv_7d_d1
+      - hv_14d_d1                   # 新增，drawdown重要性高
       - rsi_diff_1h_d1
       - vol_breakout_d1
       - bear_streak_d1
       - donchian_delta_d1
       - obv_delta_d1
       - long_upper_shadow_d1
+      - long_lower_shadow_d1        # 新增，drawdown模型极为看重
+      - fg_index_d1_y               # 新增，稳健分组
+
 
 train_settings:
   by_symbol: false
@@ -223,7 +237,7 @@ train_settings:
   time_ranges: []
   ts_smote: false
   hold_days: 3
-  periods: ["1h","4h","d1"]       # 例: ["4h", "d1"] 为空则训练全部
+  periods: ["d1"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
     1h: 15
