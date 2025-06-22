@@ -596,7 +596,7 @@ class FeatureEngineer:
         batch_size: int | None = None,
         n_jobs: int = 1,
     ) -> None:
-        symbols = self.get_symbols(("1h", "4h", "d1", "5m", "15m"))
+        symbols = self.get_symbols(("1h", "4h", "1d", "5m", "15m"))
         symbols = symbols[: (topn or self.topn)]
 
         all_dfs: list[pd.DataFrame] = []
