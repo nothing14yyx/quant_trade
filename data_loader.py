@@ -684,10 +684,11 @@ class DataLoader:
         安全获取K线：只有币安返回-1121才raise BinanceAPIException，其它情况只log
         """
         self.kl_rate_limiter.acquire()  # 你原有的限速器，继续用
+        api_iv = "1d" if interval == "d1" else interval
         try:
             res = self.client.futures_klines(
                 symbol=symbol,
-                interval=interval,
+                interval=api_iv,
                 startTime=int(start.timestamp() * 1000),
                 endTime=int(end.timestamp() * 1000),
                 limit=1000,
