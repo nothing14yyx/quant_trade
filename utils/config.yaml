@@ -234,6 +234,7 @@ feature_cols:
 train_settings:
   by_symbol: false
   min_rows: 500
+  min_samples: 2000
   time_ranges: []
   ts_smote: false
   hold_days: 3
