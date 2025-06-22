@@ -63,9 +63,9 @@ def test_merge_features_with_order_book(tmp_path):
     asks = json.dumps([[1,1]]*10)
     ob_df = pd.DataFrame({'timestamp': times1h, 'bids':[bids]*60, 'asks':[asks]*60})
 
-    fe.load_klines_db = lambda sym, iv: {'1h': df1h, '4h': df4h, '1d': df1d}[iv]
+    fe.load_klines_db = lambda sym, iv: {'1h': df1h, '4h': df4h, 'd1': df1d}[iv]
     fe.load_order_book = lambda sym: ob_df
-    fe.get_symbols = lambda intervals=("1h","4h","1d"): ['BTC']
+    fe.get_symbols = lambda intervals=("1h","4h","d1"): ['BTC']
     fe._write_output = lambda df, save_to_db, append: setattr(fe, 'out_df', df)
 
     fe.merge_features(save_to_db=False, batch_size=None)
