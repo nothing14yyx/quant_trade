@@ -39,7 +39,19 @@ feature_engineering:
   eth_symbol: "ETHUSDT"
 
 feature_selector:
-  target: [target, future_volatility, future_max_rise, future_max_drawdown]
+  target:
+    - target_1h
+    - future_volatility_1h
+    - future_max_rise_1h
+    - future_max_drawdown_1h
+    - target_4h
+    - future_volatility_4h
+    - future_max_rise_4h
+    - future_max_drawdown_4h
+    - target_d1
+    - future_volatility_d1
+    - future_max_rise_d1
+    - future_max_drawdown_d1
   top_n: 30             # 每周期保留前 N
 
 models:
