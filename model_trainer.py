@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import datetime
 import logging
+import gc
 from pathlib import Path
 from sklearn.metrics import mean_absolute_error, log_loss
 from sklearn.metrics import precision_recall_curve
@@ -307,11 +308,12 @@ def train_one(
     # ---- 留出集
     if hold_days > 0:
         end_time = data["open_time"].max()
-        hold_mask = data["open_time"] >= end_time - pd.Timedelta(days=hold_days)
-        hold_df = data[hold_mask]
-        data = data[~hold_mask]
-        X_hold = hold_df[feat_use]
-        y_hold = hold_df[tgt]
+        hold_idx = data.index[data["open_time"] >= end_time - pd.Timedelta(days=hold_days)]
+        X_hold = data.loc[hold_idx, feat_use]
+        y_hold = data.loc[hold_idx, tgt]
+        data = data.drop(index=hold_idx).reset_index(drop=True)
+        del hold_idx
+        gc.collect()
     else:
         X_hold = pd.DataFrame()
         y_hold = pd.Series(dtype=y.dtype)
