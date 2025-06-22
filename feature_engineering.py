@@ -178,6 +178,12 @@ class FeatureEngineer:
         self.btc_symbol: str = fe_cfg.get("btc_symbol", "BTCUSDT")
         self.eth_symbol: str = fe_cfg.get("eth_symbol", "ETHUSDT")
 
+        self.period_cfg: dict[str, dict[str, float | int]] = {
+            "1h": {"q_low": 0.25, "q_up": 0.75, "base_n": 3, "vol_window": 24},
+            "4h": {"q_low": 0.30, "q_up": 0.70, "base_n": 12, "vol_window": 96},
+            "d1": {"q_low": 0.35, "q_up": 0.65, "base_n": 72, "vol_window": 576},
+        }
+
         self._kl_cache: dict[tuple[str, str], pd.DataFrame | None] = {}
         # 保存/加载剪裁+缩放参数的 JSON 路径
         self.scaler_path: Path = Path(
@@ -194,140 +200,71 @@ class FeatureEngineer:
     @staticmethod
     def add_up_down_targets(
         df: pd.DataFrame,
-        threshold_up: float | str | None = "balanced",
-        threshold_down: float | str | None = "balanced",
-        shift_n: int | str = "dynamic",
-        vol_window: int | dict[str, int] = 24,
-        n_bins: int | None = None,
-        periods: tuple[str, ...] = ("1h", "4h", "d1"),
-        *,
-        vol_window_map: dict[str, int] | None = None,
-        base_n_map: dict[str, int] | None = None,
-        threshold_up_map: dict[str, float | str | None] | None = None,
-        threshold_down_map: dict[str, float | str | None] | None = None,
-        smooth_alpha: float = 0.0,
+        period_cfg: dict[str, dict[str, float | int]] | None = None,
+        smooth_alpha: float = 0.2,
         classification_mode: str = "three",
-        search_method: str = "hist",
     ) -> pd.DataFrame:
-        """out """
+        """根据 `period_cfg` 为多周期生成涨跌标签。
 
-        period_map = {"1h": 1, "4h": 4, "d1": 24}
+        Parameters
+        ----------
+        df : DataFrame
+            源数据，需包含 ``close`` 和 ``symbol`` 列。
+        period_cfg : dict, optional
+            各周期参数，形如 ``{"1h": {"q_low": 0.25, "q_up": 0.75, "base_n": 3}}``。
+            若为 ``None``，则使用默认配置。
+        smooth_alpha : float, default 0.2
+            计算未来收益时的 EWMA 衰减系数。
+        classification_mode : str, default "three"
+            当前仅支持 ``"three"``，即生成 0/1/2 三分类标签。
+        """
+
+        if period_cfg is None:
+            period_cfg = {
+                "1h": {"q_low": 0.25, "q_up": 0.75, "base_n": 3, "vol_window": 24},
+                "4h": {"q_low": 0.30, "q_up": 0.70, "base_n": 12, "vol_window": 96},
+                "d1": {"q_low": 0.35, "q_up": 0.65, "base_n": 72, "vol_window": 576},
+            }
+
         results = []
-        atr_col = next((c for c in df.columns if c.startswith("atr_pct")), None)
-
-        def _search_best(th_series: pd.Series, y: pd.Series) -> float:
-            """通过互信息在多个候选中搜索最佳阈值"""
-            if n_bins is None:
-                candidates = th_series.quantile([0.4, 0.5, 0.6, 0.7, 0.8]).values
-            else:
-                qs = np.linspace(0.4, 0.9, n_bins)
-                candidates = th_series.quantile(qs).values
-            best_th = candidates[0]
-            best_score = -np.inf
-            for th in candidates:
-                labels = (th_series >= th).astype(int)
-                score = mutual_info_score(labels[~y.isna()], y[~y.isna()])
-                if score > best_score:
-                    best_score = score
-                    best_th = th
-            return float(best_th)
-
         for sym, g in df.groupby("symbol", group_keys=False):
-            if shift_n == "dynamic" and atr_col is not None:
-                mean_atr = g[atr_col].mean()
-                base_n_default = 2 if mean_atr > 0.07 else 4
-            elif isinstance(shift_n, int):
-                base_n_default = shift_n
-            else:
-                base_n_default = 3
-
             close = g["close"]
+            for p, cfg in period_cfg.items():
+                base_n = int(cfg.get("base_n", 3))
+                q_low = float(cfg.get("q_low", 0.25))
+                q_up = float(cfg.get("q_up", 0.75))
 
-            for p in periods:
-                mult = period_map.get(p, 1)
-                b_n = base_n_map.get(p, base_n_default * mult) if base_n_map else base_n_default * mult
-                v_win = vol_window_map.get(p, vol_window if isinstance(vol_window, int) else vol_window.get(p, 24)) if vol_window_map or isinstance(vol_window, dict) else vol_window
-                n = b_n
-
-                price_matrix = pd.concat([close.shift(-i) for i in range(1, n + 1)], axis=1)
-                weights = np.exp(-smooth_alpha * np.arange(n))
+                price_matrix = pd.concat([close.shift(-i) for i in range(1, base_n + 1)], axis=1)
+                weights = np.exp(-smooth_alpha * np.arange(base_n))
                 weights /= weights.sum()
-                smooth_close = (price_matrix * weights).max(axis=1)
-                smooth_low = (price_matrix * weights).min(axis=1)
-                fut_hi = smooth_close
-                fut_lo = smooth_low
-
-                if threshold_up_map and p in threshold_up_map:
-                    th_up_val = threshold_up_map[p]
-                else:
-                    th_up_val = threshold_up
-                if threshold_down_map and p in threshold_down_map:
-                    th_down_val = threshold_down_map[p]
-                else:
-                    th_down_val = threshold_down
-
-                if th_up_val in (None, "auto"):
-                    vol = (
-                        close.pct_change().abs().rolling(v_win, min_periods=1).mean()
-                    ) * 1.5
-                    th_up = th_down = vol
-                elif th_up_val == "quantile" or th_down_val == "quantile":
-                    th = (
-                        close.pct_change().abs().rolling(v_win, min_periods=1).quantile(0.8)
-                    )
-                    th_up = th_down = th
-                elif th_up_val == "balanced" or th_down_val == "balanced":
-                    chg_up = fut_hi / close - 1
-                    chg_down = fut_lo / close - 1
-                    th_up = pd.Series(chg_up.quantile(0.55), index=g.index)
-                    th_down = pd.Series(chg_down.quantile(0.45), index=g.index)
-                elif th_up_val == "search" or th_down_val == "search":
-                    chg_up = fut_hi / close - 1
-                    chg_down = (fut_lo / close - 1).abs()
-                    y_true = np.sign(close.shift(-b_n) / close - 1)
-                    if th_up_val == "search":
-                        th_up = pd.Series(_search_best(chg_up, y_true), index=g.index)
-                    else:
-                        th_up = pd.Series(float(th_up_val), index=g.index)
-                    if th_down_val == "search":
-                        th_down = pd.Series(_search_best(chg_down, y_true), index=g.index)
-                    else:
-                        th_down = pd.Series(float(th_down_val), index=g.index)
-                else:
-                    th_up = pd.Series(float(th_up_val), index=g.index)
-                    th_down = pd.Series(float(th_down_val), index=g.index)
+                fut_hi = (price_matrix * weights).max(axis=1)
+                fut_lo = (price_matrix * weights).min(axis=1)
 
                 up_ret = fut_hi / close - 1
                 down_ret = fut_lo / close - 1
 
-                if classification_mode == "two":
-                    target = np.where(up_ret >= th_up, 1, 0)
-                    target = np.where(down_ret <= -th_down, 0, target)
-                elif classification_mode == "five":
-                    strong_u = th_up * 1.5
-                    strong_d = th_down * 1.5
-                    target = np.select(
-                        [down_ret <= -strong_d, down_ret <= -th_down, up_ret >= th_up, up_ret >= strong_u],
-                        [0, 1, 3, 4],
-                        default=2,
-                    )
-                else:
-                    target = np.where(up_ret >= th_up, 2, np.where(down_ret <= -th_down, 0, 1))
+                up_thr = up_ret.quantile(q_up)
+                down_thr = down_ret.quantile(q_low)
+                if not (down_thr < 0 < up_thr):
+                    raise ValueError(f"Invalid thresholds for {p}: {down_thr}, {up_thr}")
+
+                if classification_mode != "three":
+                    raise ValueError("Only 'three' classification_mode is supported")
+
+                target = np.where(up_ret >= up_thr, 2, np.where(down_ret <= down_thr, 0, 1))
 
                 g[f"target_{p}"] = target.astype(float)
-                g[f"future_volatility_{p}"] = close.pct_change().rolling(b_n).std().shift(-b_n)
-                g[f"future_max_rise_{p}"] = fut_hi / close - 1
-                g[f"future_max_drawdown_{p}"] = fut_lo / close - 1
+                g[f"future_volatility_{p}"] = close.pct_change().rolling(base_n).std().shift(-base_n)
+                g[f"future_max_rise_{p}"] = up_ret
+                g[f"future_max_drawdown_{p}"] = down_ret
 
-                drop_cols = [f"target_{p}", f"future_volatility_{p}"]
-                g.loc[g.tail(b_n).index, drop_cols] = np.nan
+                g.loc[g.tail(base_n).index, [f"target_{p}", f"future_volatility_{p}"]] = np.nan
 
             results.append(g)
 
         out = pd.concat(results).sort_index()
 
-        # 输出标签分布统计
-        for p in periods:
+        for p in period_cfg:
             col = f"target_{p}"
             if col in out.columns:
                 cnt = out[col].value_counts(dropna=True)
@@ -631,7 +568,8 @@ class FeatureEngineer:
         out["symbol"] = sym
         out["hour_of_day"] = out["open_time"].dt.hour.astype(float)
         out["day_of_week"] = out["open_time"].dt.dayofweek.astype(float)
-        out = self.add_up_down_targets(out)
+        if out["close"].nunique() > 1:
+            out = self.add_up_down_targets(out, self.period_cfg)
 
         na_cols = out.columns[out.isna().all()]
         if len(na_cols):
