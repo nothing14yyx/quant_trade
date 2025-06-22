@@ -207,6 +207,20 @@ def run_backtest(*, recent_days: int | None = None):
         df_d1 = df_raw.resample('1d', label='left', closed='left').agg(agg).dropna()
         raw_d1_df = calc_features_raw(df_d1, 'd1')
 
+        # 预先对齐不同周期的原始特征，避免循环中多次索引
+        aligned_1h = raw_1h_df.reindex(df_sym['open_time']).reset_index(drop=True)
+        aligned_4h = (
+            raw_4h_df.reindex(df_sym['open_time'], method='ffill')
+            .reset_index(drop=True)
+        )
+        aligned_d1 = (
+            raw_d1_df.reindex(df_sym['open_time'], method='ffill')
+            .reset_index(drop=True)
+        )
+        raw1h_list = aligned_1h.to_dict('records')
+        raw4h_list = aligned_4h.to_dict('records')
+        rawd1_list = aligned_d1.to_dict('records')
+
         # 回测主循环：每根K线跑融合信号
         signals = []
         for i in range(1, len(df_sym)):   # i=0没法t+1建仓
@@ -214,12 +228,9 @@ def run_backtest(*, recent_days: int | None = None):
             feats_4h = {c: df_sym.at[i, c] for c in FEATURE_COLS_4H}
             feats_d1 = {c: df_sym.at[i, c] for c in FEATURE_COLS_D1}
 
-            ts = df_sym.at[i, 'open_time']
-            raw1h = raw_1h_df.loc[ts].to_dict() if ts in raw_1h_df.index else {}
-            r4 = raw_4h_df.loc[:ts]
-            raw4h = r4.iloc[-1].to_dict() if not r4.empty else {}
-            r1d = raw_d1_df.loc[:ts]
-            rawd1 = r1d.iloc[-1].to_dict() if not r1d.empty else {}
+            raw1h = raw1h_list[i]
+            raw4h = raw4h_list[i]
+            rawd1 = rawd1_list[i]
 
             result = sg.generate_signal(
                 feats_1h,
