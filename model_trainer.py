@@ -654,7 +654,7 @@ for sym in symbols:
             else:
                 subset = df_rng
 
-            for tag, tgt_col in targets.items():
+            for tag, tgt_col_base in targets.items():
                 if selected_tags and tag not in selected_tags:
                     continue
                 file_name = f"model_{period}_{tag}.pkl"
@@ -664,6 +664,8 @@ for sym in symbols:
                 out_dir = Path("models") / sym if sym is not None else Path("models")
                 out_dir.mkdir(parents=True, exist_ok=True)
                 out_file = out_dir / file_name
+                period_suffix = "" if period == "1h" else f"_{period}"
+                tgt_col = f"{tgt_col_base}{period_suffix}"
                 train_one(
                     subset.copy(),
                     tag_cols.get(tag, []),
