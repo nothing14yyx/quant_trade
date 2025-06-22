@@ -17,7 +17,7 @@ mysql:
   charset: "utf8mb4"
 
 data_loader:
-  topn: 50             # 获取成交额排名前N的合约
+  topn: 100             # 获取成交额排名前N的合约
   interval: "1h"       # 主周期K线
   aux_interval: ["5m", "15m", "4h", "1d"]   # 辅助周期K线
   start:  "2024-06-09" # 起始日期 例如"2024-06-01" 默认获取一年
