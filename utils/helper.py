@@ -149,6 +149,34 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"mfi_{period}", mfi)
     assign_safe(feats, f"money_flow_ratio_{period}", mfr)
 
+    # VWAP 和随机指标
+    assign_safe(
+        feats,
+        f"vwap_{period}",
+        _safe_ta(
+            ta.vwap,
+            feats["high"],
+            feats["low"],
+            feats["close"],
+            feats["volume"],
+            index=df.index,
+        ),
+    )
+    stoch = _safe_ta(
+        ta.stoch,
+        feats["high"],
+        feats["low"],
+        feats["close"],
+        k=14,
+        d=3,
+        smooth_k=3,
+        index=df.index,
+        cols=["STOCHk_14_3_3", "STOCHd_14_3_3"],
+    )
+    stoch = stoch.reindex(df.index)
+    assign_safe(feats, f"stoch_k_{period}", stoch.get("STOCHk_14_3_3"))
+    assign_safe(feats, f"stoch_d_{period}", stoch.get("STOCHd_14_3_3"))
+
     bb = _safe_ta(
         ta.bbands,
         feats["close"],
