@@ -226,6 +226,7 @@ hold_days = int(train_cfg.get("hold_days", 0))
 n_trials_cfg = train_cfg.get("n_trials", 10)
 selected_periods = set(train_cfg.get("periods", [])) or None
 selected_tags = set(train_cfg.get("tags", [])) or None
+min_samples = int(train_cfg.get("min_samples", 2000))
 
 param_space_all = cfg["param_space"]
 fixed_params = cfg["fixed_params"]
@@ -302,6 +303,19 @@ def train_one(
     data = df_all.dropna(subset=[tgt])
     # 此时 data 已经继承了原始 df_all 的顺序，且原始 df_all 事先已按 open_time 排序
 
+    # --- 动态特征筛选：确保足够的有效样本量 ---
+    selected: list[str] = []
+    for col in feat_use:
+        tmp = selected + [col]
+        avail_rows = data[tmp].dropna().shape[0]
+        if avail_rows < min_samples:
+            logging.info(
+                f"加入 {col} 后可用样本量仅剩 {avail_rows}，低于 {min_samples}，停止加新特征。"
+            )
+            break
+        selected.append(col)
+    feat_use = selected
+
     X = data[feat_use]
     y = data[tgt]
 
@@ -319,6 +333,12 @@ def train_one(
         y_hold = pd.Series(dtype=y.dtype)
     X = data[feat_use]
     y = data[tgt]
+
+    # ---- 打印最终样本量与类别分布 ----
+    drop_data = data[feat_use + [tgt]].dropna()
+    logging.info("dropna 后样本量 %s", len(drop_data))
+    if not regression:
+        logging.info("类别分布 %s", drop_data[tgt].value_counts().to_dict())
 
     # 时序切分 - 按 open_time 分组，避免同一时间片落入不同集合
     splits = list(forward_chain_split(data["open_time"], n_splits=5))
