@@ -135,7 +135,7 @@ def calc_cross_features(
 
 
 class FeatureEngineer:
-    """多周期特征工程生成器 (1h → 4h → 1d)。
+    """多周期特征工程生成器 (1h → 4h → d1)。
 
     主要修复 / 改进
     ----------------
@@ -290,7 +290,7 @@ class FeatureEngineer:
         return out
 
     def get_symbols(
-        self, intervals: tuple[str, str, str] = ("1h", "4h", "1d")
+        self, intervals: tuple[str, str, str] = ("1h", "4h", "d1")
     ) -> List[str]:
         """返回同时拥有 intervals 三周期数据的 symbol 列表。"""
         symbol_sets: list[set[str]] = []
@@ -490,7 +490,7 @@ class FeatureEngineer:
         """计算单个合约的所有特征并返回 DataFrame."""
         df_1h = self.load_klines_db(sym, "1h")
         df_4h = self.load_klines_db(sym, "4h")
-        df_1d = self.load_klines_db(sym, "1d")
+        df_1d = self.load_klines_db(sym, "d1")
         try:
             df_5m = self.load_klines_db(sym, "5m")
         except Exception:
@@ -592,7 +592,7 @@ class FeatureEngineer:
         batch_size: int | None = None,
         n_jobs: int = 1,
     ) -> None:
-        symbols = self.get_symbols(("1h", "4h", "1d", "5m", "15m"))
+        symbols = self.get_symbols(("1h", "4h", "d1", "5m", "15m"))
         symbols = symbols[: (topn or self.topn)]
 
         all_dfs: list[pd.DataFrame] = []
