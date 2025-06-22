@@ -652,6 +652,8 @@ class RobustSignalGenerator:
             + 0.5 * safe(f'long_lower_shadow_{period}', 0)
             - 0.5 * safe(f'long_upper_shadow_{period}', 0)
             + 0.5 * safe(f'vol_breakout_{period}', 0)
+            + np.tanh(safe(f'ichimoku_cloud_thickness_{period}', 0))
+            + np.tanh((safe(f'close_{period}', safe("close", 0)) / safe(f'vwap_{period}', 1) - 1) * 5)
         )
 
         momentum_raw = (
@@ -660,6 +662,9 @@ class RobustSignalGenerator:
             + np.tanh(safe(f'macd_hist_{period}', 0) * 5)
             + np.tanh(safe(f'rsi_slope_{period}', 0) * 10)
             + (safe(f'mfi_{period}', 50) - 50) / 50
+            + 0.5 * np.tanh(safe('rsi_diff_1h_4h', 0) / 10)
+            + 0.5 * np.tanh(safe('rsi_diff_1h_d1', 0) / 10)
+            + 0.5 * np.tanh(safe('rsi_diff_4h_d1', 0) / 10)
         )
 
         volatility_raw = (
