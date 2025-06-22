@@ -467,12 +467,22 @@ class RobustSignalGenerator:
         self.symbol_categories = {k.upper(): v for k, v in mapping.items()}
 
 
-    def compute_tp_sl(self, price, atr, direction, tp_mult=1.5, sl_mult=1.0):
-        """计算止盈止损价格"""
+    def compute_tp_sl(
+        self,
+        price,
+        atr,
+        direction,
+        tp_mult: float = 1.5,
+        sl_mult: float = 1.0,
+        *,
+        rise_pred: float | None = None,
+        drawdown_pred: float | None = None,
+    ):
+        """计算止盈止损价格，可根据模型预测值微调"""
         if direction == 0:
             return None, None
         if price is None or price <= 0:
-            return None, None            # 价格异常直接放弃
+            return None, None  # 价格异常直接放弃
         if atr is None or atr == 0:
             atr = 0.005 * price
 
@@ -480,12 +490,21 @@ class RobustSignalGenerator:
         tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
         sl_mult = float(np.clip(sl_mult, 0.5, 2.0))
 
-        if direction == 1:
-            take_profit = price + tp_mult * atr
-            stop_loss = price - sl_mult * atr
+        if rise_pred is not None and drawdown_pred is not None:
+            if direction == 1:
+                take_profit = price * (1 + max(rise_pred, 0))
+                stop_loss = price * (1 + min(drawdown_pred, 0))
+            else:
+                take_profit = price * (1 - max(drawdown_pred, 0))
+                stop_loss = price * (1 - min(rise_pred, 0))
         else:
-            take_profit = price - tp_mult * atr
-            stop_loss = price + sl_mult * atr
+            if direction == 1:
+                take_profit = price + tp_mult * atr
+                stop_loss = price - sl_mult * atr
+            else:
+                take_profit = price - tp_mult * atr
+                stop_loss = price + sl_mult * atr
+
         return float(take_profit), float(stop_loss)
 
     def _base_key(self, k: str) -> str:
@@ -615,6 +634,15 @@ class RobustSignalGenerator:
         X_df = pd.DataFrame(row_data)
         X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
         return float(lgb_model.predict(X_df)[0])
+
+    def get_reg_prediction(self, features, model_dict):
+        """通用回归模型预测"""
+        model = model_dict["pipeline"]
+        cols = model_dict["features"]
+        row_data = {c: [features.get(c, 0)] for c in cols}
+        df = pd.DataFrame(row_data)
+        df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
+        return float(model.predict(df)[0])
 
     # robust_signal_generator.py
 
@@ -1020,6 +1048,8 @@ class RobustSignalGenerator:
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores = {}
         vol_preds = {}
+        rise_preds = {}
+        drawdown_preds = {}
         for p, feats in [('1h', features_1h), ('4h', features_4h), ('d1', features_d1)]:
             cal_up = self.calibrators.get(p, {}).get('up')
             cal_down = self.calibrators.get(p, {}).get('down')
@@ -1037,6 +1067,14 @@ class RobustSignalGenerator:
                 vol_preds[p] = self.get_vol_prediction(feats, self.models[p]['vol'])
             else:
                 vol_preds[p] = None
+            if 'rise' in self.models[p]:
+                rise_preds[p] = self.get_reg_prediction(feats, self.models[p]['rise'])
+            else:
+                rise_preds[p] = None
+            if 'drawdown' in self.models[p]:
+                drawdown_preds[p] = self.get_reg_prediction(feats, self.models[p]['drawdown'])
+            else:
+                drawdown_preds[p] = None
 
         # d1 空头阈值特殊规则
         if ai_scores['d1'] < 0 and abs(ai_scores['d1']) < self.th_down_d1:
@@ -1211,6 +1249,13 @@ class RobustSignalGenerator:
         fused_score *= ma_coeff
         details['ma_cross'] = int(np.sign(ma_coeff - 1.0))
 
+        rp_1h = rise_preds.get('1h')
+        dd_1h = drawdown_preds.get('1h')
+        if rp_1h is not None and dd_1h is not None:
+            adj = np.tanh((rp_1h - abs(dd_1h)) * 5) * 0.5
+            fused_score *= 1 + adj
+            details['rise_drawdown_adj'] = adj
+
         logic_score = fused_score
         env_score = 1.0
         risk_score = 1.0
@@ -1340,6 +1385,12 @@ class RobustSignalGenerator:
                     'vol_pred_1h': vol_preds.get('1h'),
                     'vol_pred_4h': vol_preds.get('4h'),
                     'vol_pred_d1': vol_preds.get('d1'),
+                    'rise_pred_1h': rise_preds.get('1h'),
+                    'rise_pred_4h': rise_preds.get('4h'),
+                    'rise_pred_d1': rise_preds.get('d1'),
+                    'drawdown_pred_1h': drawdown_preds.get('1h'),
+                    'drawdown_pred_4h': drawdown_preds.get('4h'),
+                    'drawdown_pred_d1': drawdown_preds.get('d1'),
                     'funding_conflicts': 0,
                     'note': 'fused_score was NaN'
                 }
@@ -1439,6 +1490,12 @@ class RobustSignalGenerator:
             'vol_pred_1h': vol_preds.get('1h'),
             'vol_pred_4h': vol_preds.get('4h'),
             'vol_pred_d1': vol_preds.get('d1'),
+            'rise_pred_1h': rise_preds.get('1h'),
+            'rise_pred_4h': rise_preds.get('4h'),
+            'rise_pred_d1': rise_preds.get('d1'),
+            'drawdown_pred_1h': drawdown_preds.get('1h'),
+            'drawdown_pred_4h': drawdown_preds.get('4h'),
+            'drawdown_pred_d1': drawdown_preds.get('d1'),
             'oi_overheat': oi_overheat,
             'oi_threshold': th_oi,
             'crowding_factor': crowding_factor,
@@ -1615,7 +1672,13 @@ class RobustSignalGenerator:
         atr_abs = max(atr_abs, 0.005 * price)
         take_profit = stop_loss = None
         if direction != 0:
-            take_profit, stop_loss = self.compute_tp_sl(price, atr_abs, direction)
+            take_profit, stop_loss = self.compute_tp_sl(
+                price,
+                atr_abs,
+                direction,
+                rise_pred=rise_preds.get('1h'),
+                drawdown_pred=drawdown_preds.get('1h'),
+            )
 
         # ===== 14. 最终返回 =====
         details['grad_dir'] = float(grad_dir)
