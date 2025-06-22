@@ -64,12 +64,7 @@ def adjust_score(
     scale = float(np.clip(scale, 0.6, 1.5))
     adjusted = score * scale
 
-    if (sentiment <= cap_threshold and score > 0) or (
-        sentiment >= 0.5 and score < 0
-    ):
-        adjusted *= cap_scale
-
-    return adjusted
+    return cap_positive(adjusted, sentiment, cap_scale, cap_threshold)
 
 
 def volume_guard(
@@ -1098,7 +1093,12 @@ class RobustSignalGenerator:
         for p in scores:
             sent = fs[p]['sentiment']
             old = scores[p]
-            scores[p] = adjust_score(old, sent, self.sentiment_alpha)
+            scores[p] = adjust_score(
+                old,
+                sent,
+                self.sentiment_alpha,
+                cap_scale=self.cap_positive_scale,
+            )
             if old != scores[p]:
                 logging.debug(
                     "sentiment %.2f extreme on %s -> score %.3f * %.2f = %.3f",
