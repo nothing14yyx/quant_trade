@@ -55,7 +55,7 @@ def test_range_guard():
         'adx_1h': 10,
         'funding_rate_1h': 0,
         'vol_ma_ratio_1h': 1.0,
-        'vol_roc_1h': 150,
+        'vol_roc_1h': int(gen.volume_guard_params['roc_high'] * 1.5),
     }
     row_4h = {
         'atr_pct_4h': 0.01,
