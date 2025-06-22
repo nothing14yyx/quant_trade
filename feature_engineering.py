@@ -33,8 +33,21 @@ from utils.feature_health import health_check, apply_health_check_df
 # Future-related columns to drop for leakage prevention
 FUTURE_COLS = [
     "future_volatility",
+    "future_volatility_1h",
+    "future_volatility_4h",
+    "future_volatility_d1",
     "future_max_rise",
+    "future_max_rise_1h",
+    "future_max_rise_4h",
+    "future_max_rise_d1",
     "future_max_drawdown",
+    "future_max_drawdown_1h",
+    "future_max_drawdown_4h",
+    "future_max_drawdown_d1",
+    "target",
+    "target_1h",
+    "target_4h",
+    "target_d1",
 ]
 
 
@@ -184,6 +197,7 @@ class FeatureEngineer:
         shift_n: int | str = "dynamic",
         vol_window: int = 24,
         n_bins: int | None = None,
+        periods: tuple[str, ...] = ("1h", "4h", "d1"),
     ) -> pd.DataFrame:
         """生成涨跌与波动率等标签，无未来数据泄漏
 
@@ -195,56 +209,77 @@ class FeatureEngineer:
             - None：等同于 "auto"
         """
 
+        period_map = {"1h": 1, "4h": 4, "d1": 24}
         results = []
         atr_col = next((c for c in df.columns if c.startswith("atr_pct")), None)
+
         for sym, g in df.groupby("symbol", group_keys=False):
             if shift_n == "dynamic" and atr_col is not None:
                 mean_atr = g[atr_col].mean()
-                n = 2 if mean_atr > 0.07 else 4
+                base_n = 2 if mean_atr > 0.07 else 4
             elif isinstance(shift_n, int):
-                n = shift_n
+                base_n = shift_n
             else:
-                n = 3
+                base_n = 3
 
             close = g["close"]
-            fut_hi = close.shift(-1).rolling(n, min_periods=1).max()
-            fut_lo = close.shift(-1).rolling(n, min_periods=1).min()
 
-            if threshold in (None, "auto"):
-                vol = (
-                    close.pct_change().abs().rolling(vol_window, min_periods=1).mean()
-                ) * 1.5
-                th_up = th_down = vol
-            elif threshold == "quantile":
-                th = (
-                    close.pct_change()
-                    .abs()
-                    .rolling(vol_window, min_periods=1)
-                    .quantile(0.8)
-                )
-                th_up = th_down = th
-            elif threshold == "balanced":
-                chg_up = fut_hi / close - 1
-                chg_down = fut_lo / close - 1
-                th_up = pd.Series(chg_up.quantile(0.55), index=g.index)
-                th_down = pd.Series(chg_down.quantile(0.45), index=g.index)
-            else:
-                th_up = th_down = pd.Series(float(threshold), index=g.index)
+            for p in periods:
+                mult = period_map.get(p, 1)
+                n = base_n * mult
+                fut_hi = close.shift(-1).rolling(n, min_periods=1).max()
+                fut_lo = close.shift(-1).rolling(n, min_periods=1).min()
 
-            up_ret = fut_hi / close - 1
-            down_ret = fut_lo / close - 1
-            target = np.where(
-                up_ret >= th_up, 2, np.where(down_ret <= th_down, 0, 1)
-            )
-            g["target"] = target.astype(float)
-            g["future_volatility"] = close.pct_change().rolling(n).std().shift(-n)
-            g["future_max_rise"] = fut_hi / close - 1
-            g["future_max_drawdown"] = fut_lo / close - 1
-            drop_cols = ["target", "future_volatility"]
-            g.loc[g.tail(n).index, drop_cols] = np.nan
+                if threshold in (None, "auto"):
+                    vol = (
+                        close.pct_change()
+                        .abs()
+                        .rolling(vol_window * mult, min_periods=1)
+                        .mean()
+                    ) * 1.5
+                    th_up = th_down = vol
+                elif threshold == "quantile":
+                    th = (
+                        close.pct_change()
+                        .abs()
+                        .rolling(vol_window * mult, min_periods=1)
+                        .quantile(0.8)
+                    )
+                    th_up = th_down = th
+                elif threshold == "balanced":
+                    chg_up = fut_hi / close - 1
+                    chg_down = fut_lo / close - 1
+                    th_up = pd.Series(chg_up.quantile(0.55), index=g.index)
+                    th_down = pd.Series(chg_down.quantile(0.45), index=g.index)
+                else:
+                    th_up = th_down = pd.Series(float(threshold), index=g.index)
+
+                up_ret = fut_hi / close - 1
+                down_ret = fut_lo / close - 1
+                target = np.where(up_ret >= th_up, 2, np.where(down_ret <= th_down, 0, 1))
+                g[f"target_{p}"] = target.astype(float)
+                g[f"future_volatility_{p}"] = close.pct_change().rolling(n).std().shift(-n)
+                g[f"future_max_rise_{p}"] = fut_hi / close - 1
+                g[f"future_max_drawdown_{p}"] = fut_lo / close - 1
+
+                drop_cols = [f"target_{p}", f"future_volatility_{p}"]
+                g.loc[g.tail(n).index, drop_cols] = np.nan
+
             results.append(g)
 
-        return pd.concat(results).sort_index()
+        out = pd.concat(results).sort_index()
+
+        rename_map = {
+            "target": "target_1h",
+            "future_volatility": "future_volatility_1h",
+            "future_max_rise": "future_max_rise_1h",
+            "future_max_drawdown": "future_max_drawdown_1h",
+        }
+        for base, new in rename_map.items():
+            if new in out.columns:
+                out[base] = out[new]
+
+        return out
 
     def get_symbols(
         self, intervals: tuple[str, str, str] = ("1h", "4h", "1d")
