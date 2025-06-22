@@ -89,9 +89,9 @@ python backtester.py --recent-days 7
 若 `position_size` 为 0，则该笔收益记为 0。
 
 从 v2.1 起，`feature_selector.py` 会在计算特征覆盖率和训练模型前，
-按 1h、4h、1d 等周期对数据下采样，只评估对应时间点的特征表现。
+按 1h、4h、d1 等周期对数据下采样，只评估对应时间点的特征表现。
 同样地，`model_trainer.py` 在训练各周期模型时也会先过滤相应的
-时间行，确保 4h 与 1d 模型仅使用自身周期的数据。
+时间行，确保 4h 与 d1 模型仅使用自身周期的数据。
 
 自 v3.2 起，可在 `utils/config.yaml` 的 `train_settings` 下新增
 `periods` 与 `tags` 两个列表，用于筛选想要训练的周期与标签，

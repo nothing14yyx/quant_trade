@@ -120,7 +120,7 @@ def select_features(
     feature_pool = {
         "1h": [c for c in all_features if "_1h" in c or c in time_cols],
         "4h": [c for c in all_features if "_4h" in c or c in time_cols],
-        "1d": [c for c in all_features if "_d1" in c or c in time_cols],
+        "d1": [c for c in all_features if "_d1" in c or c in time_cols],
     }
 
     yaml_out = {}
@@ -131,7 +131,7 @@ def select_features(
 
         if period == "4h":
             df_period = df[df["open_time"].dt.hour % 4 == 0]
-        elif period == "1d":
+        elif period == "d1":
             df_period = df[df["open_time"].dt.hour == 0]
         else:
             df_period = df
