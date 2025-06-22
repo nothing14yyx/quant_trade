@@ -37,8 +37,21 @@ TOP_N = fs_cfg.get("top_n", 30)
 # 与 FeatureEngineer 保持同步的未来字段列表，避免选入泄漏特征
 FUTURE_COLS = [
     "future_volatility",
+    "future_volatility_1h",
+    "future_volatility_4h",
+    "future_volatility_d1",
     "future_max_rise",
+    "future_max_rise_1h",
+    "future_max_rise_4h",
+    "future_max_rise_d1",
     "future_max_drawdown",
+    "future_max_drawdown_1h",
+    "future_max_drawdown_4h",
+    "future_max_drawdown_d1",
+    "target",
+    "target_1h",
+    "target_4h",
+    "target_d1",
 ]
 
 # 黑名单中默认加入 FUTURE_COLS，若 config 中已包含则去重
