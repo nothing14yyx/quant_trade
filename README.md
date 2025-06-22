@@ -64,6 +64,7 @@ pytest -q tests
 
 执行 `mysql < scripts/init_db.sql` 即可创建所需表格。
 自 v2.4 起已移除 `depth_snapshot` 表，旧用户可直接删除该表后再运行脚本。
+若数据库已存在 `features` 表，可执行 `mysql < scripts/migrate_add_feature_columns.sql` 补充最新版字段。
 
 通过 `python param_search.py --rows 10000`(可选) 调整信号权重。
 若希望同时优化 Δ-boost 参数，可加入 `--tune-delta`，例如：
