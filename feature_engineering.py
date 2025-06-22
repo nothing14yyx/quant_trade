@@ -234,11 +234,15 @@ class FeatureEngineer:
                 q_low = float(cfg.get("q_low", 0.25))
                 q_up = float(cfg.get("q_up", 0.75))
 
-                price_matrix = pd.concat([close.shift(-i) for i in range(1, base_n + 1)], axis=1)
+                future_prices = pd.concat(
+                    [close.shift(-i) for i in range(1, base_n + 1)], axis=1
+                )
                 weights = np.exp(-smooth_alpha * np.arange(base_n))
                 weights /= weights.sum()
-                fut_hi = (price_matrix * weights).max(axis=1)
-                fut_lo = (price_matrix * weights).min(axis=1)
+                # 若需要平滑处理，可在 future_prices 上先求加权平均，
+                # 但不再将权重直接乘入极值计算
+                fut_hi = future_prices.max(axis=1)
+                fut_lo = future_prices.min(axis=1)
 
                 up_ret = fut_hi / close - 1
                 down_ret = fut_lo / close - 1
