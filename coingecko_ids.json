@@ -135,5 +135,13 @@
   "LAYERUSDT": "solayer",
   "ZKJUSDT": "polyhedra-network",
   "SPKUSDT": "spark-2",
-  "TUSDT": "bitcoin"
+  "TUSDT": "bitcoin",
+  "AEROUSDT": "aerodrome-finance",
+  "OBOLUSDT": "obol-2",
+  "HIFIUSDT": "hifi-finance",
+  "NEWTUSDT": "newt",
+  "BANANAS31USDT": "banana-for-scale-2",
+  "ALTUSDT": "altlayer",
+  "IPUSDT": "story-2",
+  "XCNUSDT": "chain-2"
 }
