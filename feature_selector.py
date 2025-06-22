@@ -135,54 +135,71 @@ def select_features(target: str) -> None:
                 keep_cols.append(col)
 
         X = subset[keep_cols]
-        y = subset[target].astype(int)
+        y = subset[target]
 
-        if y.nunique() < 2:
+        is_cls = target == "target"
+        if is_cls and y.nunique() < 2:
             print("标签只有一个类别，跳过该周期。")
             continue
 
         tscv = TimeSeriesSplit(n_splits=N_SPLIT)
         shap_imp = pd.Series(0.0, index=keep_cols)
 
-        pos_weight_global = min((y == 0).sum() / max((y == 1).sum(), 1), 50)
-        lgb_params = dict(
-            objective="binary",
-            metric="auc",
-            learning_rate=0.05,
-            num_leaves=64,
-            max_depth=-1,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            n_estimators=1000,
-            random_state=42,
-            n_jobs=-1,
-            scale_pos_weight=pos_weight_global,
-        )
+        if is_cls:
+            lgb_params = dict(
+                objective="multiclass",
+                num_class=3,
+                metric="multi_logloss",
+                learning_rate=0.05,
+                num_leaves=64,
+                max_depth=-1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                n_estimators=1000,
+                random_state=42,
+                n_jobs=-1,
+            )
+        else:
+            lgb_params = dict(
+                objective="regression",
+                metric="l1",
+                learning_rate=0.05,
+                num_leaves=64,
+                max_depth=-1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                n_estimators=1000,
+                random_state=42,
+                n_jobs=-1,
+            )
 
         for fold, (tr_idx, val_idx) in enumerate(tscv.split(X, y), 1):
             X_train, y_train = X.iloc[tr_idx], y.iloc[tr_idx]
             X_val, y_val = X.iloc[val_idx], y.iloc[val_idx]
 
-            if y_train.nunique() < 2:
+            if is_cls and y_train.nunique() < 2:
                 print(f"Fold {fold} 标签只有一个类别，跳过当前折。")
                 continue
 
-            pw = min((y_train == 0).sum() / max((y_train == 1).sum(), 1), 50)
-            lgb_params["scale_pos_weight"] = pw
+            if is_cls:
+                gbm = lgb.LGBMClassifier(**lgb_params)
+                eval_metric = "multi_logloss"
+            else:
+                gbm = lgb.LGBMRegressor(**lgb_params)
+                eval_metric = "l1"
 
-            gbm = lgb.LGBMClassifier(**lgb_params)
             gbm.fit(
                 X_train,
                 y_train,
                 eval_set=[(X_val, y_val)],
-                eval_metric="auc",
+                eval_metric=eval_metric,
                 callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)],
             )
             try:
                 explainer = shap.TreeExplainer(gbm)
                 sv = explainer.shap_values(X_val)
                 if isinstance(sv, list):
-                    sv = sv[1]
+                    sv = np.mean([np.abs(s) for s in sv], axis=0)
                 shap_imp += np.abs(sv).mean(0)
             except Exception as e:
                 print("SHAP failed:", e)
