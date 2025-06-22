@@ -345,7 +345,8 @@ def train_one(
     # 时序切分 - 按 open_time 分组，避免同一时间片落入不同集合
     splits = list(forward_chain_split(data["open_time"], n_splits=5))
 
-    imputer = SimpleImputer(strategy="median")
+    # 使用 keep_empty_features=True 以避免在特征全部缺失时导致列数对不上
+    imputer = SimpleImputer(strategy="median", keep_empty_features=True)
 
     space = param_space_all.get(period, param_space_all["1h"])
     n_trials = n_trials_cfg[period] if isinstance(n_trials_cfg, dict) else n_trials_cfg
