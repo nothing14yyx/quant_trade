@@ -430,7 +430,7 @@ def train_one(
                     lgb.early_stopping(early_stop_rounds, verbose=False),
                     OffsetLightGBMPruningCallback(
                         trial,
-                        "l1" if regression else "auc",
+                        "l1" if regression else "multi_logloss",
                         report_interval=10,
                         step_offset=fold_i * n_boost_rounds,
                     ),
