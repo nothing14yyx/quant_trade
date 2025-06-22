@@ -77,12 +77,11 @@ def select_features(target: str) -> None:
         if c not in orig_cols and c not in BLACKLIST and not c.endswith("_isnan")
     ]
 
-    base_suffixes = ("_1h", "_4h", "_d1")
     time_cols = {"hour_of_day", "day_of_week"}
     feature_pool = {
-        "1h": [c for c in all_features if c.endswith(base_suffixes) or c in time_cols],
-        "4h": [c for c in all_features if c.endswith(base_suffixes) or c in time_cols],
-        "1d": [c for c in all_features if c.endswith(base_suffixes) or c in time_cols],
+        "1h": [c for c in all_features if "_1h" in c or c in time_cols],
+        "4h": [c for c in all_features if "_4h" in c or c in time_cols],
+        "1d": [c for c in all_features if "_d1" in c or c in time_cols],
     }
 
     yaml_out = {}
