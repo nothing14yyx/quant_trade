@@ -7,6 +7,7 @@ from robust_signal_generator import (
     RobustSignalGenerator,
     cap_positive,
     fused_to_risk,
+    adjust_score,
 )
 
 
@@ -96,6 +97,10 @@ def test_score_clip():
 
 def test_cap_positive():
     assert cap_positive(+0.6, -0.6, 0.4) == pytest.approx(+0.24)
+
+
+def test_adjust_score_cap_scale():
+    assert adjust_score(+0.6, -0.6, cap_scale=0.4) == pytest.approx(+0.168)
 
 
 def test_risk_cap():
