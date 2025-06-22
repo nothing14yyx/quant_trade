@@ -98,14 +98,14 @@ class Scheduler:
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.symbols = []
         self.next_symbols_refresh = datetime.now(UTC)
-        self.ic_update_limit = cfg.get("ic_update_rows", 3000)
+        self.ic_update_limit = cfg.get("ic_update_rows", 1000)
         self.ic_update_interval = cfg.get("ic_update_interval_hours", 24)
         self.next_ic_update = datetime.now(UTC)
 
     def initial_sync(self):
         """启动时检查并更新所有关键数据，然后生成一次交易信号"""
-        self.symbols = self.dl.get_top_symbols(50)
-        intervals = ["5m", "15m", "1h", "4h", "1d"]
+        self.symbols = self.dl.get_top_symbols()
+        intervals = ["5m", "15m", "1h", "4h", "d1"]
         for iv in intervals:
             self.safe_call(self.update_klines, self.symbols, iv)
         self.safe_call(self.update_oi_and_order_book, self.symbols)
@@ -332,7 +332,7 @@ class Scheduler:
                     )
                 )
             if now.hour == 0:
-                self.safe_call(self.update_klines, self.symbols, "1d")
+                self.safe_call(self.update_klines, self.symbols, "d1")
                 self.safe_call(self.update_daily_data, self.symbols)
                 self.safe_call(self.update_features)
             update_future.result()

@@ -103,7 +103,7 @@ def prepare_all_features(
 
     df1h = load_latest_klines(engine, symbol, "1h")
     df4h = load_latest_klines(engine, symbol, "4h")
-    dfd1 = load_latest_klines(engine, symbol, "1d")
+    dfd1 = load_latest_klines(engine, symbol, "d1")
     df5m = load_latest_klines(engine, symbol, "5m")
     df15m = load_latest_klines(engine, symbol, "15m")
 

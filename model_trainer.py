@@ -239,7 +239,7 @@ df = df.sort_values("open_time").reset_index(drop=True)
 feature_cols = cfg.get("feature_cols", {})
 if not feature_cols:
     raise RuntimeError("config.yaml 缺少 feature_cols 配置")
-# 将 1d 统一映射为 d1，避免重复训练
+# 将旧配置的 '1d' 统一映射为 d1，避免重复训练
 if "1d" in feature_cols:
     feature_cols["d1"] = feature_cols.pop("1d")
 
