@@ -89,9 +89,11 @@ def volume_guard(
         return score
     if ratio < ratio_low or roc < roc_low:
         return score * weak
-    if ratio_high <= ratio < 4 and roc_low < roc < 150:
+    extreme_ratio = ratio_high * 2
+    extreme_roc = roc_high * 1.5
+    if ratio_high <= ratio < extreme_ratio and roc_low < roc < extreme_roc:
         return score * 1.05
-    if ratio >= 4 or roc >= 150:
+    if ratio >= extreme_ratio or roc >= extreme_roc:
         return score * over
     return score
 
