@@ -237,8 +237,8 @@ train_settings:
   min_samples: 2000
   time_ranges: []
   ts_smote: false
-  hold_days: 3
-  periods: ["d1"]       # 例: ["4h", "d1"] 为空则训练全部
+  hold_days: 7
+  periods: ["1h", "4h","d1"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
     1h: 15
