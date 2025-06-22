@@ -209,16 +209,7 @@ class FeatureEngineer:
         classification_mode: str = "three",
         search_method: str = "hist",
     ) -> pd.DataFrame:
-        """生成涨跌与波动率等标签，无未来数据泄漏
-
-        参数 threshold_up/threshold_down 支持：
-            - float：固定阈值
-            - "auto": rolling mean 波动率 * 1.5
-            - "quantile": rolling 80% 分位波动率
-            - "balanced": 全局分位并控制正样本 45%~55%
-            - "search": 根据历史分布或互信息自动搜索
-            - None：等同于 "auto"
-        """
+        """out """
 
         period_map = {"1h": 1, "4h": 4, "d1": 24}
         results = []

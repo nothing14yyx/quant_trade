@@ -416,6 +416,12 @@ sma_5_4h
 sma_5_4h_isnan
 sma_5_d1
 sma_5_d1_isnan
+stoch_d_1h
+stoch_d_4h
+stoch_d_d1
+stoch_k_1h
+stoch_k_4h
+stoch_k_d1
 supertrend_dir_1h
 supertrend_dir_1h_isnan
 supertrend_dir_4h
@@ -474,6 +480,9 @@ volume_x
 volume_x_isnan
 volume_y
 volume_y_isnan
+vwap_1h
+vwap_4h
+vwap_d1
 willr_1h
 willr_1h_isnan
 willr_4h

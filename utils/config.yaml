@@ -52,7 +52,7 @@ feature_selector:
     - future_volatility_d1
     - future_max_rise_d1
     - future_max_drawdown_d1
-  top_n: 30             # 每周期保留前 N
+  top_n: 100             # 每周期保留前 N
 
 models:
   1h:
@@ -394,6 +394,7 @@ feature_cols:
     - rsi_diff_1h_4h
     - cg_market_cap_roc_d1
     - fg_index_d1
+
 train_settings:
   by_symbol: false
   min_rows: 500
