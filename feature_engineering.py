@@ -404,6 +404,8 @@ class FeatureEngineer:
             "symbol",
             "target",
         ] + FUTURE_COLS
+        # FUTURE_COLS 中包含 "target"，拼接后需去重，避免生成重复列
+        base_cols = list(dict.fromkeys(base_cols))
         base_cols_exist = [c for c in base_cols if c in df_all.columns]
         other_cols = [c for c in df_all.columns if c not in base_cols_exist]
         df_all = df_all[base_cols_exist + other_cols]
