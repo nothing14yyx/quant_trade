@@ -21,3 +21,7 @@ def test_volume_guard_basic():
 def test_cap_positive_and_fused_to_risk():
     assert cap_positive(+0.6, -0.6, 0.4) == pytest.approx(+0.24)
     assert fused_to_risk(0.8, 0.02, 0.01, cap=5.0) == 5.0
+
+
+def test_adjust_score_with_custom_scale():
+    assert adjust_score(+0.6, -0.6, cap_scale=0.4) == pytest.approx(+0.168)
