@@ -762,8 +762,7 @@ class RobustSignalGenerator:
         else:
             funding_raw = np.tanh(f_rate * 4000)
         funding_raw += np.tanh(f_anom * 50)
-
-        return {
+        scores = {
             'trend': np.tanh(trend_raw),
             'momentum': np.tanh(momentum_raw),
             'volatility': np.tanh(volatility_raw),
@@ -771,6 +770,19 @@ class RobustSignalGenerator:
             'sentiment': np.tanh(sentiment_raw),
             'funding': np.tanh(funding_raw),
         }
+
+        pos = safe(f'channel_pos_{period}', 0.5)
+        for k, v in scores.items():
+            if pos > 1 and v > 0:
+                scores[k] = v * 1.2
+            elif pos < 0 and v < 0:
+                scores[k] = v * 1.2
+            elif pos > 0.9 and v > 0:
+                scores[k] = v * 0.8
+            elif pos < 0.1 and v < 0:
+                scores[k] = v * 0.8
+
+        return scores
 
     def update_ic_scores(self, df, *, window=None, group_by=None, time_col="open_time"):
         """根据历史数据计算并更新各因子的 IC 分数

@@ -3,6 +3,7 @@
 - day_of_week
 - hour_of_day
 - hv_7d_1h
+- channel_pos_1h
 - hv_14d_1h
 - macd_hist_diff_1h_d1
 - ma_ratio_1h_d1
@@ -76,6 +77,7 @@
 - atr_pct_ratio_1h_4h
 - rsi_diff_4h_d1
 - hv_7d_4h
+- channel_pos_4h
 - hv_14d_4h
 - hv_30d_4h
 - pct_chg6_4h
@@ -144,6 +146,7 @@ d1:
 - ma_ratio_4h_d1
 - ema_diff_d1
 - hv_7d_d1
+- channel_pos_d1
 - rsi_diff_1h_d1
 - pct_chg3_d1
 - cg_total_volume_roc_d1

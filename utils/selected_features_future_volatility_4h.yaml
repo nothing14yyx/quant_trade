@@ -79,6 +79,7 @@
 - vol_breakout_4h
 - donchian_delta_4h
 - hv_7d_4h
+- channel_pos_4h
 - rsi_diff_4h_d1
 - vol_ratio_1h_4h
 - close_spread_1h_4h

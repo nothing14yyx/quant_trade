@@ -80,6 +80,7 @@
 - ichimoku_base_4h
 - macd_hist_4h_mul_bb_width_1h
 - hv_7d_4h
+- channel_pos_4h
 - atr_pct_ratio_1h_4h
 - stoch_d_4h
 - hv_30d_4h
