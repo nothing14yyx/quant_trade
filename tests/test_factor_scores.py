@@ -64,6 +64,15 @@ def test_new_features_affect_scores():
         'funding_rate_anom_1h': 0,
         'ichimoku_cloud_thickness_1h': 0.01,
         'vwap_1h': 100,
+        'kc_perc_1h': 0.5,
+        'kc_width_pct_chg_1h': 0,
+        'donchian_perc_1h': 0.5,
+        'money_flow_ratio_1h': 1,
+        'skewness_1h': 0,
+        'kurtosis_1h': 0,
+        'bid_ask_spread_pct_1h': 0,
+        'ichimoku_base_1h': 100,
+        'ichimoku_conversion_1h': 100,
         'close': 100,
         'rsi_diff_1h_4h': 0,
         'rsi_diff_1h_d1': 0,
@@ -85,6 +94,19 @@ def test_new_features_affect_scores():
     higher_vwap['close'] = 105
     assert rsg.get_factor_scores(higher_vwap, '1h')['trend'] > base['trend']
 
+
+    high_kc = base_feats.copy()
+    high_kc['kc_perc_1h'] = 0.8
+    assert rsg.get_factor_scores(high_kc, '1h')['trend'] > base['trend']
+
+    wide_vol = base_feats.copy()
+    wide_vol['kc_width_pct_chg_1h'] = 0.5
+    assert rsg.get_factor_scores(wide_vol, '1h')['volatility'] > base['volatility']
+
+    strong_flow = base_feats.copy()
+    strong_flow['money_flow_ratio_1h'] = 3
+    assert rsg.get_factor_scores(strong_flow, '1h')['volume'] > base['volume']
+
     near_top = base_feats.copy()
     near_top['channel_pos_1h'] = 0.95
     assert rsg.get_factor_scores(near_top, '1h')['trend'] < base['trend']
@@ -92,5 +114,6 @@ def test_new_features_affect_scores():
     breakout_up = base_feats.copy()
     breakout_up['channel_pos_1h'] = 1.05
     assert rsg.get_factor_scores(breakout_up, '1h')['trend'] > base['trend']
+
 
 
