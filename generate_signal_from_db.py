@@ -72,6 +72,8 @@ def prepare_features(
     """计算单周期特征并返回(缩放后的dict, 原始dict)"""
 
     feats = calc_features_raw(df.set_index("open_time"), period)
+    if len(feats) <= offset:
+        raise IndexError("insufficient data for requested offset")
     raw = feats.iloc[-1 - offset]
 
     # funding_rate 列默认无周期后缀，这里补充生成 funding_rate_{period}
@@ -127,6 +129,8 @@ def prepare_all_features(
     merged["hour_of_day"] = merged["open_time"].dt.hour.astype(float)
     merged["day_of_week"] = merged["open_time"].dt.dayofweek.astype(float)
 
+    if len(merged) <= offset:
+        raise IndexError("insufficient cross period data for requested offset")
     cross_last = merged.iloc[[-1 - offset]].copy()
     cross_last["symbol"] = symbol
     cross_scaled = apply_robust_z_with_params(cross_last, params).drop(columns=["symbol"]).iloc[0]
