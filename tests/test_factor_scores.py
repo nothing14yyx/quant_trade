@@ -77,6 +77,7 @@ def test_new_features_affect_scores():
         'rsi_diff_1h_4h': 0,
         'rsi_diff_1h_d1': 0,
         'rsi_diff_4h_d1': 0,
+        'channel_pos_1h': 0.5,
     }
 
     base = rsg.get_factor_scores(base_feats, '1h')
@@ -93,6 +94,7 @@ def test_new_features_affect_scores():
     higher_vwap['close'] = 105
     assert rsg.get_factor_scores(higher_vwap, '1h')['trend'] > base['trend']
 
+
     high_kc = base_feats.copy()
     high_kc['kc_perc_1h'] = 0.8
     assert rsg.get_factor_scores(high_kc, '1h')['trend'] > base['trend']
@@ -104,5 +106,14 @@ def test_new_features_affect_scores():
     strong_flow = base_feats.copy()
     strong_flow['money_flow_ratio_1h'] = 3
     assert rsg.get_factor_scores(strong_flow, '1h')['volume'] > base['volume']
+
+    near_top = base_feats.copy()
+    near_top['channel_pos_1h'] = 0.95
+    assert rsg.get_factor_scores(near_top, '1h')['trend'] < base['trend']
+
+    breakout_up = base_feats.copy()
+    breakout_up['channel_pos_1h'] = 1.05
+    assert rsg.get_factor_scores(breakout_up, '1h')['trend'] > base['trend']
+
 
 
