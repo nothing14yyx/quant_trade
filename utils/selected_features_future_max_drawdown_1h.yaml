@@ -11,6 +11,7 @@
 - ma_ratio_1h_d1
 - macd_hist_diff_1h_d1
 - hv_7d_1h
+- channel_pos_1h
 - vol_breakout_1h
 - rsi_diff_1h_4h
 - cg_market_cap_roc_1h

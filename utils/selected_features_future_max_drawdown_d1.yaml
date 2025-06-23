@@ -144,6 +144,7 @@ d1:
 - atr_pct_d1
 - ichimoku_cloud_thickness_d1
 - hv_7d_d1
+- channel_pos_d1
 - vol_breakout_d1
 - donchian_delta_d1
 - obv_d1
