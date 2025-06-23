@@ -700,8 +700,6 @@ class RobustSignalGenerator:
             direction = 0
             pos_size = 0.0
 
-        if oi_overheat:
-            pos_size *= 0.7
 
         if vol_p is not None:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
@@ -1666,6 +1664,7 @@ class RobustSignalGenerator:
             reversal=bool(rev_dir),
             history_scores=cache["history_scores"],
         )
+        base_th = max(base_th, 0.35)
         if rev_dir != 0:
             fused_score += rev_boost * rev_dir
             self._cooldown = 0
@@ -1780,6 +1779,28 @@ class RobustSignalGenerator:
         # 阶梯退出逻辑
         prev_vote = getattr(self, '_prev_vote', 0)
 
+        # 多周期趋势与动量方向一致性过滤
+        align_ok = True
+        if direction != 0:
+            for p in ('1h', '4h', 'd1'):
+                if (
+                    np.sign(fs[p]['trend']) != direction
+                    or np.sign(fs[p]['momentum']) != direction
+                ):
+                    align_ok = False
+                    break
+        if not align_ok:
+            direction = 0
+
+        # 区间突破检查（仅在震荡市）
+        if direction != 0 and regime == 'range':
+            ch_pos = raw_f1h.get('channel_pos_1h', features_1h.get('channel_pos_1h'))
+            if (direction == 1 and (ch_pos is None or ch_pos <= 1)) or (
+                direction == -1 and (ch_pos is None or ch_pos >= 0)
+            ):
+                direction = 0
+
+
         # ===== 12. 仓位大小统一计算 =====
         base_coeff = (
             self.pos_coeff_range if regime == "range" else self.pos_coeff_trend
@@ -1816,6 +1837,10 @@ class RobustSignalGenerator:
             ),
         )
 
+        if oi_overheat:
+            pos_size *= 0.5
+            direction = 0
+
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
         if raw_features_4h is not None and 'atr_pct_4h' in raw_features_4h:
@@ -1849,6 +1874,8 @@ class RobustSignalGenerator:
         filters = self.cfg.get('signal_filters', {})
         confidence_vote = filters.get('confidence_vote', 0.33)
         if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
+            direction, pos_size = 0, 0.0
+        if abs(vote) < 8:
             direction, pos_size = 0, 0.0
 
         final_details = {
