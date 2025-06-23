@@ -205,8 +205,13 @@ def run_param_search(
         param_grid = {
             "history_window": [300, 500],
             "th_base": [0.10, 0.12],
-            "ai_w": [0.15, 0.25],
-            "trend_w": [0.2, 0.3],
+            "ai_w": [0.1, 0.3],
+            "trend_w": [0.1, 0.3],
+            "momentum_w": [0.1, 0.3],
+            "volatility_w": [0.1, 0.3],
+            "volume_w": [0.05, 0.2],
+            "sentiment_w": [0.05, 0.2],
+            "funding_w": [0.05, 0.2],
         }
         if tune_delta:
             param_grid.update({
@@ -220,47 +225,62 @@ def run_param_search(
         grid = list(ParameterGrid(param_grid))
 
         def eval_params(params: dict) -> tuple[float, dict, float, float]:
-            base_weights = {
-                "ai": params["ai_w"],
-                "trend": params["trend_w"],
-                "momentum": 0.2,
-                "volatility": 0.2,
-                "volume": 0.1,
-                "sentiment": 0.05,
-                "funding": 0.05,
-            }
-            th_params = {"base": params["th_base"]}
+            def _get(v):
+                return v[0] if isinstance(v, (list, tuple, np.ndarray)) else v
+            keys = [
+                "ai",
+                "trend",
+                "momentum",
+                "volatility",
+                "volume",
+                "sentiment",
+                "funding",
+            ]
+            weights = np.array(
+                [
+                    _get(params["ai_w"]),
+                    _get(params["trend_w"]),
+                    _get(params["momentum_w"]),
+                    _get(params["volatility_w"]),
+                    _get(params["volume_w"]),
+                    _get(params["sentiment_w"]),
+                    _get(params["funding_w"]),
+                ]
+            )
+            weights /= weights.sum() if weights.sum() != 0 else 1.0
+            base_weights = dict(zip(keys, weights))
+            th_params = {"base": _get(params["th_base"])}
             delta_params = base_delta.copy()
             if tune_delta:
                 delta_params["rsi"] = (
                     delta_params["rsi"][0],
                     delta_params["rsi"][1],
-                    params["rsi_inc"],
+                    _get(params["rsi_inc"]),
                 )
                 delta_params["macd_hist"] = (
                     delta_params["macd_hist"][0],
                     delta_params["macd_hist"][1],
-                    params["macd_hist_inc"],
+                    _get(params["macd_hist_inc"]),
                 )
                 delta_params["ema_diff"] = (
                     delta_params["ema_diff"][0],
                     delta_params["ema_diff"][1],
-                    params["ema_diff_inc"],
+                    _get(params["ema_diff_inc"]),
                 )
                 delta_params["atr_pct"] = (
                     delta_params["atr_pct"][0],
                     delta_params["atr_pct"][1],
-                    params["atr_pct_inc"],
+                    _get(params["atr_pct_inc"]),
                 )
                 delta_params["vol_ma_ratio"] = (
                     delta_params["vol_ma_ratio"][0],
                     delta_params["vol_ma_ratio"][1],
-                    params["vol_ma_ratio_inc"],
+                    _get(params["vol_ma_ratio_inc"]),
                 )
                 delta_params["funding_rate"] = (
                     delta_params["funding_rate"][0],
                     delta_params["funding_rate"][1],
-                    params["funding_rate_inc"],
+                    _get(params["funding_rate_inc"]),
                 )
             sg_iter = RobustSignalGenerator(
                 model_paths=convert_model_paths(MODEL_PATHS),
@@ -272,7 +292,7 @@ def run_param_search(
             tot_ret, sharpe = run_single_backtest(
                 df,
                 base_weights,
-                params["history_window"],
+                _get(params["history_window"]),
                 th_params,
                 cached_ic,
                 sg_iter,
@@ -297,15 +317,28 @@ def run_param_search(
         print("best params:", best, "best_sharpe:", best_metric)
     else:
         def objective(trial: optuna.Trial) -> float:
-            base_weights = {
-                "ai": trial.suggest_float("ai_w", 0.1, 0.3),
-                "trend": trial.suggest_float("trend_w", 0.1, 0.3),
-                "momentum": trial.suggest_float("momentum_w", 0.1, 0.3),
-                "volatility": 0.2,
-                "volume": 0.1,
-                "sentiment": 0.05,
-                "funding": 0.05,
-            }
+            keys = [
+                "ai",
+                "trend",
+                "momentum",
+                "volatility",
+                "volume",
+                "sentiment",
+                "funding",
+            ]
+            weights = np.array(
+                [
+                    trial.suggest_float("ai_w", 0.1, 0.3),
+                    trial.suggest_float("trend_w", 0.1, 0.3),
+                    trial.suggest_float("momentum_w", 0.1, 0.3),
+                    trial.suggest_float("volatility_w", 0.1, 0.3),
+                    trial.suggest_float("volume_w", 0.05, 0.2),
+                    trial.suggest_float("sentiment_w", 0.05, 0.2),
+                    trial.suggest_float("funding_w", 0.05, 0.2),
+                ]
+            )
+            weights /= weights.sum() if weights.sum() != 0 else 1.0
+            base_weights = dict(zip(keys, weights))
             th_params = {
                 "base": trial.suggest_float("th_base", 0.06, 0.15),
             }
