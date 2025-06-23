@@ -57,7 +57,7 @@ def test_vol_roc_guard():
         'funding': 0,
     }
     rsg.combine_score = lambda ai, fs, weights=None: ai
-    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {
         '1h': {'up': None, 'down': None},
