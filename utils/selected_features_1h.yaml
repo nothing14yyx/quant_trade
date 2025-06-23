@@ -3,6 +3,7 @@
 - hour_of_day
 - day_of_week
 - hv_7d_1h
+- channel_pos_1h
 - rsi_diff_1h_d1
 - atr_pct_ratio_1h_4h
 - vol_ma_ratio_long_1h
@@ -75,6 +76,7 @@
 - day_of_week
 - close_spread_1h_4h
 - hv_7d_4h
+- channel_pos_4h
 - vol_ratio_1h_4h
 - rsi_diff_4h_d1
 - hv_14d_4h
@@ -140,6 +142,7 @@ d1:
 - close_spread_1h_d1
 - vol_ma_ratio_long_d1
 - hv_7d_d1
+- channel_pos_d1
 - ema_diff_d1
 - vol_ratio_4h_d1
 - pct_chg3_d1
