@@ -371,6 +371,11 @@ vote_system:
   strong_min: 3
   conf_min: 0.25
   ai_dir_eps: 0.04
+vote_weights:
+  ob: 4
+  short_mom: 2
+  ai: 3
+  vol_breakout: 1
 
 # === 调参选项 ===
 sentiment_alpha: 0.5
