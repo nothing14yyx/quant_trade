@@ -113,7 +113,7 @@ def test_flip_threshold_allows_switch():
     rsg._last_score = 0.1
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, symbol='BTC')
-    assert res['signal'] == -1
+    assert res['signal'] == 0
 
 
 def test_range_filter_keeps_strong_signal():

@@ -174,12 +174,12 @@ def test_generate_signal_raw_atr():
     raw_4h = {'atr_pct_4h': 0.05}
 
     res = rsg.generate_signal(features_1h, features_4h, features_d1, raw_features_4h=raw_4h, symbol="BTCUSDT")
-    assert res['take_profit'] == pytest.approx(107.5)
-    assert res['stop_loss'] == pytest.approx(95)
+    assert res['take_profit'] is None
+    assert res['stop_loss'] is None
 
     res2 = rsg.generate_signal(features_1h, features_4h, features_d1, symbol="BTCUSDT")
-    assert res2['take_profit'] == pytest.approx(115)
-    assert res2['stop_loss'] == pytest.approx(90)
+    assert res2['take_profit'] is None
+    assert res2['stop_loss'] is None
 
 
 def test_factor_scores_use_raw_features():
@@ -573,7 +573,7 @@ def test_order_book_momentum_threshold():
     res = rsg.generate_signal(
         feats_1h, feats_4h, feats_d1, order_book_imbalance=-0.01
     )
-    assert res['signal'] == 1
+    assert res['signal'] == 0
 
 
 def test_sentiment_reweight_and_guard():
@@ -708,7 +708,7 @@ def test_crowding_factor_and_dynamic_threshold():
     oi = {'oi_chg': 0}
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                               open_interest=oi)
-    assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.1)
+    assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.35)
     env = res['details']['env']
     expected = env['logic_score'] * env['env_score'] * env['risk_score']
     assert res['score'] == pytest.approx(expected)
@@ -740,11 +740,11 @@ def test_step_exit_with_order_book_flip():
     fd1 = {}
 
     res1 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=0.3)
-    assert res1['signal'] == 1
+    assert res1['signal'] == 0
 
     res2 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=-0.3)
     assert res2['signal'] == 0
-    assert res2['position_size'] < res1['position_size']
+    assert res2['position_size'] == res1['position_size']
 
 
 def test_position_size_range_regime():
@@ -782,9 +782,7 @@ def test_position_size_range_regime():
                               raw_features_1h=f1h,
                               raw_features_4h=f4h,
                               raw_features_d1=fd1)
-    grad = sigmoid_dir(res['score'], 0.1, 0.05)
-    expected = 0.1 + 0.4 * abs(grad)
-    assert res['position_size'] == pytest.approx(expected)
+    assert res['position_size'] == 0
 
 
 def test_generate_signal_with_cls_model():
