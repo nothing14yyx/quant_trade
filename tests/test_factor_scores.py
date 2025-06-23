@@ -71,6 +71,22 @@ def test_new_features_affect_scores():
         'skewness_1h': 0,
         'kurtosis_1h': 0,
         'bid_ask_spread_pct_1h': 0,
+        'sma_10_1h': 100,
+        'sma_20_1h': 100,
+        'stoch_k_1h': 50,
+        'stoch_d_1h': 50,
+        'macd_signal_1h': 0,
+        'pct_chg1_1h': 0,
+        'pct_chg3_1h': 0,
+        'pct_chg6_1h': 0,
+        'cci_1h': 0,
+        'cci_delta_1h': 0,
+        'atr_chg_1h': 0,
+        'bb_width_chg_1h': 0,
+        'vol_ma_ratio_long_1h': 1,
+        'cg_total_volume_roc_1h': 0,
+        'price_ratio_cg_1h': 1,
+        'bid_ask_imbalance': 0,
         'ichimoku_base_1h': 100,
         'ichimoku_conversion_1h': 100,
         'close': 100,
@@ -114,6 +130,30 @@ def test_new_features_affect_scores():
     breakout_up = base_feats.copy()
     breakout_up['channel_pos_1h'] = 1.05
     assert rsg.get_factor_scores(breakout_up, '1h')['trend'] > base['trend']
+
+    stoch_up = base_feats.copy()
+    stoch_up['stoch_k_1h'] = 80
+    assert rsg.get_factor_scores(stoch_up, '1h')['momentum'] > base['momentum']
+
+    pct_up = base_feats.copy()
+    pct_up['pct_chg1_1h'] = 0.03
+    assert rsg.get_factor_scores(pct_up, '1h')['momentum'] > base['momentum']
+
+    atr_jump = base_feats.copy()
+    atr_jump['atr_chg_1h'] = 0.01
+    assert rsg.get_factor_scores(atr_jump, '1h')['volatility'] > base['volatility']
+
+    vol_long = base_feats.copy()
+    vol_long['vol_ma_ratio_long_1h'] = 2
+    assert rsg.get_factor_scores(vol_long, '1h')['volume'] > base['volume']
+
+    price_ratio = base_feats.copy()
+    price_ratio['price_ratio_cg_1h'] = 1.1
+    assert rsg.get_factor_scores(price_ratio, '1h')['sentiment'] > base['sentiment']
+
+    imbalance = base_feats.copy()
+    imbalance['bid_ask_imbalance'] = 0.3
+    assert rsg.get_factor_scores(imbalance, '1h')['volume'] > base['volume']
 
 
 
