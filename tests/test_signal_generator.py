@@ -182,8 +182,8 @@ def test_generate_signal_raw_atr():
     assert res2['stop_loss'] is None
 
 
-def test_factor_scores_use_raw_features():
-    """确保提供 raw_features_* 时多因子计算使用原始数据"""
+def test_factor_scores_use_normalized_features():
+    """确保多因子评分始终使用标准化后的特征"""
     rsg = make_dummy_rsg()
 
     captured = {}
@@ -211,14 +211,18 @@ def test_factor_scores_use_raw_features():
     raw_4h = {'atr_pct_4h': 0.2}
     raw_d1 = {'atr_pct_d1': 0.2}
 
-    rsg.generate_signal(feats_1h, feats_4h, feats_d1,
-                        raw_features_1h=raw_1h,
-                        raw_features_4h=raw_4h,
-                        raw_features_d1=raw_d1)
+    rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=raw_1h,
+        raw_features_4h=raw_4h,
+        raw_features_d1=raw_d1,
+    )
 
-    assert captured['1h'] == raw_1h
-    assert captured['4h'] == raw_4h
-    assert captured['d1'] == raw_d1
+    assert captured['1h'] == feats_1h
+    assert captured['4h'] == feats_4h
+    assert captured['d1'] == feats_d1
 
 
 def test_update_ic_scores_window_group(monkeypatch):
