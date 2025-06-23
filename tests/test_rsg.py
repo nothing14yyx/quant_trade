@@ -102,7 +102,7 @@ def test_flip_threshold_allows_switch():
     rsg.get_ai_score = lambda f, u, d: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: -0.75
-    rsg.dynamic_threshold = lambda *a, **k: 0.6
+    rsg.dynamic_threshold = lambda *a, **k: (0.6, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None}, '4h': {'up': None, 'down': None}, 'd1': {'up': None, 'down': None}}
 
@@ -122,7 +122,7 @@ def test_range_filter_keeps_strong_signal():
     rsg.get_ai_score = lambda f, u, d: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: 0.6
-    rsg.dynamic_threshold = lambda *a, **k: 0.5
+    rsg.dynamic_threshold = lambda *a, **k: (0.5, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None}, '4h': {'up': None, 'down': None}, 'd1': {'up': None, 'down': None}}
 
