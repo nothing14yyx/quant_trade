@@ -104,7 +104,7 @@ class Scheduler:
 
     def initial_sync(self):
         """启动时检查并更新所有关键数据，然后生成一次交易信号"""
-        self.symbols = self.dl.get_top_symbols()
+        self.symbols = self.dl.get_top_symbols(50)
         intervals = ["5m", "15m", "1h", "4h", "d1"]
         for iv in intervals:
             self.safe_call(self.update_klines, self.symbols, iv)
