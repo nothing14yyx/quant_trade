@@ -68,6 +68,7 @@ def test_new_features_affect_scores():
         'rsi_diff_1h_4h': 0,
         'rsi_diff_1h_d1': 0,
         'rsi_diff_4h_d1': 0,
+        'channel_pos_1h': 0.5,
     }
 
     base = rsg.get_factor_scores(base_feats, '1h')
@@ -83,5 +84,13 @@ def test_new_features_affect_scores():
     higher_vwap = base_feats.copy()
     higher_vwap['close'] = 105
     assert rsg.get_factor_scores(higher_vwap, '1h')['trend'] > base['trend']
+
+    near_top = base_feats.copy()
+    near_top['channel_pos_1h'] = 0.95
+    assert rsg.get_factor_scores(near_top, '1h')['trend'] < base['trend']
+
+    breakout_up = base_feats.copy()
+    breakout_up['channel_pos_1h'] = 1.05
+    assert rsg.get_factor_scores(breakout_up, '1h')['trend'] > base['trend']
 
 

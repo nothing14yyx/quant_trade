@@ -71,6 +71,30 @@ def calc_mfi_np(high, low, close, volume, window=14):
     return ratio, mfi
 
 
+def calc_price_channel(high: pd.Series, low: pd.Series, close: pd.Series, *, window: int = 20) -> pd.DataFrame:
+    """计算价格通道及位置
+
+    Parameters
+    ----------
+    high, low, close : pd.Series
+        价格序列。
+    window : int, default 20
+        通道计算窗口，默认使用 20 根K线。
+
+    Returns
+    -------
+    pd.DataFrame
+        包含 ``upper``、``lower``、``channel_pos`` 三列。
+    """
+
+    upper = high.rolling(window).max()
+    lower = low.rolling(window).min()
+    pos = (close - lower) / (upper - lower).replace(0, np.nan)
+    df = pd.DataFrame({"upper": upper, "lower": lower, "channel_pos": pos})
+    df.index = close.index
+    return df
+
+
 def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats = pd.DataFrame(index=df.index)
     for col in ["open", "high", "low", "close", "volume"]:
@@ -271,6 +295,10 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         window = d * bars_per_day
         hv = log_ret.rolling(window, min_periods=2).std() * np.sqrt(bars_per_day)
         assign_safe(feats, f"hv_{d}d_{period}", hv)
+
+    # 价格通道位置
+    channel = calc_price_channel(feats["high"], feats["low"], feats["close"], window=20)
+    assign_safe(feats, f"channel_pos_{period}", channel["channel_pos"])
 
     # BTC / ETH 短期相关性
     def _find_price(col_candidates):
