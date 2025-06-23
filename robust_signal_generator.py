@@ -234,6 +234,7 @@ class RobustSignalGenerator:
         )
 
         filters_cfg = cfg.get("signal_filters", {})
+        # 将默认 min_vote 从 8 调整为 5，confidence_vote 从 0.33 调整为 0.20
         self.signal_filters = {
             "min_vote": filters_cfg.get("min_vote", 5),
             "confidence_vote": filters_cfg.get("confidence_vote", 0.2),
@@ -1785,7 +1786,7 @@ class RobustSignalGenerator:
         # 阶梯退出逻辑
         prev_vote = getattr(self, '_prev_vote', 0)
 
-        # 多周期趋势与动量方向一致性过滤：至少两周期同向
+        # —— 保留“至少两周期同向”逻辑，不变 ——
         if direction != 0:
             align_count = 0
             for p in ('1h', '4h', 'd1'):
@@ -1797,13 +1798,7 @@ class RobustSignalGenerator:
             if align_count < 2:
                 direction = 0
 
-        # 区间突破检查暂时停用
-        # if direction != 0 and regime == 'range':
-        #     ch_pos = raw_f1h.get('channel_pos_1h', features_1h.get('channel_pos_1h'))
-        #     if (direction == 1 and (ch_pos is None or ch_pos <= 1)) or (
-        #         direction == -1 and (ch_pos is None or ch_pos >= 0)
-        #     ):
-        #         direction = 0
+        # 移除“range 时的区间突破检查”，避免趋势市中被误杀
 
 
         # ===== 12. 仓位大小统一计算 =====
@@ -1881,6 +1876,7 @@ class RobustSignalGenerator:
         if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
             direction, pos_size = 0, 0.0
             take_profit = stop_loss = None
+        # 放宽 vote 阈值过滤：从 8 → 5
         min_vote = filters.get('min_vote', 5)
         if abs(vote) < min_vote:
             direction, pos_size = 0, 0.0
