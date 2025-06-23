@@ -27,9 +27,15 @@ def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
 
     for i in range(len(df) - 1):
         feats = {c: df.at[i, c] for c in FEATURE_COLS_1H if c in df}
-        ai_score = rsg.get_ai_score(
-            feats, rsg.models["1h"]["up"], rsg.models["1h"]["down"]
-        )
+        models_1h = rsg.models.get("1h", {})
+        if "up" in models_1h and "down" in models_1h:
+            ai_score = rsg.get_ai_score(
+                feats, models_1h["up"], models_1h["down"]
+            )
+        elif "cls" in models_1h:
+            ai_score = rsg.get_ai_score_cls(feats, models_1h["cls"])
+        else:
+            ai_score = 0.0
         factors = rsg.get_factor_scores(feats, "1h")
         data = {"ai": ai_score, **factors}
         for k in scores:
