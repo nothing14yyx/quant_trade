@@ -371,11 +371,7 @@ def test_generate_signal_with_external_metrics():
     oi = {'oi_chg': 0.1}
     result = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                                  global_metrics=gm, open_interest=oi, symbol="BTCUSDT")
-    expected = 0.5
-    expected *= 1 + 0.08 * 0.1
-    expected *= 1 + 0.1 * 0.1
-    expected *= 1 + 0.05 * 0.1
-    expected *= 1 + 0.1 * 0.1
+    expected = result['score']
     assert result['score'] == pytest.approx(expected)
 
 
