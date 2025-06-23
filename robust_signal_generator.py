@@ -644,10 +644,12 @@ class RobustSignalGenerator:
         vol_p: float | None,
         risk_score: float,
         crowding_factor: float,
-        exit_mult: float,
         cfg_th_sig: dict,
         scores: dict,
         direction: int,
+        vote: float,
+        prev_vote: float,
+        last_signal: int,
     ) -> tuple[float, int]:
         """统一计算仓位大小并处理方向修正
 
@@ -657,9 +659,35 @@ class RobustSignalGenerator:
             已经归一化后的交易方向（-1, 0, 1）。
         crowding_factor : float
             来自极端行情保护的拥挤度系数。
-        exit_mult : float
-            退出信号的幅度系数，用于平滑减仓。
         """
+        with self._lock:
+            exit_lag = self._exit_lag
+
+        exit_mult = 1.0
+        if direction == last_signal != 0:
+            if direction == 1:
+                if prev_vote > 4 and 1 <= vote <= 4:
+                    exit_mult = 0.5
+                    exit_lag = 0
+                elif vote <= 0:
+                    exit_lag += 1
+                    exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
+                else:
+                    exit_lag = 0
+            elif direction == -1:
+                if prev_vote < -4 and -4 <= vote <= -1:
+                    exit_mult = 0.5
+                    exit_lag = 0
+                elif vote >= 0:
+                    exit_lag += 1
+                    exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
+                else:
+                    exit_lag = 0
+        else:
+            exit_lag = 0
+
+        with self._lock:
+            self._exit_lag = exit_lag
 
         tier = 0.1 + base_coeff * abs(grad_dir)
         pos_size = tier * confidence_factor * exit_mult
@@ -999,7 +1027,7 @@ class RobustSignalGenerator:
         reversal=False,
         history_scores=None,
     ):
-        """根据历史波动、趋势强度和市场情绪动态计算阈值"""
+        """根据历史波动、趋势强度和市场情绪动态计算阈值并返回额外的反转加成"""
 
         import numpy as np
 
@@ -1061,12 +1089,15 @@ class RobustSignalGenerator:
         elif regime == "range":
             th -= 0.020
 
+        rev_boost = self.signal_threshold_cfg.get('rev_boost', 0.30)
+
         if reversal:
             th *= self.signal_threshold_cfg.get('rev_th_mult', 0.60)
 
         if low_base is None:
             low_base = self.signal_threshold_cfg.get('low_base', 0.10)
-        return max(th, low_base)
+
+        return max(th, low_base), rev_boost
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """按固定顺序加权合并各因子得分"""
@@ -1596,7 +1627,7 @@ class RobustSignalGenerator:
 
         regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
         cfg_th = self.signal_threshold_cfg
-        base_th = self.dynamic_threshold(
+        base_th, rev_boost = self.dynamic_threshold(
             atr_1h,
             adx_1h,
             funding_1h,
@@ -1614,7 +1645,7 @@ class RobustSignalGenerator:
             history_scores=cache["history_scores"],
         )
         if rev_dir != 0:
-            fused_score += cfg_th.get('rev_boost', 0.25) * rev_dir
+            fused_score += rev_boost * rev_dir
             detail_data['reversal_flag'] = rev_dir
             self._cooldown = 0
         detail_data['regime'] = regime
@@ -1662,38 +1693,11 @@ class RobustSignalGenerator:
         with self._lock:
             cache["history_scores"].append(fused_score)
 
-        detail_data.update({
-            'ai': {'1h': ai_scores['1h'], '4h': ai_scores['4h'], 'd1': ai_scores['d1']},
-            'factors': {'1h': fs['1h'], '4h': fs['4h'], 'd1': fs['d1']},
-            'scores': {'1h': score_1h, '4h': score_4h, 'd1': score_d1},
-            'strong_confirm_4h': strong_confirm_4h,
-            'consensus_all': consensus_all,
-            'consensus_14': consensus_14,
-            'consensus_4d1': consensus_4d1,
-            'vol_pred': {'1h': vol_preds.get('1h'), '4h': vol_preds.get('4h'), 'd1': vol_preds.get('d1')},
-            'rise_pred': {'1h': rise_preds.get('1h'), '4h': rise_preds.get('4h'), 'd1': rise_preds.get('d1')},
-            'drawdown_pred': {
-                '1h': drawdown_preds.get('1h'),
-                '4h': drawdown_preds.get('4h'),
-                'd1': drawdown_preds.get('d1'),
-            },
-            'oi_overheat': oi_overheat,
-            'oi_threshold': th_oi,
-            'crowding_factor': crowding_factor,
-            'funding_conflicts': funding_conflicts,
-            'confidence': confidence,
-            'short_momentum': short_mom,
-            'ob_imbalance': ob_imb,
-            'logic_score': logic_score,
-            'env_score': env_score,
-            'risk_score': risk_score,
-        })
+        # 细节信息留待方法末统一构建
 
 
 
 
-        if ob_imb is not None:
-            detail_data['order_book_imbalance'] = float(ob_imb)
         # ---- 新增：方向确认与多因子投票 ----
         vol_ratio_1h_4h = raw_f1h.get('vol_ratio_1h_4h')
         if vol_ratio_1h_4h is None and raw_f4h is not None:
@@ -1736,10 +1740,9 @@ class RobustSignalGenerator:
 
         # ====== 票数置信度衰减 ======
         strong_min = self.vote_params['strong_min']
-        conf_min = self.vote_params['conf_min']
-        conf_vote = sigmoid_confidence(vote, strong_min, conf_min)
+        conf_vote = sigmoid_confidence(vote, strong_min, 1)
         if abs(vote) >= strong_min:
-            fused_score *= max(1.0, conf_vote)
+            fused_score *= max(1, conf_vote)
         detail_data['vote']['confidence'] = conf_vote
 
         cfg_th_sig = self.signal_threshold_cfg
@@ -1762,31 +1765,6 @@ class RobustSignalGenerator:
 
         # 阶梯退出逻辑
         prev_vote = getattr(self, '_prev_vote', 0)
-        exit_sig = direction
-        if direction == self._last_signal != 0:
-            if direction == 1:
-                if prev_vote > 4 and 1 <= vote <= 4:
-                    exit_sig = 0.5
-                    self._exit_lag = 0
-                elif vote <= 0:
-                    self._exit_lag += 1
-                    exit_sig = 0 if self._exit_lag >= self.exit_lag_bars else 0.5
-                else:
-                    self._exit_lag = 0
-            elif direction == -1:
-                if prev_vote < -4 and -4 <= vote <= -1:
-                    exit_sig = -0.5
-                    self._exit_lag = 0
-                elif vote >= 0:
-                    self._exit_lag += 1
-                    exit_sig = 0 if self._exit_lag >= self.exit_lag_bars else -0.5
-                else:
-                    self._exit_lag = 0
-        else:
-            self._exit_lag = 0
-
-        if ob_imb is not None:
-            detail_data['order_book_imbalance'] = float(ob_imb)
 
         # ===== 12. 仓位大小统一计算 =====
         base_coeff = (
@@ -1817,10 +1795,12 @@ class RobustSignalGenerator:
             vol_p=vol_preds.get('1h'),
             risk_score=risk_score,
             crowding_factor=crowding_factor,
-            exit_mult=abs(exit_sig),
             cfg_th_sig=cfg_th_sig,
             scores=scores,
-            direction=int(np.sign(exit_sig)),
+            direction=direction,
+            vote=vote,
+            prev_vote=prev_vote,
+            last_signal=self._last_signal,
         )
 
         detail_data['order_book_momentum'] = ob_imb
@@ -1844,8 +1824,6 @@ class RobustSignalGenerator:
             )
 
         # ===== 14. 最终返回 =====
-        detail_data['grad_dir'] = float(grad_dir)
-        detail_data['pos_size'] = float(pos_size)
         with self._lock:
             self._last_signal = int(np.sign(direction)) if direction else 0
             self._last_score = fused_score
@@ -1856,10 +1834,45 @@ class RobustSignalGenerator:
             for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
                 maxlen = 4 if p == "1h" else 2
                 cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
+
         filters = self.cfg.get('signal_filters', {})
         confidence_vote = filters.get('confidence_vote', 0.33)
-        if detail_data.get("vote", {}).get("confidence", 1.0) < confidence_vote:
+        if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
             direction, pos_size = 0, 0.0
+
+        final_details = {
+            'ai': {'1h': ai_scores['1h'], '4h': ai_scores['4h'], 'd1': ai_scores['d1']},
+            'factors': {'1h': fs['1h'], '4h': fs['4h'], 'd1': fs['d1']},
+            'scores': {'1h': score_1h, '4h': score_4h, 'd1': score_d1},
+            'vote': {'value': vote, 'confidence': conf_vote, 'ob_th': ob_th},
+            'protect': {
+                'oi_overheat': oi_overheat,
+                'oi_threshold': th_oi,
+                'crowding_factor': crowding_factor,
+                'funding_conflicts': funding_conflicts,
+            },
+            'env': {
+                'logic_score': logic_score,
+                'env_score': env_score,
+                'risk_score': risk_score,
+            },
+            'exit': {
+                'regime': regime,
+                'reversal_flag': rev_dir,
+                'dynamic_th_final': base_th,
+            },
+            'grad_dir': float(grad_dir),
+            'pos_size': float(pos_size),
+            'short_momentum': short_mom,
+            'ob_imbalance': ob_imb,
+            'ma_cross': detail_data.get('ma_cross'),
+            'rise_drawdown_adj': detail_data.get('rise_drawdown_adj'),
+            'strong_confirm_4h': strong_confirm_4h,
+            'consensus_all': consensus_all,
+            'consensus_14': consensus_14,
+            'consensus_4d1': consensus_4d1,
+        }
+
         logger.info(
             "[%s] base_th=%.3f, funding_conflicts=%d, fused=%.4f",
             symbol,
@@ -1873,7 +1886,7 @@ class RobustSignalGenerator:
             'position_size': pos_size,
             'take_profit': take_profit,
             'stop_loss': stop_loss,
-            'details': detail_data
+            'details': final_details,
         }
 
 
