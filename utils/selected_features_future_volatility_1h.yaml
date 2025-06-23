@@ -11,6 +11,7 @@
 - donchian_delta_1h
 - btc_correlation_1h_1h
 - hv_7d_1h
+- channel_pos_1h
 - macd_hist_diff_1h_4h
 - cg_total_volume_roc_1h
 - rsi_diff_1h_d1
