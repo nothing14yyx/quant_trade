@@ -54,6 +54,7 @@ def test_calc_features_raw_with_cg():
         'btc_correlation_1h_1h',
         'eth_correlation_1h_1h',
         'bid_ask_spread_pct_1h',
+        'channel_pos_1h',
     ]
     for col in new_cols:
         assert col in feats
@@ -113,4 +114,7 @@ def test_sma_and_ma_ratio():
     ratio = expected_sma5 / expected_sma20
     assert 'ma_ratio_5_20' in merged
     assert merged['ma_ratio_5_20'].iloc[-1] == pytest.approx(ratio)
+
+    # channel position should be 1.0 for increasing series
+    assert feats['channel_pos_1h'].iloc[-1] == pytest.approx(1.0)
 
