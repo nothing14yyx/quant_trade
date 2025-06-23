@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import joblib
 import numpy as np
 import pandas as pd
@@ -630,6 +631,39 @@ class RobustSignalGenerator:
         return 0
 
 
+    def compute_exit_multiplier(self, vote: float, prev_vote: float, last_signal: int) -> float:
+        """根据票数变化决定半退出或全平仓位系数"""
+
+        with self._lock:
+            exit_lag = self._exit_lag
+
+        exit_mult = 1.0
+        if last_signal == 1:
+            if prev_vote > 4 and 1 <= vote <= 4:
+                exit_mult = 0.5
+                exit_lag = 0
+            elif vote <= 0:
+                exit_lag += 1
+                exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
+            else:
+                exit_lag = 0
+        elif last_signal == -1:
+            if prev_vote < -4 and -4 <= vote <= -1:
+                exit_mult = 0.5
+                exit_lag = 0
+            elif vote >= 0:
+                exit_lag += 1
+                exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
+            else:
+                exit_lag = 0
+        else:
+            exit_lag = 0
+
+        with self._lock:
+            self._exit_lag = exit_lag
+
+        return exit_mult
+
     def compute_position_size(
         self,
         *,
@@ -647,47 +681,9 @@ class RobustSignalGenerator:
         cfg_th_sig: dict,
         scores: dict,
         direction: int,
-        vote: float,
-        prev_vote: float,
-        last_signal: int,
+        exit_mult: float,
     ) -> tuple[float, int]:
-        """统一计算仓位大小并处理方向修正
-
-        Parameters
-        ----------
-        direction : int
-            已经归一化后的交易方向（-1, 0, 1）。
-        crowding_factor : float
-            来自极端行情保护的拥挤度系数。
-        """
-        with self._lock:
-            exit_lag = self._exit_lag
-
-        exit_mult = 1.0
-        if direction == last_signal != 0:
-            if direction == 1:
-                if prev_vote > 4 and 1 <= vote <= 4:
-                    exit_mult = 0.5
-                    exit_lag = 0
-                elif vote <= 0:
-                    exit_lag += 1
-                    exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
-                else:
-                    exit_lag = 0
-            elif direction == -1:
-                if prev_vote < -4 and -4 <= vote <= -1:
-                    exit_mult = 0.5
-                    exit_lag = 0
-                elif vote >= 0:
-                    exit_lag += 1
-                    exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
-                else:
-                    exit_lag = 0
-        else:
-            exit_lag = 0
-
-        with self._lock:
-            self._exit_lag = exit_lag
+        """Calculate final position size given direction and risk factors."""
 
         tier = 0.1 + base_coeff * abs(grad_dir)
         pos_size = tier * confidence_factor * exit_mult
@@ -1164,9 +1160,177 @@ class RobustSignalGenerator:
             fused_score *= 1 + 0.08 * oi_chg
         else:
             logging.info("OI overheat detected: %.4f", oi_chg)
-            fused_score *= self.oi_scale
-            oi_overheat = True
+        fused_score *= self.oi_scale
+        oi_overheat = True
         return fused_score, oi_overheat
+
+    # ===== 新增辅助函数 =====
+    def calc_factor_scores(self, ai_scores: dict, factor_scores: dict, weights: dict) -> dict:
+        """计算未调整的各周期得分"""
+        scores = {
+            '1h': self.combine_score(ai_scores['1h'], factor_scores['1h'], weights),
+            '4h': self.combine_score(ai_scores['4h'], factor_scores['4h'], weights),
+            'd1': self.combine_score(ai_scores['d1'], factor_scores['d1'], weights),
+        }
+        logger.debug("factor scores: %s", scores)
+        return scores
+
+    def apply_local_adjustments(
+        self,
+        scores: dict,
+        raw_feats: dict,
+        factor_scores: dict,
+        deltas: dict,
+        rise_pred_1h: float | None = None,
+        drawdown_pred_1h: float | None = None,
+    ) -> tuple[dict, dict]:
+        """应用本地逻辑修正分数并返回细节"""
+
+        adjusted = scores.copy()
+        details = {}
+
+        for p in adjusted:
+            adjusted[p] = self._apply_delta_boost(adjusted[p], deltas.get(p, {}))
+
+        prev_ma20 = raw_feats['1h'].get('sma_20_1h_prev')
+        ma_coeff = self.ma_cross_logic(raw_feats['1h'], prev_ma20)
+        adjusted['1h'] *= ma_coeff
+        details['ma_cross'] = int(np.sign(ma_coeff - 1.0))
+
+        if rise_pred_1h is not None and drawdown_pred_1h is not None:
+            adj = np.tanh((rise_pred_1h - abs(drawdown_pred_1h)) * 5) * 0.5
+            adjusted['1h'] *= 1 + adj
+            details['rise_drawdown_adj'] = adj
+
+        strong_confirm_4h = (
+            factor_scores['4h']['trend'] > 0
+            and factor_scores['4h']['momentum'] > 0
+            and factor_scores['4h']['volatility'] > 0
+            and adjusted['4h'] > 0
+        ) or (
+            factor_scores['4h']['trend'] < 0
+            and factor_scores['4h']['momentum'] < 0
+            and factor_scores['4h']['volatility'] < 0
+            and adjusted['4h'] < 0
+        )
+        details['strong_confirm_4h'] = strong_confirm_4h
+
+        macd_diff = raw_feats['1h'].get('macd_hist_diff_1h_4h')
+        rsi_diff = raw_feats['1h'].get('rsi_diff_1h_4h')
+        if (
+            macd_diff is not None
+            and rsi_diff is not None
+            and macd_diff < 0
+            and rsi_diff < -8
+        ):
+            if strong_confirm_4h:
+                logger.debug(
+                    "momentum misalign macd_diff=%.3f rsi_diff=%.3f -> strong_confirm=False",
+                    macd_diff,
+                    rsi_diff,
+                )
+            strong_confirm_4h = False
+            details['strong_confirm_4h'] = False
+
+        for p in ['1h', '4h', 'd1']:
+            sent = factor_scores[p]['sentiment']
+            before = adjusted[p]
+            adjusted[p] = adjust_score(
+                adjusted[p],
+                sent,
+                self.sentiment_alpha,
+                cap_scale=self.cap_positive_scale,
+            )
+            if before != adjusted[p]:
+                logger.debug(
+                    "sentiment %.2f adjust %s: %.3f -> %.3f",
+                    sent,
+                    p,
+                    before,
+                    adjusted[p],
+                )
+
+        params = self.volume_guard_params
+        r1 = raw_feats['1h'].get('vol_ma_ratio_1h')
+        roc1 = raw_feats['1h'].get('vol_roc_1h')
+        before = adjusted['1h']
+        adjusted['1h'] = volume_guard(adjusted['1h'], r1, roc1, **params)
+        if before != adjusted['1h']:
+            logger.debug(
+                "volume guard 1h ratio=%.3f roc=%.3f -> %.3f",
+                r1,
+                roc1,
+                adjusted['1h'],
+            )
+        if raw_feats.get('4h') is not None:
+            r4 = raw_feats['4h'].get('vol_ma_ratio_4h')
+            roc4 = raw_feats['4h'].get('vol_roc_4h')
+            before4 = adjusted['4h']
+            adjusted['4h'] = volume_guard(adjusted['4h'], r4, roc4, **params)
+            if before4 != adjusted['4h']:
+                logger.debug(
+                    "volume guard 4h ratio=%.3f roc=%.3f -> %.3f",
+                    r4,
+                    roc4,
+                    adjusted['4h'],
+                )
+        r_d1 = raw_feats['d1'].get('vol_ma_ratio_d1')
+        roc_d1 = raw_feats['d1'].get('vol_roc_d1')
+        before_d1 = adjusted['d1']
+        adjusted['d1'] = volume_guard(adjusted['d1'], r_d1, roc_d1, **params)
+        if before_d1 != adjusted['d1']:
+            logger.debug(
+                "volume guard d1 ratio=%.3f roc=%.3f -> %.3f",
+                r_d1,
+                roc_d1,
+                adjusted['d1'],
+            )
+
+        return adjusted, details
+
+    def fuse_multi_cycle(
+        self,
+        scores: dict,
+        weights: tuple[float, float, float],
+        strong_confirm_4h: bool,
+    ) -> tuple[float, bool, bool, bool]:
+        """按照多周期共振逻辑融合得分"""
+        s1, s4, sd = scores['1h'], scores['4h'], scores['d1']
+        w1, w4, wd = weights
+
+        consensus_dir = self.consensus_check(s1, s4, sd)
+        consensus_all = consensus_dir != 0 and np.sign(s1) == np.sign(s4) == np.sign(sd)
+        consensus_14 = consensus_dir != 0 and np.sign(s1) == np.sign(s4) and not consensus_all
+        consensus_4d1 = consensus_dir != 0 and np.sign(s4) == np.sign(sd) and np.sign(s1) != np.sign(s4)
+
+        if consensus_all:
+            fused = w1 * s1 + w4 * s4 + wd * sd
+            conf = 1.0
+            if strong_confirm_4h:
+                fused *= 1.15
+        elif consensus_14:
+            total = w1 + w4
+            fused = (w1 / total) * s1 + (w4 / total) * s4
+            conf = 0.8
+            if strong_confirm_4h:
+                fused *= 1.10
+        elif consensus_4d1:
+            total = w4 + wd
+            fused = (w4 / total) * s4 + (wd / total) * sd
+            conf = 0.7
+        else:
+            fused = s1
+            conf = 0.6
+
+        fused_score = fused * conf
+        logger.debug(
+            "fuse scores s1=%.3f s4=%.3f sd=%.3f -> %.3f",
+            s1,
+            s4,
+            sd,
+            fused_score,
+        )
+        return fused_score, consensus_all, consensus_14, consensus_4d1
 
     def generate_signal(
         self,
@@ -1207,16 +1371,21 @@ class RobustSignalGenerator:
             else (raw_features_1h or features_1h).get('bid_ask_imbalance')
         )
 
+        std_1h = features_1h
+        std_4h = features_4h
+        std_d1 = features_d1
         raw_f1h = {**features_1h, **(raw_features_1h or {})}
         raw_f4h = {**features_4h, **(raw_features_4h or {})}
         raw_fd1 = {**features_d1, **(raw_features_d1 or {})}
 
-        detail_data = {}
-
         cache = self._get_symbol_cache(symbol)
-        price_hist = [r.get('close') for r in cache["_raw_history"].get('1h', [])]
+        with self._lock:
+            hist_1h = cache["_raw_history"].get('1h', deque(maxlen=4))
+        price_hist = [r.get('close') for r in hist_1h]
         price_hist.append(raw_f1h.get('close'))
         price_hist = [p for p in price_hist if p is not None][-4:]
+
+        coin = str(symbol).upper() if symbol else ""
         rev_dir = self.detect_reversal(
             np.array(price_hist, dtype=float),
             raw_f1h.get('atr_pct_1h'),
@@ -1240,7 +1409,7 @@ class RobustSignalGenerator:
         vol_preds = {}
         rise_preds = {}
         drawdown_preds = {}
-        for p, feats in [('1h', features_1h), ('4h', features_4h), ('d1', features_d1)]:
+        for p, feats in [('1h', std_1h), ('4h', std_4h), ('d1', std_d1)]:
             models_p = self.models.get(p, {})
             if 'cls' in models_p and 'up' not in models_p:
                 ai_scores[p] = self.get_ai_score_cls(feats, models_p['cls'])
@@ -1291,49 +1460,17 @@ class RobustSignalGenerator:
         with self._lock:
             weights = self.current_weights.copy()
 
-        # ===== 4. 合并 AI 与多因子分数，得到各周期总分 =====
-        score_1h = self.combine_score(ai_scores['1h'], fs['1h'], weights)
-        score_4h = self.combine_score(ai_scores['4h'], fs['4h'], weights)
-        score_d1 = self.combine_score(ai_scores['d1'], fs['d1'], weights)
+        # ===== 4. 单周期总分 =====
+        scores = self.calc_factor_scores(ai_scores, fs, weights)
 
-        # 根据关键指标的变化量微调各周期得分
-        score_1h = self._apply_delta_boost(score_1h, deltas["1h"])
-        score_4h = self._apply_delta_boost(score_4h, deltas["4h"])
-        score_d1 = self._apply_delta_boost(score_d1, deltas["d1"])
-
-        prev_ma20 = (raw_features_1h or features_1h).get('sma_20_1h_prev')
-        ma_coeff = self.ma_cross_logic(raw_features_1h or features_1h, prev_ma20)
-        score_1h *= ma_coeff
-        detail_data['ma_cross'] = int(np.sign(ma_coeff - 1.0))
-
-        rp_1h = rise_preds.get('1h')
-        dd_1h = drawdown_preds.get('1h')
-        if rp_1h is not None and dd_1h is not None:
-            adj = np.tanh((rp_1h - abs(dd_1h)) * 5) * 0.5
-            score_1h *= 1 + adj
-            detail_data['rise_drawdown_adj'] = adj
-
-        # ===== 5. 判断 4h 强确认条件 =====
-        strong_confirm_4h = (
-            (fs['4h']['trend'] > 0 and fs['4h']['momentum'] > 0 and fs['4h']['volatility'] > 0 and score_4h > 0) or
-            (fs['4h']['trend'] < 0 and fs['4h']['momentum'] < 0 and fs['4h']['volatility'] < 0 and score_4h < 0)
-        )
-
-        # ===== 6. 多周期共振：使用 consensus_check =====
-        consensus_dir = self.consensus_check(score_1h, score_4h, score_d1)
-        consensus_all = (
-            consensus_dir != 0
-            and np.sign(score_1h) == np.sign(score_4h) == np.sign(score_d1)
-        )
-        consensus_14 = (
-            consensus_dir != 0
-            and np.sign(score_1h) == np.sign(score_4h)
-            and not consensus_all
-        )
-        consensus_4d1 = (
-            consensus_dir != 0
-            and np.sign(score_4h) == np.sign(score_d1)
-            and np.sign(score_1h) != np.sign(score_4h)
+        # ===== 5. 本地因子修正 =====
+        scores, local_details = self.apply_local_adjustments(
+            scores,
+            {'1h': raw_f1h, '4h': raw_f4h, 'd1': raw_fd1},
+            fs,
+            deltas,
+            rise_preds.get('1h'),
+            drawdown_preds.get('1h'),
         )
 
         ic_periods = {
@@ -1343,128 +1480,13 @@ class RobustSignalGenerator:
         }
         w1, w4, w_d1 = self.get_ic_period_weights(ic_periods)
 
-        # ---- 额外逻辑：情绪与交易量等修正 ----
-        scores = {'1h': score_1h, '4h': score_4h, 'd1': score_d1}
-        coin = str(symbol).upper() if symbol else ""
-        for p in scores:
-            sent = fs[p]['sentiment']
-            old = scores[p]
-            scores[p] = adjust_score(
-                old,
-                sent,
-                self.sentiment_alpha,
-                cap_scale=self.cap_positive_scale,
-            )
-            if old != scores[p]:
-                logging.debug(
-                    "sentiment %.2f extreme on %s -> score %.3f * %.2f = %.3f",
-                    sent,
-                    p,
-                    old,
-                    scores[p] / old if old else 1.0,
-                    scores[p],
-                )
-
-
-        # volume guard-rail
-        raw1h = raw_features_1h or features_1h
-        raw4h = raw_features_4h or features_4h
-        vol_ratio_1h = raw1h.get('vol_ma_ratio_1h')
-        vol_roc_1h = raw1h.get('vol_roc_1h')
-        old = scores['1h']
-        scores['1h'] = volume_guard(
-            old,
-            vol_ratio_1h,
-            vol_roc_1h,
-            **self.volume_guard_params,
+        # ===== 6. 多周期共振融合 =====
+        fused_score, consensus_all, consensus_14, consensus_4d1 = self.fuse_multi_cycle(
+            scores,
+            (w1, w4, w_d1),
+            local_details.get('strong_confirm_4h', False),
         )
-        if old != scores['1h']:
-            logging.debug(
-                "volume guard %s 1h ratio=%.3f roc=%.3f -> %.3f",
-                coin,
-                vol_ratio_1h,
-                vol_roc_1h,
-                scores['1h'],
-            )
-        if raw4h is not None:
-            vol_ratio_4h = raw4h.get('vol_ma_ratio_4h')
-            vol_roc_4h = raw4h.get('vol_roc_4h')
-            old_4h = scores['4h']
-            scores['4h'] = volume_guard(
-                old_4h,
-                vol_ratio_4h,
-                vol_roc_4h,
-                **self.volume_guard_params,
-            )
-            if old_4h != scores['4h']:
-                logging.debug(
-                    "volume guard %s 4h ratio=%.3f roc=%.3f -> %.3f",
-                    coin,
-                    vol_ratio_4h,
-                    vol_roc_4h,
-                    scores['4h'],
-                )
-        else:
-            vol_roc_4h = None
 
-        vol_ratio_d1 = raw_fd1.get('vol_ma_ratio_d1')
-        vol_roc_d1 = raw_fd1.get('vol_roc_d1')
-        old_d1 = scores['d1']
-        scores['d1'] = volume_guard(
-            old_d1,
-            vol_ratio_d1,
-            vol_roc_d1,
-            **self.volume_guard_params,
-        )
-        if old_d1 != scores['d1']:
-            logging.debug(
-                "volume guard %s d1 ratio=%.3f roc=%.3f -> %.3f",
-                coin,
-                vol_ratio_d1,
-                vol_roc_d1,
-                scores['d1'],
-            )
-
-
-
-        macd_diff = raw1h.get('macd_hist_diff_1h_4h')
-        rsi_diff = raw1h.get('rsi_diff_1h_4h')
-        if (
-            macd_diff is not None
-            and rsi_diff is not None
-            and macd_diff < 0
-            and rsi_diff < -8
-        ):
-            if strong_confirm_4h:
-                logging.debug(
-                    "momentum misalign macd_diff=%.3f rsi_diff=%.3f -> strong_confirm=False",
-                    macd_diff,
-                    rsi_diff,
-                )
-            strong_confirm_4h = False
-
-        score_1h, score_4h, score_d1 = scores['1h'], scores['4h'], scores['d1']
-
-        if consensus_all:
-            fused_score = w1 * score_1h + w4 * score_4h + w_d1 * score_d1
-            conf = 1.0
-            if strong_confirm_4h:
-                fused_score *= 1.15
-        elif consensus_14:
-            total = w1 + w4
-            fused_score = (w1 / total) * score_1h + (w4 / total) * score_4h
-            conf = 0.8
-            if strong_confirm_4h:
-                fused_score *= 1.10
-        elif consensus_4d1:
-            total = w4 + w_d1
-            fused_score = (w4 / total) * score_4h + (w_d1 / total) * score_d1
-            conf = 0.7
-        else:
-            fused_score = score_1h
-            conf = 0.6
-
-        fused_score *= conf
 
         logic_score = fused_score
         env_score = 1.0
@@ -1549,7 +1571,7 @@ class RobustSignalGenerator:
                 )
 
         # ===== 新指标：短周期动量与盘口失衡 =====
-        raw1h = raw_features_1h or features_1h
+        raw1h = raw_f1h
         mom5 = raw1h.get('mom_5m_roll1h')
         mom15 = raw1h.get('mom_15m_roll1h')
 
@@ -1593,7 +1615,7 @@ class RobustSignalGenerator:
                     'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
                     'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
                     'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
-                    'strong_confirm_4h': strong_confirm_4h,
+                    'strong_confirm_4h': local_details.get('strong_confirm_4h'),
                     'consensus_14': consensus_14, 'consensus_all': consensus_all,
                     'vol_pred_1h': vol_preds.get('1h'),
                     'vol_pred_4h': vol_preds.get('4h'),
@@ -1646,10 +1668,7 @@ class RobustSignalGenerator:
         )
         if rev_dir != 0:
             fused_score += rev_boost * rev_dir
-            detail_data['reversal_flag'] = rev_dir
             self._cooldown = 0
-        detail_data['regime'] = regime
-        detail_data['dynamic_th_final'] = base_th
         # ===== 8. 资金费率惩罚 =====
         funding_conflicts = 0
         for p, raw_f in [('1h', raw_f1h), ('4h', raw_f4h), ('d1', raw_fd1)]:
@@ -1687,8 +1706,6 @@ class RobustSignalGenerator:
             env_score,
             cap=self.risk_score_cap,
         )
-
-        confidence = conf
         # 所有放大系数后写入历史
         with self._lock:
             cache["history_scores"].append(fused_score)
@@ -1735,15 +1752,12 @@ class RobustSignalGenerator:
             + vw.get('vol_breakout', 1) * vol_breakout_dir
         )
         strong_confirm_vote = abs(vote) >= self.vote_params['strong_min']
-        detail_data['vote'] = {'value': vote}
-        detail_data['ob_th'] = ob_th
 
         # ====== 票数置信度衰减 ======
         strong_min = self.vote_params['strong_min']
         conf_vote = sigmoid_confidence(vote, strong_min, 1)
         if abs(vote) >= strong_min:
             fused_score *= max(1, conf_vote)
-        detail_data['vote']['confidence'] = conf_vote
 
         cfg_th_sig = self.signal_threshold_cfg
         grad_dir = sigmoid_dir(
@@ -1779,9 +1793,6 @@ class RobustSignalGenerator:
             'vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h')
         )
         tier = 0.1 + base_coeff * abs(grad_dir)
-        detail_data['vol_ratio'] = vol_ratio
-        detail_data['position_tier'] = tier
-        detail_data['confidence_factor'] = confidence_factor
         fused_score = float(np.clip(fused_score, -1, 1))
         pos_size, direction = self.compute_position_size(
             grad_dir=grad_dir,
@@ -1798,12 +1809,12 @@ class RobustSignalGenerator:
             cfg_th_sig=cfg_th_sig,
             scores=scores,
             direction=direction,
-            vote=vote,
-            prev_vote=prev_vote,
-            last_signal=self._last_signal,
+            exit_mult=(
+                self.compute_exit_multiplier(vote, prev_vote, self._last_signal)
+                if direction == self._last_signal and self._last_signal != 0
+                else 1.0
+            ),
         )
-
-        detail_data['order_book_momentum'] = ob_imb
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
@@ -1843,7 +1854,7 @@ class RobustSignalGenerator:
         final_details = {
             'ai': {'1h': ai_scores['1h'], '4h': ai_scores['4h'], 'd1': ai_scores['d1']},
             'factors': {'1h': fs['1h'], '4h': fs['4h'], 'd1': fs['d1']},
-            'scores': {'1h': score_1h, '4h': score_4h, 'd1': score_d1},
+            'scores': {'1h': scores['1h'], '4h': scores['4h'], 'd1': scores['d1']},
             'vote': {'value': vote, 'confidence': conf_vote, 'ob_th': ob_th},
             'protect': {
                 'oi_overheat': oi_overheat,
@@ -1865,13 +1876,14 @@ class RobustSignalGenerator:
             'pos_size': float(pos_size),
             'short_momentum': short_mom,
             'ob_imbalance': ob_imb,
-            'ma_cross': detail_data.get('ma_cross'),
-            'rise_drawdown_adj': detail_data.get('rise_drawdown_adj'),
-            'strong_confirm_4h': strong_confirm_4h,
+            'vol_ratio': vol_ratio,
+            'position_tier': tier,
+            'confidence_factor': confidence_factor,
             'consensus_all': consensus_all,
             'consensus_14': consensus_14,
             'consensus_4d1': consensus_4d1,
         }
+        final_details.update(local_details)
 
         logger.info(
             "[%s] base_th=%.3f, funding_conflicts=%d, fused=%.4f",
