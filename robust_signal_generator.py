@@ -1171,10 +1171,7 @@ class RobustSignalGenerator:
             raw_f1h.get('atr_pct_1h'),
             raw_f1h.get('vol_ma_ratio_1h'),
         )
-        skip_flip = False
 
-        if self._cooldown > 0:
-            self._cooldown -= 1
 
         deltas = {}
         for p, raw, keys in [
@@ -1262,10 +1259,18 @@ class RobustSignalGenerator:
         # ===== 6. 多周期共振：使用 consensus_check =====
         consensus_dir = self.consensus_check(score_1h, score_4h, score_d1)
         consensus_all = (
-            consensus_dir != 0 and np.sign(score_1h) == np.sign(score_4h) == np.sign(score_d1)
+            consensus_dir != 0
+            and np.sign(score_1h) == np.sign(score_4h) == np.sign(score_d1)
         )
         consensus_14 = (
-            consensus_dir != 0 and np.sign(score_1h) == np.sign(score_4h) and not consensus_all
+            consensus_dir != 0
+            and np.sign(score_1h) == np.sign(score_4h)
+            and not consensus_all
+        )
+        consensus_4d1 = (
+            consensus_dir != 0
+            and np.sign(score_4h) == np.sign(score_d1)
+            and np.sign(score_1h) != np.sign(score_4h)
         )
 
         ic_periods = {
@@ -1388,6 +1393,10 @@ class RobustSignalGenerator:
             conf = 0.8
             if strong_confirm_4h:
                 fused_score *= 1.10
+        elif consensus_4d1:
+            total = w4 + w_d1
+            fused_score = (w4 / total) * score_4h + (w_d1 / total) * score_d1
+            conf = 0.7
         else:
             fused_score = score_1h
             conf = 0.6
@@ -1520,6 +1529,8 @@ class RobustSignalGenerator:
             for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
                 maxlen = 4 if p == "1h" else 2
                 self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
+            self._last_signal = 0
+            self._cooldown = 0
             return {
                 'signal': 0,
                 'score': float('nan'),
@@ -1564,6 +1575,10 @@ class RobustSignalGenerator:
 
         regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
         cfg_th = self.signal_threshold_cfg
+        if rev_dir != 0:
+            fused_score += cfg_th.get('rev_boost', 0.25) * rev_dir
+            details['reversal_flag'] = rev_dir
+            self._cooldown = 0
         base_th = self.dynamic_threshold(
             atr_1h,
             adx_1h,
@@ -1582,11 +1597,6 @@ class RobustSignalGenerator:
             history_scores=cache["history_scores"],
         )
         details['regime'] = regime
-        if rev_dir != 0:
-            fused_score += cfg_th.get('rev_boost', 0.25) * rev_dir
-            details['reversal_flag'] = rev_dir
-            self._cooldown = 0
-            skip_flip = True
         details['dynamic_th_final'] = base_th
         # ===== 8. 资金费率惩罚 =====
         funding_conflicts = 0
@@ -1660,8 +1670,7 @@ class RobustSignalGenerator:
         })
 
 
-        if regime == "range" and consensus_dir == 0:
-            skip_flip = True
+
 
         if ob_imb is not None:
             details['order_book_imbalance'] = float(ob_imb)
@@ -1709,7 +1718,8 @@ class RobustSignalGenerator:
         strong_min = self.vote_params['strong_min']
         conf_min = self.vote_params['conf_min']
         conf_vote = sigmoid_confidence(vote, strong_min, conf_min)
-        fused_score *= conf_vote
+        if abs(vote) >= strong_min:
+            fused_score *= conf_vote
         details["confidence_vote"] = conf_vote
         fused_score = float(np.clip(fused_score, -1, 1))
 
@@ -1721,25 +1731,15 @@ class RobustSignalGenerator:
         )
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
 
-        if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
-            last_score = getattr(self, '_last_score', 0.0)
-            if skip_flip:
-                flip_th = base_th
-            else:
-                flip_th = max(base_th, self.flip_coeff * abs(last_score), 1.2 * atr_1h)
-            if abs(fused_score) < flip_th:
-                logging.debug(
-                    "Flip prevented for %s: last=%s current=%.3f",
-                    coin,
-                    self._last_signal,
-                    fused_score,
-                )
-                direction = self._last_signal
+        if self._cooldown > 0:
+            self._cooldown -= 1
 
-        if self._cooldown > 0 and direction * self._last_signal == -1:
-            direction = 0
-        elif self._last_signal != 0 and direction * self._last_signal == -1 and direction != 0:
-            self._cooldown = 3
+        if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
+            flip_th = max(base_th, self.flip_coeff * abs(self._last_score))
+            if abs(fused_score) < flip_th or self._cooldown > 0:
+                direction = self._last_signal
+            else:
+                self._cooldown = 2
 
         # 阶梯退出逻辑
         prev_vote = getattr(self, '_prev_vote', 0)
