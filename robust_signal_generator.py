@@ -1380,60 +1380,58 @@ class RobustSignalGenerator:
     ):
         """
         输入：
-            - features_1h: dict，当前 1h 周期下的全部特征键值对（已标准化）
-            - features_4h: dict，当前 4h 周期下的全部特征键值对（已标准化）
-            - features_d1: dict，当前 d1 周期下的全部特征键值对（已标准化）
+            - features_1h: dict，当前 1h 周期特征（Robust Z 标准化）
+            - features_4h: dict，当前 4h 周期特征（Robust Z 标准化）
+            - features_d1: dict，当前 d1 周期特征（Robust Z 标准化）
             - all_scores_list: list，可选，当前所有币种的 fused_score 列表，用于极端行情保护
-            - raw_features_1h: dict，可选，未标准化的 1h 特征
-            - raw_features_4h: dict，可选，未标准化的 4h 特征；其中 atr_pct_4h 为实际
-              比例（如 0.05 表示 5%），在计算止盈止损和指标计算时会优先使用
-            - raw_features_d1: dict，可选，未标准化的 d1 特征
+            - raw_features_1h: dict，可选，未标准化的 1h 原始特征
+            - raw_features_4h: dict，可选，未标准化的 4h 原始特征
+            - raw_features_d1: dict，可选，未标准化的 d1 原始特征
             - order_book_imbalance: float，可选，L2 Order Book 的买卖盘差值比
             - symbol: str，可选，当前币种，如 'BTCUSDT'
         输出：
             一个 dict，包含 'signal'、'score'、'position_size'、'take_profit'、'stop_loss' 和 'details'
-        说明：若传入 raw_features_*，则多因子计算与动态阈值、止盈止损均使用原始数据，
-              标准化后的 features_* 仅用于 AI 模型预测。
+
+        features_* 为主要输入，多因子评分、动态阈值等逻辑均优先使用这些标准化后的特征。
+        raw_features_* 仅在计算绝对价格或绝对幅度（例如止盈止损价）时作为补充使用。
         """
 
         ob_imb = (
             order_book_imbalance
             if order_book_imbalance is not None
-            else (raw_features_1h or features_1h).get('bid_ask_imbalance')
+            else features_1h.get('bid_ask_imbalance')
         )
 
-        std_1h = features_1h
-        std_4h = features_4h
-        std_d1 = features_d1
-        raw_f1h = {**features_1h, **(raw_features_1h or {})}
-        raw_f4h = {**features_4h, **(raw_features_4h or {})}
-        raw_fd1 = {**features_d1, **(raw_features_d1 or {})}
+        std_1h = features_1h or {}
+        std_4h = features_4h or {}
+        std_d1 = features_d1 or {}
+        raw_f1h = raw_features_1h or {}
+        raw_f4h = raw_features_4h or {}
+        raw_fd1 = raw_features_d1 or {}
 
         cache = self._get_symbol_cache(symbol)
         with self._lock:
             hist_1h = cache["_raw_history"].get('1h', deque(maxlen=4))
         price_hist = [r.get('close') for r in hist_1h]
-        price_hist.append(raw_f1h.get('close'))
+        price_hist.append((raw_features_1h or features_1h).get('close'))
         price_hist = [p for p in price_hist if p is not None][-4:]
 
         coin = str(symbol).upper() if symbol else ""
         rev_dir = self.detect_reversal(
             np.array(price_hist, dtype=float),
-            raw_f1h.get('atr_pct_1h'),
-            raw_f1h.get('vol_ma_ratio_1h'),
+            (raw_features_1h or features_1h).get('atr_pct_1h'),
+            (raw_features_1h or features_1h).get('vol_ma_ratio_1h'),
         )
 
 
         deltas = {}
-        for p, raw, keys in [
-            ("1h", raw_f1h, self.core_keys["1h"]),
-            ("4h", raw_f4h, self.core_keys["4h"]),
-            ("d1", raw_fd1, self.core_keys["d1"]),
+        for p, feats, keys in [
+            ("1h", std_1h, self.core_keys["1h"]),
+            ("4h", std_4h, self.core_keys["4h"]),
+            ("d1", std_d1, self.core_keys["d1"]),
         ]:
-            maxlen = 4 if p == "1h" else 2
-            hist = cache["_raw_history"].get(p, deque(maxlen=maxlen))
-            prev = hist[0] if len(hist) == 2 else cache["_prev_raw"].get(p)
-            deltas[p] = self._calc_deltas(raw, prev, keys)
+            prev = cache["_prev_raw"].get(p)
+            deltas[p] = self._calc_deltas(feats, prev, keys)
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores = {}
@@ -1479,12 +1477,11 @@ class RobustSignalGenerator:
             ai_scores['d1'] = 0.0
 
         # ===== 2. 计算多因子部分的分数 =====
-        # 若提供了未标准化的原始特征，则优先用于多因子逻辑计算，
-        # 避免标准化偏移导致阈值判断失真
+        # 所有因子评分基于标准化后的特征
         fs = {
-            '1h': self.get_factor_scores(raw_f1h, '1h'),
-            '4h': self.get_factor_scores(raw_f4h, '4h'),
-            'd1': self.get_factor_scores(raw_fd1, 'd1'),
+            '1h': self.get_factor_scores(std_1h, '1h'),
+            '4h': self.get_factor_scores(std_4h, '4h'),
+            'd1': self.get_factor_scores(std_d1, 'd1'),
         }
 
         # ===== 3. 使用当前因子权重 =====
@@ -1497,7 +1494,7 @@ class RobustSignalGenerator:
         # ===== 5. 本地因子修正 =====
         scores, local_details = self.apply_local_adjustments(
             scores,
-            {'1h': raw_f1h, '4h': raw_f4h, 'd1': raw_fd1},
+            {'1h': std_1h, '4h': std_4h, 'd1': std_d1},
             fs,
             deltas,
             rise_preds.get('1h'),
@@ -1602,9 +1599,9 @@ class RobustSignalGenerator:
                 )
 
         # ===== 新指标：短周期动量与盘口失衡 =====
-        raw1h = raw_f1h
-        mom5 = raw1h.get('mom_5m_roll1h')
-        mom15 = raw1h.get('mom_15m_roll1h')
+        feat1h = std_1h
+        mom5 = feat1h.get('mom_5m_roll1h')
+        mom15 = feat1h.get('mom_15m_roll1h')
 
         mom_vals = [v for v in (mom5, mom15) if v is not None]
         short_mom = float(np.nanmean(mom_vals)) if mom_vals else 0.0
@@ -1628,9 +1625,9 @@ class RobustSignalGenerator:
             logging.debug("Fused score NaN, returning 0 signal")
             self._last_score = fused_score
             with self._lock:
-                self._prev_raw["1h"] = raw_f1h
-                self._prev_raw["4h"] = raw_f4h
-                self._prev_raw["d1"] = raw_fd1
+                self._prev_raw["1h"] = std_1h
+                self._prev_raw["4h"] = std_4h
+                self._prev_raw["d1"] = std_d1
                 for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
                     maxlen = 4 if p == "1h" else 2
                     self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
@@ -1663,14 +1660,14 @@ class RobustSignalGenerator:
             }
 
 # ===== 7b. 计算动态阈值 =====
-        atr_1h = raw_f1h.get('atr_pct_1h', features_1h.get('atr_pct_1h', 0))
-        adx_1h = raw_f1h.get('adx_1h', features_1h.get('adx_1h', 0))
-        funding_1h = raw_f1h.get('funding_rate_1h', features_1h.get('funding_rate_1h', 0)) or 0
+        atr_1h = features_1h.get('atr_pct_1h', 0)
+        adx_1h = features_1h.get('adx_1h', 0)
+        funding_1h = features_1h.get('funding_rate_1h', 0) or 0
 
-        atr_4h = raw_f4h.get('atr_pct_4h', features_4h.get('atr_pct_4h', 0)) if raw_f4h else None
-        adx_4h = raw_f4h.get('adx_4h', features_4h.get('adx_4h', 0)) if raw_f4h else None
-        atr_d1 = raw_fd1.get('atr_pct_d1', features_d1.get('atr_pct_d1', 0)) if raw_fd1 else None
-        adx_d1 = raw_fd1.get('adx_d1', features_d1.get('adx_d1', 0)) if raw_fd1 else None
+        atr_4h = features_4h.get('atr_pct_4h', 0) if features_4h else None
+        adx_4h = features_4h.get('adx_4h', 0) if features_4h else None
+        atr_d1 = features_d1.get('atr_pct_d1', 0) if features_d1 else None
+        adx_d1 = features_d1.get('adx_d1', 0) if features_d1 else None
 
         vix_p = None
         if global_metrics is not None:
@@ -1749,9 +1746,9 @@ class RobustSignalGenerator:
 
 
         # ---- 新增：方向确认与多因子投票 ----
-        vol_ratio_1h_4h = raw_f1h.get('vol_ratio_1h_4h')
-        if vol_ratio_1h_4h is None and raw_f4h is not None:
-            vol_ratio_1h_4h = raw_f4h.get('vol_ratio_1h_4h')
+        vol_ratio_1h_4h = std_1h.get('vol_ratio_1h_4h')
+        if vol_ratio_1h_4h is None and std_4h is not None:
+            vol_ratio_1h_4h = std_4h.get('vol_ratio_1h_4h')
         if vol_ratio_1h_4h is None:
             vol_ratio_1h_4h = 1.0
         ob_th = max(
@@ -1766,7 +1763,7 @@ class RobustSignalGenerator:
             ob_dir = 0
 
         short_mom_dir = int(np.sign(short_mom)) if short_mom != 0 else 0
-        vol_breakout_val = raw_f1h.get('vol_breakout_1h')
+        vol_breakout_val = std_1h.get('vol_breakout_1h')
         vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
 
         th = self.ai_dir_eps
@@ -1834,9 +1831,7 @@ class RobustSignalGenerator:
             confidence_factor += 0.1
         if strong_confirm_vote:
             confidence_factor += 0.05
-        vol_ratio = raw_f1h.get(
-            'vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h')
-        )
+        vol_ratio = std_1h.get('vol_ma_ratio_1h')
         tier = 0.1 + base_coeff * abs(grad_dir)
         fused_score = float(np.clip(fused_score, -1, 1))
         pos_size, direction = self.compute_position_size(
@@ -1867,12 +1862,13 @@ class RobustSignalGenerator:
             pos_size *= 0.5
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
-        price = features_1h.get('close', 0)
+        price = (raw_features_1h or features_1h).get('close', 0)
         if raw_features_4h is not None and 'atr_pct_4h' in raw_features_4h:
             atr_pct_4h = raw_features_4h['atr_pct_4h']
         else:
-            atr_pct_4h = features_4h.get('atr_pct_4h', 0)
-        atr_abs = np.hypot(atr_1h, atr_pct_4h) * price
+            atr_pct_4h = (raw_features_4h or features_4h).get('atr_pct_4h', 0)
+        atr_raw = (raw_features_1h or features_1h).get('atr_pct_1h', atr_1h)
+        atr_abs = np.hypot(atr_raw, atr_pct_4h) * price
         atr_abs = max(atr_abs, 0.005 * price)
         take_profit = stop_loss = None
         if direction != 0:
@@ -1889,9 +1885,9 @@ class RobustSignalGenerator:
             self._last_signal = int(np.sign(direction)) if direction else 0
             self._last_score = fused_score
             self._prev_vote = vote
-            cache["_prev_raw"]["1h"] = raw_f1h
-            cache["_prev_raw"]["4h"] = raw_f4h
-            cache["_prev_raw"]["d1"] = raw_fd1
+            cache["_prev_raw"]["1h"] = std_1h
+            cache["_prev_raw"]["4h"] = std_4h
+            cache["_prev_raw"]["d1"] = std_d1
             for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
                 maxlen = 4 if p == "1h" else 2
                 cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
