@@ -608,8 +608,9 @@ def test_sentiment_reweight_and_guard():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
-    assert res['details']['score_1h'] == pytest.approx(-0.03899, rel=1e-3)
-    assert res['details']['score_4h'] == pytest.approx(0.2, rel=1e-3)
+    scores = res['details']['scores']
+    assert scores['1h'] == pytest.approx(-0.03899, rel=1e-3)
+    assert scores['4h'] == pytest.approx(0.2, rel=1e-3)
 
 
 def test_volume_and_funding_penalties():
@@ -642,7 +643,7 @@ def test_volume_and_funding_penalties():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
-    assert res['details']['score_1h'] == pytest.approx(0.0)
+    assert res['details']['scores']['1h'] == pytest.approx(0.0)
 
 
 def test_momentum_alignment_disables_confirm():
@@ -677,7 +678,7 @@ def test_momentum_alignment_disables_confirm():
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
     assert res['details'].get('strong_confirm_vote', False) is False
-    assert res['details'].get('vote', 0) < 5
+    assert res['details'].get('vote', {}).get('value', 0) < 5
 
 
 def test_crowding_factor_and_dynamic_threshold():
@@ -712,7 +713,7 @@ def test_crowding_factor_and_dynamic_threshold():
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                               open_interest=oi)
     assert res['details']['dynamic_th_final'] == pytest.approx(0.1)
-    expected = res['details']['score_1h'] * res['details']['crowding_factor'] * res['details']['confidence']
+    expected = res['details']['scores']['1h'] * res['details']['crowding_factor'] * res['details']['confidence']
     assert res['score'] == pytest.approx(expected)
 
 

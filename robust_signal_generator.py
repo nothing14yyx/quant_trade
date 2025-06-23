@@ -126,8 +126,8 @@ def sigmoid_dir(score: float, base_th: float, gamma: float) -> float:
     return np.sign(score) * max(0.0, amp)
 
 
-def sigmoid_confidence(vote: float, strong_min: float, conf_min: float) -> float:
-    """根据投票结果计算置信度"""
+def sigmoid_confidence(vote: float, strong_min: float, conf_min: float = 1.0) -> float:
+    """根据投票结果计算置信度, 默认下限为1"""
     conf = 1 / (1 + np.exp(-4 * (abs(vote) - strong_min)))
     return max(conf_min, conf)
 
@@ -451,13 +451,15 @@ class RobustSignalGenerator:
 
     def get_dynamic_oi_threshold(self, pred_vol=None, base=0.5, quantile=0.9):
         """根据历史 OI 变化率及预测波动率自适应阈值"""
-        if self.oi_change_history:
-            base = np.quantile(np.abs(self.oi_change_history), 0.8)
+        with self._lock:
+            history = list(self.oi_change_history)
+        if history:
+            base = np.quantile(np.abs(history), 0.8)
         else:
             base = 0.2
         th = base
-        if len(self.oi_change_history) > 30:
-            th = float(np.quantile(np.abs(self.oi_change_history), quantile))
+        if len(history) > 30:
+            th = float(np.quantile(np.abs(history), quantile))
         if pred_vol is not None:
             th += min(0.1, abs(pred_vol) * 0.5)
         return max(th, 0.30)
@@ -563,25 +565,26 @@ class RobustSignalGenerator:
         return score * (1 + boost)
 
     def _get_symbol_cache(self, symbol):
-        if not symbol:
-            return {
-                "history_scores": self.history_scores,
-                "oi_change_history": self.oi_change_history,
-                "_raw_history": self._raw_history,
-                "_prev_raw": self._prev_raw,
-            }
-        if symbol not in self.symbol_data:
-            self.symbol_data[symbol] = {
-                "history_scores": deque(maxlen=self.history_scores.maxlen),
-                "oi_change_history": deque(maxlen=self.oi_change_history.maxlen),
-                "_raw_history": {
-                    "1h": deque(maxlen=4),
-                    "4h": deque(maxlen=2),
-                    "d1": deque(maxlen=2),
-                },
-                "_prev_raw": {p: None for p in ("1h", "4h", "d1")},
-            }
-        return self.symbol_data[symbol]
+        with self._lock:
+            if not symbol:
+                return {
+                    "history_scores": self.history_scores,
+                    "oi_change_history": self.oi_change_history,
+                    "_raw_history": self._raw_history,
+                    "_prev_raw": self._prev_raw,
+                }
+            if symbol not in self.symbol_data:
+                self.symbol_data[symbol] = {
+                    "history_scores": deque(maxlen=self.history_scores.maxlen),
+                    "oi_change_history": deque(maxlen=self.oi_change_history.maxlen),
+                    "_raw_history": {
+                        "1h": deque(maxlen=4),
+                        "4h": deque(maxlen=2),
+                        "d1": deque(maxlen=2),
+                    },
+                    "_prev_raw": {p: None for p in ("1h", "4h", "d1")},
+                }
+            return self.symbol_data[symbol]
 
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> float:
         """根据1h MA5 与 MA20 判断并返回分数乘数"""
@@ -640,14 +643,27 @@ class RobustSignalGenerator:
         oi_overheat: bool,
         vol_p: float | None,
         risk_score: float,
+        crowding_factor: float,
+        exit_mult: float,
         cfg_th_sig: dict,
         scores: dict,
         direction: int,
     ) -> tuple[float, int]:
-        """统一计算仓位大小并处理方向修正"""
+        """统一计算仓位大小并处理方向修正
+
+        Parameters
+        ----------
+        direction : int
+            已经归一化后的交易方向（-1, 0, 1）。
+        crowding_factor : float
+            来自极端行情保护的拥挤度系数。
+        exit_mult : float
+            退出信号的幅度系数，用于平滑减仓。
+        """
 
         tier = 0.1 + base_coeff * abs(grad_dir)
-        pos_size = tier * confidence_factor
+        pos_size = tier * confidence_factor * exit_mult
+        pos_size *= crowding_factor
         if direction == 0:
             pos_size = 0.0
 
@@ -1016,9 +1032,13 @@ class RobustSignalGenerator:
             th += min(0.08, max(vix_proxy, 0.0) * 0.08)
 
         # === 历史 80 分位兜底 ===
-        hist_scores = history_scores if history_scores is not None else self.history_scores
+        if history_scores is None:
+            with self._lock:
+                hist_scores = list(self.history_scores)
+        else:
+            hist_scores = list(history_scores)
         if len(hist_scores) > 100:
-            scores = list(hist_scores)
+            scores = hist_scores
             if self.th_window:
                 scores = scores[-int(self.th_window):]
             arr = np.abs(np.asarray(scores, dtype=float))
@@ -1156,11 +1176,11 @@ class RobustSignalGenerator:
             else (raw_features_1h or features_1h).get('bid_ask_imbalance')
         )
 
-        raw_f1h = raw_features_1h or features_1h
-        raw_f4h = raw_features_4h or features_4h
-        raw_fd1 = raw_features_d1 or features_d1
+        raw_f1h = {**features_1h, **(raw_features_1h or {})}
+        raw_f4h = {**features_4h, **(raw_features_4h or {})}
+        raw_fd1 = {**features_d1, **(raw_features_d1 or {})}
 
-        details = {}
+        detail_data = {}
 
         cache = self._get_symbol_cache(symbol)
         price_hist = [r.get('close') for r in cache["_raw_history"].get('1h', [])]
@@ -1231,9 +1251,9 @@ class RobustSignalGenerator:
         # 若提供了未标准化的原始特征，则优先用于多因子逻辑计算，
         # 避免标准化偏移导致阈值判断失真
         fs = {
-            '1h': self.get_factor_scores(raw_features_1h or features_1h, '1h'),
-            '4h': self.get_factor_scores(raw_features_4h or features_4h, '4h'),
-            'd1': self.get_factor_scores(raw_features_d1 or features_d1, 'd1')
+            '1h': self.get_factor_scores(raw_f1h, '1h'),
+            '4h': self.get_factor_scores(raw_f4h, '4h'),
+            'd1': self.get_factor_scores(raw_fd1, 'd1'),
         }
 
         # ===== 3. 使用当前因子权重 =====
@@ -1249,6 +1269,18 @@ class RobustSignalGenerator:
         score_1h = self._apply_delta_boost(score_1h, deltas["1h"])
         score_4h = self._apply_delta_boost(score_4h, deltas["4h"])
         score_d1 = self._apply_delta_boost(score_d1, deltas["d1"])
+
+        prev_ma20 = (raw_features_1h or features_1h).get('sma_20_1h_prev')
+        ma_coeff = self.ma_cross_logic(raw_features_1h or features_1h, prev_ma20)
+        score_1h *= ma_coeff
+        detail_data['ma_cross'] = int(np.sign(ma_coeff - 1.0))
+
+        rp_1h = rise_preds.get('1h')
+        dd_1h = drawdown_preds.get('1h')
+        if rp_1h is not None and dd_1h is not None:
+            adj = np.tanh((rp_1h - abs(dd_1h)) * 5) * 0.5
+            score_1h *= 1 + adj
+            detail_data['rise_drawdown_adj'] = adj
 
         # ===== 5. 判断 4h 强确认条件 =====
         strong_confirm_4h = (
@@ -1403,18 +1435,6 @@ class RobustSignalGenerator:
 
         fused_score *= conf
 
-        prev_ma20 = (raw_features_1h or features_1h).get('sma_20_1h_prev')
-        ma_coeff = self.ma_cross_logic(raw_features_1h or features_1h, prev_ma20)
-        fused_score *= ma_coeff
-        details['ma_cross'] = int(np.sign(ma_coeff - 1.0))
-
-        rp_1h = rise_preds.get('1h')
-        dd_1h = drawdown_preds.get('1h')
-        if rp_1h is not None and dd_1h is not None:
-            adj = np.tanh((rp_1h - abs(dd_1h)) * 5) * 0.5
-            fused_score *= 1 + adj
-            details['rise_drawdown_adj'] = adj
-
         logic_score = fused_score
         env_score = 1.0
         risk_score = 1.0
@@ -1523,12 +1543,13 @@ class RobustSignalGenerator:
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
             logging.debug("Fused score NaN, returning 0 signal")
             self._last_score = fused_score
-            self._prev_raw["1h"] = raw_f1h
-            self._prev_raw["4h"] = raw_f4h
-            self._prev_raw["d1"] = raw_fd1
-            for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                maxlen = 4 if p == "1h" else 2
-                self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
+            with self._lock:
+                self._prev_raw["1h"] = raw_f1h
+                self._prev_raw["4h"] = raw_f4h
+                self._prev_raw["d1"] = raw_fd1
+                for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+                    maxlen = 4 if p == "1h" else 2
+                    self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
             self._last_signal = 0
             self._cooldown = 0
             return {
@@ -1575,10 +1596,6 @@ class RobustSignalGenerator:
 
         regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
         cfg_th = self.signal_threshold_cfg
-        if rev_dir != 0:
-            fused_score += cfg_th.get('rev_boost', 0.25) * rev_dir
-            details['reversal_flag'] = rev_dir
-            self._cooldown = 0
         base_th = self.dynamic_threshold(
             atr_1h,
             adx_1h,
@@ -1596,8 +1613,12 @@ class RobustSignalGenerator:
             reversal=bool(rev_dir),
             history_scores=cache["history_scores"],
         )
-        details['regime'] = regime
-        details['dynamic_th_final'] = base_th
+        if rev_dir != 0:
+            fused_score += cfg_th.get('rev_boost', 0.25) * rev_dir
+            detail_data['reversal_flag'] = rev_dir
+            self._cooldown = 0
+        detail_data['regime'] = regime
+        detail_data['dynamic_th_final'] = base_th
         # ===== 8. 资金费率惩罚 =====
         funding_conflicts = 0
         for p, raw_f in [('1h', raw_f1h), ('4h', raw_f4h), ('d1', raw_fd1)]:
@@ -1640,23 +1661,22 @@ class RobustSignalGenerator:
         # 所有放大系数后写入历史
         with self._lock:
             cache["history_scores"].append(fused_score)
-        
-        # ===== 9. 准备 details，用于回测与调试 =====
-        details.update({
-            'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
-            'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
-            'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
+
+        detail_data.update({
+            'ai': {'1h': ai_scores['1h'], '4h': ai_scores['4h'], 'd1': ai_scores['d1']},
+            'factors': {'1h': fs['1h'], '4h': fs['4h'], 'd1': fs['d1']},
+            'scores': {'1h': score_1h, '4h': score_4h, 'd1': score_d1},
             'strong_confirm_4h': strong_confirm_4h,
-            'consensus_14': consensus_14, 'consensus_all': consensus_all,
-            'vol_pred_1h': vol_preds.get('1h'),
-            'vol_pred_4h': vol_preds.get('4h'),
-            'vol_pred_d1': vol_preds.get('d1'),
-            'rise_pred_1h': rise_preds.get('1h'),
-            'rise_pred_4h': rise_preds.get('4h'),
-            'rise_pred_d1': rise_preds.get('d1'),
-            'drawdown_pred_1h': drawdown_preds.get('1h'),
-            'drawdown_pred_4h': drawdown_preds.get('4h'),
-            'drawdown_pred_d1': drawdown_preds.get('d1'),
+            'consensus_all': consensus_all,
+            'consensus_14': consensus_14,
+            'consensus_4d1': consensus_4d1,
+            'vol_pred': {'1h': vol_preds.get('1h'), '4h': vol_preds.get('4h'), 'd1': vol_preds.get('d1')},
+            'rise_pred': {'1h': rise_preds.get('1h'), '4h': rise_preds.get('4h'), 'd1': rise_preds.get('d1')},
+            'drawdown_pred': {
+                '1h': drawdown_preds.get('1h'),
+                '4h': drawdown_preds.get('4h'),
+                'd1': drawdown_preds.get('d1'),
+            },
             'oi_overheat': oi_overheat,
             'oi_threshold': th_oi,
             'crowding_factor': crowding_factor,
@@ -1673,7 +1693,7 @@ class RobustSignalGenerator:
 
 
         if ob_imb is not None:
-            details['order_book_imbalance'] = float(ob_imb)
+            detail_data['order_book_imbalance'] = float(ob_imb)
         # ---- 新增：方向确认与多因子投票 ----
         vol_ratio_1h_4h = raw_f1h.get('vol_ratio_1h_4h')
         if vol_ratio_1h_4h is None and raw_f4h is not None:
@@ -1711,17 +1731,16 @@ class RobustSignalGenerator:
             + vw.get('vol_breakout', 1) * vol_breakout_dir
         )
         strong_confirm_vote = abs(vote) >= self.vote_params['strong_min']
-        details['vote'] = vote
-        details['ob_th'] = ob_th
+        detail_data['vote'] = {'value': vote}
+        detail_data['ob_th'] = ob_th
 
         # ====== 票数置信度衰减 ======
         strong_min = self.vote_params['strong_min']
         conf_min = self.vote_params['conf_min']
         conf_vote = sigmoid_confidence(vote, strong_min, conf_min)
         if abs(vote) >= strong_min:
-            fused_score *= conf_vote
-        details["confidence_vote"] = conf_vote
-        fused_score = float(np.clip(fused_score, -1, 1))
+            fused_score *= max(1.0, conf_vote)
+        detail_data['vote']['confidence'] = conf_vote
 
         cfg_th_sig = self.signal_threshold_cfg
         grad_dir = sigmoid_dir(
@@ -1765,10 +1784,9 @@ class RobustSignalGenerator:
                     self._exit_lag = 0
         else:
             self._exit_lag = 0
-        direction = exit_sig
 
         if ob_imb is not None:
-            details['order_book_imbalance'] = float(ob_imb)
+            detail_data['order_book_imbalance'] = float(ob_imb)
 
         # ===== 12. 仓位大小统一计算 =====
         base_coeff = (
@@ -1783,9 +1801,10 @@ class RobustSignalGenerator:
             'vol_ma_ratio_1h', features_1h.get('vol_ma_ratio_1h')
         )
         tier = 0.1 + base_coeff * abs(grad_dir)
-        details['vol_ratio'] = vol_ratio
-        details['position_tier'] = tier
-        details['confidence_factor'] = confidence_factor
+        detail_data['vol_ratio'] = vol_ratio
+        detail_data['position_tier'] = tier
+        detail_data['confidence_factor'] = confidence_factor
+        fused_score = float(np.clip(fused_score, -1, 1))
         pos_size, direction = self.compute_position_size(
             grad_dir=grad_dir,
             base_coeff=base_coeff,
@@ -1797,12 +1816,14 @@ class RobustSignalGenerator:
             oi_overheat=oi_overheat,
             vol_p=vol_preds.get('1h'),
             risk_score=risk_score,
+            crowding_factor=crowding_factor,
+            exit_mult=abs(exit_sig),
             cfg_th_sig=cfg_th_sig,
             scores=scores,
-            direction=direction,
+            direction=int(np.sign(exit_sig)),
         )
 
-        details['order_book_momentum'] = ob_imb
+        detail_data['order_book_momentum'] = ob_imb
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
@@ -1823,20 +1844,21 @@ class RobustSignalGenerator:
             )
 
         # ===== 14. 最终返回 =====
-        details['grad_dir'] = float(grad_dir)
-        details['pos_size'] = float(pos_size)
-        self._last_signal = int(np.sign(direction)) if direction else 0
-        self._last_score = fused_score
-        self._prev_vote = vote
-        cache["_prev_raw"]["1h"] = raw_f1h
-        cache["_prev_raw"]["4h"] = raw_f4h
-        cache["_prev_raw"]["d1"] = raw_fd1
-        for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-            maxlen = 4 if p == "1h" else 2
-            cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
+        detail_data['grad_dir'] = float(grad_dir)
+        detail_data['pos_size'] = float(pos_size)
+        with self._lock:
+            self._last_signal = int(np.sign(direction)) if direction else 0
+            self._last_score = fused_score
+            self._prev_vote = vote
+            cache["_prev_raw"]["1h"] = raw_f1h
+            cache["_prev_raw"]["4h"] = raw_f4h
+            cache["_prev_raw"]["d1"] = raw_fd1
+            for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+                maxlen = 4 if p == "1h" else 2
+                cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
         filters = self.cfg.get('signal_filters', {})
         confidence_vote = filters.get('confidence_vote', 0.33)
-        if details.get("confidence_vote", 1.0) < confidence_vote:
+        if detail_data.get("vote", {}).get("confidence", 1.0) < confidence_vote:
             direction, pos_size = 0, 0.0
         logger.info(
             "[%s] base_th=%.3f, funding_conflicts=%d, fused=%.4f",
@@ -1851,7 +1873,7 @@ class RobustSignalGenerator:
             'position_size': pos_size,
             'take_profit': take_profit,
             'stop_loss': stop_loss,
-            'details': details
+            'details': detail_data
         }
 
 
