@@ -34,6 +34,7 @@ d1:
 - kc_width_pct_chg_1h
 - bull_streak_1h
 - hv_7d_4h
+- channel_pos_4h
 - eth_correlation_1h_4h
 - obv_d1
 - bb_width_ratio_1h_4h
@@ -71,6 +72,7 @@ d1:
 - vol_roc_d1
 - pct_chg3_4h
 - hv_7d_d1
+- channel_pos_d1
 - adx_delta_d1
 - bb_width_d1
 - bb_width_1h
@@ -128,6 +130,7 @@ d1:
 - macd_hist_1h
 - vol_profile_density_1h
 - hv_7d_1h
+- channel_pos_1h
 - cci_delta_d1
 - long_lower_shadow_4h
 - price_ratio_cg_1h
@@ -184,6 +187,7 @@ d1:
 - upper_wick_ratio_d1
 - ichimoku_cloud_thickness_1h
 - hv_7d_d1
+- channel_pos_d1
 - long_upper_shadow_4h
 - obv_1h
 - vol_ma_ratio_long_d1
@@ -227,6 +231,7 @@ d1:
 - pct_chg6_1h
 - lower_wick_ratio_1h
 - hv_7d_4h
+- channel_pos_4h
 - macd_hist_diff_1h_d1
 - volume_cg_ratio_1h
 - atr_chg_4h
