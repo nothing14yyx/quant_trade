@@ -33,10 +33,11 @@ def test_layer_scores_product():
     rsg.get_ai_score = lambda f,u,d: 0.5
     rsg.get_factor_scores = lambda f,p:{k:0 for k in rsg.base_weights if k!='ai'}
     rsg.combine_score = lambda ai,fs,w=None: ai
-    rsg.dynamic_threshold = lambda *a,**k: 0
+    rsg.dynamic_threshold = lambda *a,**k: (0, 0)
     rsg.compute_tp_sl = lambda *a,**k:(0,0)
     rsg.models={'1h':{'up':None,'down':None},'4h':{'up':None,'down':None},'d1':{'up':None,'down':None}}
 
     feats={'close':100,'atr_pct_1h':0,'adx_1h':0,'funding_rate_1h':0}
     res = rsg.generate_signal(feats, {'atr_pct_4h':0}, {}, symbol='BTC')
-    assert res['details']['logic_score'] * res['details']['env_score'] * res['details']['risk_score'] == pytest.approx(res['score'])
+    env = res['details']['env']
+    assert env['logic_score'] * env['env_score'] * env['risk_score'] == pytest.approx(res['score'])

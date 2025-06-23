@@ -51,7 +51,7 @@ def make_rsg():
     rsg.get_ai_score = lambda f, up, down: 0.3
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: ai
-    rsg.dynamic_threshold = lambda *a, **k: 0.2
+    rsg.dynamic_threshold = lambda *a, **k: (0.2, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg._raw_history = {'1h': deque(maxlen=4), '4h': deque(maxlen=2), 'd1': deque(maxlen=2)}
     rsg._cooldown = 3

@@ -43,7 +43,7 @@ def test_range_guard():
     scores_seq = iter([0.55, -0.75, 0.0])
     gen.combine_score = lambda ai, fs, weights=None: next(scores_seq)
     gen.get_factor_scores = lambda f, p: {k: 0 for k in gen.base_weights if k != 'ai'}
-    gen.dynamic_threshold = lambda *a, **k: 0.1
+    gen.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
     gen.compute_tp_sl = lambda *a, **k: (0, 0)
     gen.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
