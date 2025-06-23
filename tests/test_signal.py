@@ -77,8 +77,9 @@ def test_vol_roc_guard():
     fd1 = {}
 
     res = rsg.generate_signal(f1h, f4h, fd1)
-    assert res['details']['score_1h'] <= 0.35
-    assert res['score'] * res['details']['score_1h'] >= 0
+    s1h = res['details']['scores']['1h']
+    assert s1h <= 0.35
+    assert res['score'] * s1h >= 0
 
 
 def test_score_clip():
