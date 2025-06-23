@@ -702,6 +702,13 @@ class RobustSignalGenerator:
             + 0.5 * safe(f'vol_breakout_{period}', 0)
             + np.tanh(safe(f'ichimoku_cloud_thickness_{period}', 0))
             + np.tanh((safe(f'close_{period}', safe("close", 0)) / safe(f'vwap_{period}', 1) - 1) * 5)
+            + np.tanh((safe(f'kc_perc_{period}', 0.5) - 0.5) * 3)
+            + np.tanh((safe(f'donchian_perc_{period}', 0.5) - 0.5) * 3)
+            + 0.5 * np.tanh(
+                (safe(f'ichimoku_conversion_{period}', 0) - safe(f'ichimoku_base_{period}', 0))
+                / (abs(safe(f'close_{period}', safe("close", 1))) + 1e-6)
+                * 10
+            )
         )
 
         momentum_raw = (
@@ -722,6 +729,9 @@ class RobustSignalGenerator:
             + np.tanh(safe(f'hv_7d_{period}', 0) * 5)
             + 0.5 * np.tanh(safe(f'hv_14d_{period}', 0) * 5)
             + 0.5 * np.tanh(safe(f'hv_30d_{period}', 0) * 5)
+            + 0.5 * np.tanh(safe(f'kc_width_pct_chg_{period}', 0) * 5)
+            + 0.5 * np.tanh(safe(f'skewness_{period}', 0) * 5)
+            + 0.5 * np.tanh((safe(f'kurtosis_{period}', 3) - 3))
         )
 
         volume_raw = (
@@ -731,6 +741,8 @@ class RobustSignalGenerator:
             + np.tanh(safe(f'rsi_mul_vol_ma_ratio_{period}', 0) / 100)
             + np.tanh((safe(f'buy_sell_ratio_{period}', 1) - 1) * 2)
             + np.tanh(safe(f'vol_profile_density_{period}', 0) / 10)
+            + np.tanh((safe(f'money_flow_ratio_{period}', 1) - 1) * 2)
+            - np.tanh(safe(f'bid_ask_spread_pct_{period}', 0) * 10)
         )
 
         sentiment_raw = (
