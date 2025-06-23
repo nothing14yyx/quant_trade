@@ -164,7 +164,13 @@ class Scheduler:
     def update_features(self):
         """重新计算特征并写入数据库"""
         try:
-            self.fe.merge_features(save_to_db=True, batch_size=1)
+            symbols = self.dl.get_top_symbols(self.fe.topn)
+            intervals = ["5m", "15m", "1h", "4h", "d1"]
+            for iv in intervals:
+                self.update_klines(symbols, iv)
+            self.update_oi_and_order_book(symbols)
+            self.update_funding_rates(symbols)
+            self.fe.merge_features(topn=self.fe.topn, save_to_db=True, batch_size=1)
         except Exception as e:
             logging.exception("update_features failed: %s", e)
 
