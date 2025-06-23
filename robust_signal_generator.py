@@ -843,6 +843,14 @@ class RobustSignalGenerator:
                 / (abs(safe(f'close_{period}', safe("close", 1))) + 1e-6)
                 * 10
             )
+            + 0.5 * np.tanh(
+                (
+                    safe(f'sma_10_{period}', safe(f'sma_20_{period}', 0))
+                    / (safe(f'sma_20_{period}', 1) or 1)
+                    - 1
+                )
+                * 5
+            )
         )
 
         momentum_raw = (
@@ -854,6 +862,14 @@ class RobustSignalGenerator:
             + 0.5 * np.tanh(safe('rsi_diff_1h_4h', 0) / 10)
             + 0.5 * np.tanh(safe('rsi_diff_1h_d1', 0) / 10)
             + 0.5 * np.tanh(safe('rsi_diff_4h_d1', 0) / 10)
+            + 0.5 * np.tanh((safe(f'stoch_k_{period}', 50) - 50) / 50)
+            + 0.5 * np.tanh((safe(f'stoch_d_{period}', 50) - 50) / 50)
+            + 0.5 * np.tanh(safe(f'macd_signal_{period}', 0) * 5)
+            + 0.3 * np.tanh(safe(f'pct_chg1_{period}', 0) * 20)
+            + 0.2 * np.tanh(safe(f'pct_chg3_{period}', 0) * 10)
+            + 0.2 * np.tanh(safe(f'pct_chg6_{period}', 0) * 5)
+            + 0.5 * np.tanh(safe(f'cci_{period}', 0) / 100)
+            + 0.3 * np.tanh(safe(f'cci_delta_{period}', 0) / 20)
         )
 
         volatility_raw = (
@@ -866,6 +882,8 @@ class RobustSignalGenerator:
             + 0.5 * np.tanh(safe(f'kc_width_pct_chg_{period}', 0) * 5)
             + 0.5 * np.tanh(safe(f'skewness_{period}', 0) * 5)
             + 0.5 * np.tanh((safe(f'kurtosis_{period}', 3) - 3))
+            + 0.5 * np.tanh(safe(f'atr_chg_{period}', 0) * 50)
+            + 0.5 * np.tanh(safe(f'bb_width_chg_{period}', 0) * 20)
         )
 
         volume_raw = (
@@ -877,6 +895,9 @@ class RobustSignalGenerator:
             + np.tanh(safe(f'vol_profile_density_{period}', 0) / 10)
             + np.tanh((safe(f'money_flow_ratio_{period}', 1) - 1) * 2)
             - np.tanh(safe(f'bid_ask_spread_pct_{period}', 0) * 10)
+            + 0.5 * np.tanh((safe(f'vol_ma_ratio_long_{period}', 1) - 1) * 2)
+            + 0.5 * np.tanh(safe(f'cg_total_volume_roc_{period}', 0) * 5)
+            + 0.5 * np.tanh(safe('bid_ask_imbalance', 0) * 10)
         )
 
         sentiment_raw = (
@@ -886,6 +907,7 @@ class RobustSignalGenerator:
             + np.tanh(safe(f'price_diff_cg_{period}', 0) * 5)
             + np.tanh(safe(f'cg_market_cap_roc_{period}', 0) * 5)
             + np.tanh((safe(f'volume_cg_ratio_{period}', 1) - 1) * 2)
+            + 0.5 * np.tanh((safe(f'price_ratio_cg_{period}', 1) - 1) * 10)
         )
 
         f_rate = safe(f'funding_rate_{period}', 0)
