@@ -30,6 +30,16 @@
 从 `features` 表读取最近 `ic_update_rows` 条记录，自动调用该接口更新因子权重。
 默认间隔为 24 小时，仍会在午夜执行，与旧版保持兼容。可根据数据量和市场波动
 适当调整更新频率。
+若训练样本分布不均，可在 `config.yaml` 中通过 `ic_scores` 字段手动设置各周期权重，
+例如:
+
+```yaml
+ic_scores:
+  1h: 1.0
+  4h: 0.2
+  d1: 0.1
+```
+这样 `RobustSignalGenerator` 在融合多周期分数时将更侧重 1h 模型。
 
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置，
 其中 `api_key`、`api_secret`、`COINGECKO_API_KEY` 与 MySQL `password` 均支持通过环境变量传入。
