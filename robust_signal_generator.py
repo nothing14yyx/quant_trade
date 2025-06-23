@@ -286,8 +286,12 @@ class RobustSignalGenerator:
         # 使用 RLock 以便在部分函数中嵌套调用
         self._lock = threading.RLock()
 
-        # 初始化各因子对应的IC分数（均设为1，后续可动态更新）
-        self.ic_scores = {k: 1 for k in self.base_weights.keys()}
+        # 初始化各因子对应的IC分数，可在配置文件中覆盖
+        cfg_ic = cfg.get("ic_scores")
+        if isinstance(cfg_ic, dict):
+            self.ic_scores = {k: float(cfg_ic.get(k, 1.0)) for k in self.base_weights.keys()}
+        else:
+            self.ic_scores = {k: 1.0 for k in self.base_weights.keys()}
         # 保存各因子IC的滑窗历史，便于做滚动平均
         self.ic_history = {k: deque(maxlen=history_window) for k in self.base_weights.keys()}
 
