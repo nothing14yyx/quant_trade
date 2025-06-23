@@ -419,3 +419,7 @@ signal_threshold:
 # 因子 IC 分数更新设置
 ic_update_rows: 3000          # 从 features 表读取的记录数
 ic_update_interval_hours: 24  # 多少小时刷新一次权重，默认为每日
+ic_scores:
+  1h: 1.0
+  4h: 0.2
+  d1: 0.1
