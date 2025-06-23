@@ -788,3 +788,40 @@ def test_position_size_range_regime():
     expected = 0.1 + 0.4 * abs(grad)
     assert res['position_size'] == pytest.approx(expected)
 
+
+def test_generate_signal_with_cls_model():
+    rsg = make_dummy_rsg()
+
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score_cls = lambda feats, mdl: 0.5
+    rsg.get_factor_scores = lambda f, p: {
+        'trend': 0,
+        'momentum': 0,
+        'volatility': 0,
+        'volume': 0,
+        'sentiment': 0,
+        'funding': 0,
+    }
+    rsg.combine_score = lambda ai, fs, weights=None: ai
+    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.ma_cross_logic = lambda *a, **k: 1.0
+    rsg.models = {
+        '1h': {'cls': None},
+        '4h': {'cls': None},
+        'd1': {'cls': None},
+    }
+
+    f1h = {
+        'close': 100,
+        'atr_pct_1h': 0,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'vol_ma_ratio_1h': 1.0,
+    }
+    f4h = {'atr_pct_4h': 0}
+    fd1 = {}
+
+    res = rsg.generate_signal(f1h, f4h, fd1)
+    assert res['score'] == pytest.approx(0.5)
+

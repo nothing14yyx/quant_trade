@@ -625,6 +625,31 @@ class RobustSignalGenerator:
             return float(ai_score[0])
         return ai_score
 
+    def get_ai_score_cls(self, features, model_dict):
+        """从单个 cls 模型计算上涨/下跌概率差值"""
+        cols = model_dict["features"]
+        row = {c: [features.get(c, np.nan)] for c in cols}
+        df = pd.DataFrame(row)
+        df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
+
+        probs = model_dict["pipeline"].predict_proba(df)[0]
+        classes = getattr(model_dict["pipeline"], "classes_", np.arange(len(probs)))
+
+        if len(classes) >= 3:
+            idx_down = int(np.argmin(classes))
+            idx_up = int(np.argmax(classes))
+        else:
+            idx_down = 0
+            idx_up = min(1, len(probs) - 1)
+
+        prob_down = probs[idx_down]
+        prob_up = probs[idx_up]
+        denom = prob_up + prob_down
+        if denom == 0:
+            return 0.0
+        ai_score = (prob_up - prob_down) / denom
+        return float(np.clip(ai_score, -1.0, 1.0))
+
     def get_vol_prediction(self, features, model_dict):
         """根据回归模型预测未来波动率"""
         lgb_model = model_dict["pipeline"]
@@ -1051,18 +1076,22 @@ class RobustSignalGenerator:
         rise_preds = {}
         drawdown_preds = {}
         for p, feats in [('1h', features_1h), ('4h', features_4h), ('d1', features_d1)]:
-            cal_up = self.calibrators.get(p, {}).get('up')
-            cal_down = self.calibrators.get(p, {}).get('down')
-            try:
-                ai_scores[p] = self.get_ai_score(
-                    feats,
-                    self.models[p]['up'],
-                    self.models[p]['down'],
-                    calibrator_up=cal_up,
-                    calibrator_down=cal_down,
-                )
-            except TypeError:
-                ai_scores[p] = self.get_ai_score(feats, self.models[p]['up'], self.models[p]['down'])
+            models_p = self.models.get(p, {})
+            if 'cls' in models_p and 'up' not in models_p:
+                ai_scores[p] = self.get_ai_score_cls(feats, models_p['cls'])
+            else:
+                cal_up = self.calibrators.get(p, {}).get('up')
+                cal_down = self.calibrators.get(p, {}).get('down')
+                try:
+                    ai_scores[p] = self.get_ai_score(
+                        feats,
+                        models_p['up'],
+                        models_p['down'],
+                        calibrator_up=cal_up,
+                        calibrator_down=cal_down,
+                    )
+                except TypeError:
+                    ai_scores[p] = self.get_ai_score(feats, models_p['up'], models_p['down'])
             if 'vol' in self.models[p]:
                 vol_preds[p] = self.get_vol_prediction(feats, self.models[p]['vol'])
             else:
