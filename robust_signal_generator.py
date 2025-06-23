@@ -233,6 +233,12 @@ class RobustSignalGenerator:
             {"ob": 4, "short_mom": 2, "ai": self.vote_params["weight_ai"], "vol_breakout": 1},
         )
 
+        filters_cfg = cfg.get("signal_filters", {})
+        self.signal_filters = {
+            "min_vote": filters_cfg.get("min_vote", 5),
+            "confidence_vote": filters_cfg.get("confidence_vote", 0.2),
+        }
+
         pc_cfg = cfg.get("position_coeff", {})
         self.pos_coeff_range = pc_cfg.get("range", DEFAULT_POS_K_RANGE)
         self.pos_coeff_trend = pc_cfg.get("trend", DEFAULT_POS_K_TREND)
@@ -1779,26 +1785,25 @@ class RobustSignalGenerator:
         # 阶梯退出逻辑
         prev_vote = getattr(self, '_prev_vote', 0)
 
-        # 多周期趋势与动量方向一致性过滤
-        align_ok = True
+        # 多周期趋势与动量方向一致性过滤：至少两周期同向
         if direction != 0:
+            align_count = 0
             for p in ('1h', '4h', 'd1'):
                 if (
-                    np.sign(fs[p]['trend']) != direction
-                    or np.sign(fs[p]['momentum']) != direction
+                    np.sign(fs[p]['trend']) == direction
+                    and np.sign(fs[p]['momentum']) == direction
                 ):
-                    align_ok = False
-                    break
-        if not align_ok:
-            direction = 0
-
-        # 区间突破检查（仅在震荡市）
-        if direction != 0 and regime == 'range':
-            ch_pos = raw_f1h.get('channel_pos_1h', features_1h.get('channel_pos_1h'))
-            if (direction == 1 and (ch_pos is None or ch_pos <= 1)) or (
-                direction == -1 and (ch_pos is None or ch_pos >= 0)
-            ):
+                    align_count += 1
+            if align_count < 2:
                 direction = 0
+
+        # 区间突破检查暂时停用
+        # if direction != 0 and regime == 'range':
+        #     ch_pos = raw_f1h.get('channel_pos_1h', features_1h.get('channel_pos_1h'))
+        #     if (direction == 1 and (ch_pos is None or ch_pos <= 1)) or (
+        #         direction == -1 and (ch_pos is None or ch_pos >= 0)
+        #     ):
+        #         direction = 0
 
 
         # ===== 12. 仓位大小统一计算 =====
@@ -1871,12 +1876,15 @@ class RobustSignalGenerator:
                 maxlen = 4 if p == "1h" else 2
                 cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
 
-        filters = self.cfg.get('signal_filters', {})
-        confidence_vote = filters.get('confidence_vote', 0.33)
+        filters = getattr(self, 'signal_filters', {"min_vote": 5, "confidence_vote": 0.2})
+        confidence_vote = filters.get('confidence_vote', 0.2)
         if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
             direction, pos_size = 0, 0.0
-        if abs(vote) < 8:
+            take_profit = stop_loss = None
+        min_vote = filters.get('min_vote', 5)
+        if abs(vote) < min_vote:
             direction, pos_size = 0, 0.0
+            take_profit = stop_loss = None
 
         final_details = {
             'ai': {'1h': ai_scores['1h'], '4h': ai_scores['4h'], 'd1': ai_scores['d1']},
