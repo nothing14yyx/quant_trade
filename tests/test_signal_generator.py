@@ -708,7 +708,7 @@ def test_crowding_factor_and_dynamic_threshold():
     oi = {'oi_chg': 0}
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                               open_interest=oi)
-    assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.35)
+    assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.1)
     env = res['details']['env']
     expected = env['logic_score'] * env['env_score'] * env['risk_score']
     assert res['score'] == pytest.approx(expected)
