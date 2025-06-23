@@ -235,9 +235,10 @@ class RobustSignalGenerator:
 
         filters_cfg = cfg.get("signal_filters", {})
         # 将默认 min_vote 从 8 调整为 5，confidence_vote 从 0.33 调整为 0.20
+        # 进一步放宽投票阈值和置信度要求
         self.signal_filters = {
-            "min_vote": filters_cfg.get("min_vote", 5),
-            "confidence_vote": filters_cfg.get("confidence_vote", 0.2),
+            "min_vote": filters_cfg.get("min_vote", 4),        # 从 5 → 4
+            "confidence_vote": filters_cfg.get("confidence_vote", 0.15),  # 从 0.20 → 0.15
         }
 
         pc_cfg = cfg.get("position_coeff", {})
@@ -714,7 +715,8 @@ class RobustSignalGenerator:
         if abs(risk_score) > 3 and confidence_factor > 1.05:
             pos_size = min(pos_size * 1.2, 1.0)
 
-        if pos_size < cfg_th_sig.get("min_pos", 0.1):
+        # 放宽最小仓位要求：允许更小的 pos_size
+        if pos_size < cfg_th_sig.get("min_pos", 0.05):  # 从 0.10 → 0.05
             direction, pos_size = 0, 0.0
 
         if direction == 1 and scores.get("4h", 0) < -self.veto_level:
@@ -1808,16 +1810,13 @@ class RobustSignalGenerator:
         # 阶梯退出逻辑
         prev_vote = getattr(self, '_prev_vote', 0)
 
-        # —— 保留“至少两周期同向”逻辑，不变 ——
+        # —— 放宽多周期对齐：只需任意一个周期同向即可开仓 ——
         if direction != 0:
             align_count = 0
             for p in ('1h', '4h', 'd1'):
-                if (
-                    np.sign(fs[p]['trend']) == direction
-                    and np.sign(fs[p]['momentum']) == direction
-                ):
+                if np.sign(fs[p]['trend']) == direction and np.sign(fs[p]['momentum']) == direction:
                     align_count += 1
-            if align_count < 2:
+            if align_count < 1:  # 从“<2”改为“<1”
                 direction = 0
 
         # 移除“range 时的区间突破检查”，避免趋势市中被误杀
@@ -1894,13 +1893,14 @@ class RobustSignalGenerator:
                 cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
 
         filters = getattr(self, 'signal_filters', {"min_vote": 5, "confidence_vote": 0.2})
-        confidence_vote = filters.get('confidence_vote', 0.2)
-        if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
-            direction, pos_size = 0, 0.0
-            take_profit = stop_loss = None
+        # 取消最终置信度硬过滤（让小信号也能进场）
+        # confidence_vote = filters.get('confidence_vote', 0.15)
+        # if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
+        #     direction, pos_size = 0, 0.0
+        #     take_profit = stop_loss = None
         # 放宽 vote 阈值过滤：从 8 → 5
-        min_vote = filters.get('min_vote', 5)
-        if abs(vote) < min_vote:
+        min_vote = filters.get('min_vote', 4)
+        if abs(vote) < min_vote - 1:  # 实际门槛降到 3
             direction, pos_size = 0, 0.0
             take_profit = stop_loss = None
 
