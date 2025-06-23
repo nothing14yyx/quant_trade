@@ -690,6 +690,7 @@ class RobustSignalGenerator:
         scores: dict,
         direction: int,
         exit_mult: float,
+        consensus_all: bool = False,
     ) -> tuple[float, int]:
         """Calculate final position size given direction and risk factors."""
 
@@ -704,9 +705,9 @@ class RobustSignalGenerator:
             and vol_ratio is not None
             and vol_ratio < 0.3
             and abs(fused_score) < base_th + 0.02
+            and not consensus_all
         ):
-            direction = 0
-            pos_size = 0.0
+            pos_size *= 0.5
 
 
         if vol_p is not None:
@@ -719,10 +720,11 @@ class RobustSignalGenerator:
         if pos_size < cfg_th_sig.get("min_pos", 0.05):  # 从 0.10 → 0.05
             direction, pos_size = 0, 0.0
 
-        if direction == 1 and scores.get("4h", 0) < -self.veto_level:
-            direction, pos_size = 0, 0.0
-        elif direction == -1 and scores.get("4h", 0) > self.veto_level:
-            direction, pos_size = 0, 0.0
+        # 4h 周期 veto 逻辑已停用
+        # if direction == 1 and scores.get("4h", 0) < -self.veto_level:
+        #     direction, pos_size = 0, 0.0
+        # elif direction == -1 and scores.get("4h", 0) > self.veto_level:
+        #     direction, pos_size = 0, 0.0
 
         return pos_size, direction
 
@@ -1695,7 +1697,8 @@ class RobustSignalGenerator:
             reversal=bool(rev_dir),
             history_scores=cache["history_scores"],
         )
-        base_th = max(base_th, 0.35)
+        # 放宽动态阈值硬上限，允许更低的触发值
+        base_th = min(base_th, 0.20)
         if rev_dir != 0:
             fused_score += rev_boost * rev_dir
             self._cooldown = 0
@@ -1856,11 +1859,12 @@ class RobustSignalGenerator:
                 if direction == self._last_signal and self._last_signal != 0
                 else 1.0
             ),
+            consensus_all=consensus_all,
         )
 
         if oi_overheat:
+            # OI过热时仅衰减仓位，不强制平仓
             pos_size *= 0.5
-            direction = 0
 
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = features_1h.get('close', 0)
@@ -1900,7 +1904,7 @@ class RobustSignalGenerator:
         #     take_profit = stop_loss = None
         # 放宽 vote 阈值过滤：从 8 → 5
         min_vote = filters.get('min_vote', 4)
-        if abs(vote) < min_vote - 1:  # 实际门槛降到 3
+        if abs(vote) < min_vote:
             direction, pos_size = 0, 0.0
             take_profit = stop_loss = None
 
