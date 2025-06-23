@@ -56,6 +56,8 @@ def assign_safe(feats: pd.DataFrame, name: str, series):
 
 def calc_mfi_np(high, low, close, volume, window=14):
     """Return Money Flow Ratio and Money Flow Index"""
+    if len(high) == 0:
+        return np.array([]), np.array([])
     tp = (high + low + close) / 3
     mf = tp * volume
     pmf = np.where(tp > np.roll(tp, 1), mf, 0)
