@@ -17,17 +17,12 @@ FEATURE_COLS_1H = collect_feature_cols(_cfg, "1h")
 FEATURE_COLS_4H = collect_feature_cols(_cfg, "4h")
 FEATURE_COLS_D1 = collect_feature_cols(_cfg, "d1")
 
-# 预训练模型路径
+# 预训练模型路径（从 config.yaml 读取）
+_model_cfg = _cfg.get("models", {})
 MODEL_PATHS = {
-    ('1h', 'up'):   'models/model_1h_up.pkl',
-    ('1h', 'down'): 'models/model_1h_down.pkl',
-    ('1h', 'vol'):  'models/model_1h_vol.pkl',
-    ('4h', 'up'):   'models/model_4h_up.pkl',
-    ('4h', 'down'): 'models/model_4h_down.pkl',
-    ('4h', 'vol'):  'models/model_4h_vol.pkl',
-    ('d1', 'up'):   'models/model_d1_up.pkl',
-    ('d1', 'down'): 'models/model_d1_down.pkl',
-    ('d1', 'vol'):  'models/model_d1_vol.pkl',
+    (period, tag): path
+    for period, tags in _model_cfg.items()
+    for tag, path in (tags or {}).items()
 }
 
 # 将上面的 (period, direction) 键值对转换为嵌套字典
