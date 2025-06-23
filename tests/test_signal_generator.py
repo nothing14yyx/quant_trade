@@ -66,7 +66,7 @@ def test_compute_tp_sl():
 
 def test_dynamic_threshold_basic():
     rsg = make_dummy_rsg()
-    th = rsg.dynamic_threshold(0, 0, 0)
+    th, _ = rsg.dynamic_threshold(0, 0, 0)
     assert th == pytest.approx(0.12)
 
 
@@ -81,15 +81,15 @@ def test_get_dynamic_oi_threshold():
 
 def test_dynamic_threshold_upper_bound():
     rsg = make_dummy_rsg()
-    th = rsg.dynamic_threshold(0.1, 50, 0.02)
+    th, _ = rsg.dynamic_threshold(0.1, 50, 0.02)
     assert th == pytest.approx(0.47)
 
 
 def test_dynamic_threshold_multi_period():
     rsg = make_dummy_rsg()
-    th1 = rsg.dynamic_threshold(0.02, 25)
-    th2 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
-    th3 = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
+    th1, _ = rsg.dynamic_threshold(0.02, 25)
+    th2, _ = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
+    th3, _ = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
 
     assert th1 == pytest.approx(0.24)
     assert th2 == pytest.approx(0.2625)
@@ -98,16 +98,16 @@ def test_dynamic_threshold_multi_period():
 
 def test_dynamic_threshold_with_vix():
     rsg = make_dummy_rsg()
-    base_th = rsg.dynamic_threshold(0.02, 25)
-    th = rsg.dynamic_threshold(0.02, 25, vix_proxy=1.0)
+    base_th, _ = rsg.dynamic_threshold(0.02, 25)
+    th, _ = rsg.dynamic_threshold(0.02, 25, vix_proxy=1.0)
     assert th > base_th
 
 
 def test_dynamic_threshold_with_computed_vix():
     rsg = make_dummy_rsg()
     proxy = compute_vix_proxy(0.02, 0.04)
-    base_th = rsg.dynamic_threshold(0.02, 25)
-    th = rsg.dynamic_threshold(0.02, 25, vix_proxy=proxy)
+    base_th, _ = rsg.dynamic_threshold(0.02, 25)
+    th, _ = rsg.dynamic_threshold(0.02, 25, vix_proxy=proxy)
     assert th > base_th
 
 
@@ -115,11 +115,11 @@ def test_dynamic_threshold_recovery():
     rsg = make_dummy_rsg()
     rsg.th_window = 50
     rsg.history_scores.extend([5.0] * 120)
-    th_high = rsg.dynamic_threshold(0, 0, 0)
+    th_high, _ = rsg.dynamic_threshold(0, 0, 0)
     assert th_high >= 5
     for _ in range(60):
         rsg.history_scores.append(0.1)
-    th_normal = rsg.dynamic_threshold(0, 0, 0)
+    th_normal, _ = rsg.dynamic_threshold(0, 0, 0)
     assert th_normal == pytest.approx(0.12)
 
 
@@ -345,7 +345,7 @@ def test_generate_signal_with_external_metrics():
         }
         r.combine_score = lambda ai, fs, weights=None: 0.5
         r.dynamic_weight_update = lambda: r.base_weights
-        r.dynamic_threshold = lambda *a, **k: 0.0
+        r.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
         r.compute_tp_sl = lambda *a, **k: (0, 0)
         r.models = {'1h': {'up': None, 'down': None},
                     '4h': {'up': None, 'down': None},
@@ -392,7 +392,7 @@ def test_hot_sector_influence():
     }
     rsg.combine_score = lambda ai, fs, weights=None: 0.5
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -425,7 +425,7 @@ def test_eth_dominance_influence():
     }
     rsg.combine_score = lambda ai, fs, weights=None: 0.5
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -459,7 +459,7 @@ def test_short_momentum_and_order_book():
     }
     rsg.combine_score = lambda ai, fs, weights=None: 0.5
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -496,7 +496,7 @@ def test_ma_cross_logic_amplify():
     }
     rsg.combine_score = lambda ai, fs, weights=None: 0.5
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -557,7 +557,7 @@ def test_order_book_momentum_threshold():
     }
     rsg.combine_score = lambda ai, fs, weights=None: 0.5
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {
         '1h': {'up': None, 'down': None},
@@ -596,7 +596,7 @@ def test_sentiment_reweight_and_guard():
                 'sentiment': 0, 'funding': 0}
 
     rsg.get_factor_scores = fs_func
-    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -623,7 +623,7 @@ def test_volume_and_funding_penalties():
                 'sentiment': 0, 'funding': 0}
 
     rsg.get_factor_scores = fs_func
-    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -659,7 +659,7 @@ def test_momentum_alignment_disables_confirm():
                 'volume': 0, 'sentiment': 0, 'funding': 0}
 
     rsg.get_factor_scores = fs_func
-    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -693,7 +693,7 @@ def test_crowding_factor_and_dynamic_threshold():
 
     rsg.get_factor_scores = fs_func
     rsg.get_dynamic_oi_threshold = lambda pred_vol=None: 0.6
-    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -712,8 +712,9 @@ def test_crowding_factor_and_dynamic_threshold():
     oi = {'oi_chg': 0}
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
                               open_interest=oi)
-    assert res['details']['dynamic_th_final'] == pytest.approx(0.1)
-    expected = res['details']['scores']['1h'] * res['details']['crowding_factor'] * res['details']['confidence']
+    assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.1)
+    env = res['details']['env']
+    expected = env['logic_score'] * env['env_score'] * env['risk_score']
     assert res['score'] == pytest.approx(expected)
 
 
@@ -723,7 +724,7 @@ def test_step_exit_with_order_book_flip():
     rsg.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: 0.6
-    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -765,7 +766,7 @@ def test_position_size_range_regime():
         'volume': 0, 'sentiment': 0, 'funding': 0,
     }
     rsg.combine_score = lambda ai, fs, weights=None: ai
-    rsg.dynamic_threshold = lambda *a, **k: 0.1
+    rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
@@ -804,7 +805,7 @@ def test_generate_signal_with_cls_model():
         'funding': 0,
     }
     rsg.combine_score = lambda ai, fs, weights=None: ai
-    rsg.dynamic_threshold = lambda *a, **k: 0.0
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.ma_cross_logic = lambda *a, **k: 1.0
     rsg.models = {
