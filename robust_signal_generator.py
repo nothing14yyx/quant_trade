@@ -1614,7 +1614,7 @@ class RobustSignalGenerator:
                 'details': {
                     'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
                     'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
-                    'score_1h': score_1h,       'score_4h': score_4h,       'score_d1': score_d1,
+                    'score_1h': scores['1h'],   'score_4h': scores['4h'],   'score_d1': scores['d1'],
                     'strong_confirm_4h': local_details.get('strong_confirm_4h'),
                     'consensus_14': consensus_14, 'consensus_all': consensus_all,
                     'vol_pred_1h': vol_preds.get('1h'),
