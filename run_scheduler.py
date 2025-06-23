@@ -230,7 +230,7 @@ class Scheduler:
                 data = {
                     "symbol": sym,
                     "time": now,
-                    "price": feats1h.get("close"),
+                    "price": raw1h.get("close"),
                     "signal": sig.get("signal"),
                     "score": sig.get("score"),
                     "pos": sig.get("position_size"),
