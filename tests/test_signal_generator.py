@@ -3,9 +3,7 @@ import pytest
 from collections import deque
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator, sigmoid_dir
-
-def compute_vix_proxy(fr, oi):
-    return 0.5 * fr + 0.5 * oi
+from quant_trade.data_loader import compute_vix_proxy
 
 
 def make_dummy_rsg():
