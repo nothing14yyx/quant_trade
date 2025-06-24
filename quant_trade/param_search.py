@@ -151,6 +151,8 @@ def run_single_backtest(
                 "signal": res["signal"],
                 "score": res["score"],
                 "position_size": res.get("position_size", 1.0),
+                "take_profit": res.get("take_profit"),
+                "stop_loss": res.get("stop_loss"),
             })
         sig_df = pd.DataFrame(signals)
         trades_df = simulate_trades(
