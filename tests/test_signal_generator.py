@@ -38,6 +38,7 @@ def make_dummy_rsg():
     }
     rsg.ob_th_params = {'min_ob_th': 0.10, 'dynamic_factor': 0.08}
     rsg.risk_score_cap = 5.0
+    rsg.cycle_weight = {'strong': 1.0, 'weak': 1.0, 'opposite': 1.0}
     rsg.cfg = {
         'signal_threshold': {
             'mode': 'sigmoid',
