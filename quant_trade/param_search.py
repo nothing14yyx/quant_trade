@@ -427,7 +427,7 @@ def run_param_search(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, default=100000, help="只取最近 N 行数据")
+    parser.add_argument("--rows", type=int, default=10000, help="只取最近 N 行数据")
     parser.add_argument(
         "--method",
         choices=["grid", "optuna"],
