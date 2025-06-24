@@ -80,6 +80,7 @@ pytest -q tests
 若数据库已存在 `features` 表，可执行 `mysql < scripts/migrate_add_feature_columns.sql` 补充最新版字段。
 
 通过 `python param_search.py --rows 10000`(可选) 调整信号权重。
+参数搜索默认按时间拆分为训练集和验证集，可通过 `--test-ratio` 调整验证集比例。
 若希望同时优化 Δ-boost 参数，可加入 `--tune-delta`，例如：
 
 ```bash
