@@ -1,5 +1,6 @@
 import argparse
 from collections import deque
+import logging
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
@@ -18,6 +19,8 @@ from quant_trade.backtester import (
     convert_model_paths,
     simulate_trades,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
@@ -329,11 +332,14 @@ def run_param_search(
             if metric > best_metric:
                 best_metric = metric
                 best = params
-            print(
-                f"params={params} -> total_ret={tot_ret:.4f}, sharpe={sharpe:.4f}"
+            logger.info(
+                "params=%s -> total_ret=%.4f, sharpe=%.4f",
+                params,
+                tot_ret,
+                sharpe,
             )
 
-        print("best params:", best, "best_sharpe:", best_metric)
+        logger.info("best params: %s best_sharpe: %s", best, best_metric)
     else:
         def objective(trial: optuna.Trial) -> float:
             keys = [
@@ -414,7 +420,9 @@ def run_param_search(
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=trials, show_progress_bar=True)
 
-        print("best params:", study.best_params, "best_sharpe:", study.best_value)
+        logger.info(
+            "best params: %s best_sharpe: %s", study.best_params, study.best_value
+        )
 
 
 def main() -> None:
