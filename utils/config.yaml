@@ -408,7 +408,7 @@ position_coeff:
   trend: 0.60
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.08      # 原 dynamic_th_final 的初始值
+  base_th: 0.09343      # 原 dynamic_th_final 的初始值
   gamma: 0.05        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
   low_base: 0.06
