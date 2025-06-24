@@ -71,17 +71,17 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
         exit_price = None
         exit_time = None
         if direction == 1:
-            if low <= sl:
+            if sl is not None and low <= sl:
                 exit_price = sl
                 exit_time = df_sym.at[i, 'open_time']
-            elif high >= tp:
+            elif tp is not None and high >= tp:
                 exit_price = tp
                 exit_time = df_sym.at[i, 'open_time']
         else:
-            if high >= sl:
+            if sl is not None and high >= sl:
                 exit_price = sl
                 exit_time = df_sym.at[i, 'open_time']
-            elif low <= tp:
+            elif tp is not None and low <= tp:
                 exit_price = tp
                 exit_time = df_sym.at[i, 'open_time']
 
