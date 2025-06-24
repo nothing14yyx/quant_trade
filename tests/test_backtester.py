@@ -1,8 +1,7 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pandas as pd
 import pytest
-from backtester import simulate_trades
+
+from quant_trade.backtester import simulate_trades
 
 
 def test_simulate_trades_tp_hit():

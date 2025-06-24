@@ -1,14 +1,20 @@
-import os, sys, re, sqlite3
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import os
+import re
+import sqlite3
 from pathlib import Path
 
-SCHEMA = Path('schema.sql').read_text()
+BASE_DIR = Path(__file__).resolve().parents[1]
+SCHEMA = (BASE_DIR / 'schema.sql').read_text()
 
 # 提取 features 表建表语句
 match = re.search(r"CREATE TABLE `features` \((.*?)PRIMARY KEY", SCHEMA, re.S)
 CREATE_SQL = 'CREATE TABLE features (' + match.group(1) + 'PRIMARY KEY (symbol, open_time))'
 
-FEATURE_COLS = [c.strip() for c in Path('data/merged/feature_cols.txt').read_text().splitlines() if c.strip()]
+FEATURE_COLS = [
+    c.strip()
+    for c in (BASE_DIR / 'data/merged/feature_cols.txt').read_text().splitlines()
+    if c.strip()
+]
 META_COLS = {'symbol', 'open_time', 'close_time', 'quote_asset_volume', 'num_trades', 'taker_buy_base', 'taker_buy_quote'}
 
 def test_feature_columns_match():

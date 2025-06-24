@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, UTC
 import pandas as pd
 import numpy as np
 
-from data_loader import DataLoader
-from feature_engineering import FeatureEngineer
-from generate_signal_from_db import (
+from quant_trade.data_loader import DataLoader
+from quant_trade.feature_engineering import FeatureEngineer
+from quant_trade.generate_signal_from_db import (
     load_config,
     connect_mysql,
     load_scaler_params_from_json,
@@ -21,8 +21,8 @@ from generate_signal_from_db import (
     load_order_book_imbalance,
     load_symbol_categories,
 )
-from robust_signal_generator import RobustSignalGenerator
-from utils.helper import collect_feature_cols
+from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.utils.helper import collect_feature_cols
 from sqlalchemy import text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -190,7 +190,7 @@ class Scheduler:
                 logging.warning("update_ic_scores_from_db: no data returned")
                 return
             df = df.sort_values("open_time")
-            self.sg.update_ic_scores(df)
+            self.sg.update_ic_scores(df, group_by="symbol")
             logging.info("[update_ic_scores] %s", self.sg.current_weights)
         except Exception as e:
             logging.exception("update_ic_scores_from_db failed: %s", e)

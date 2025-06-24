@@ -1,11 +1,8 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 import datetime as dt
 from types import SimpleNamespace
 from concurrent.futures import Future
 
-import run_scheduler
+from quant_trade import run_scheduler
 
 class DummyExecutor:
     def submit(self, func, *args, **kwargs):
@@ -47,4 +44,36 @@ def test_dispatch_ic_update(monkeypatch):
 
     run_scheduler.Scheduler.dispatch_tasks(dummy)
     assert calls == ["ic"]
+
+
+def test_update_ic_scores_group_by(monkeypatch):
+    import pandas as pd
+
+    df = pd.DataFrame({
+        "open_time": [0, 1, 0, 1],
+        "close_time": [0, 1, 0, 1],
+        "symbol": ["A", "A", "B", "B"],
+        "open": [1, 1, 1, 1],
+        "close": [1, 1, 1, 1],
+    })
+
+    monkeypatch.setattr(run_scheduler, "text", lambda q: q)
+    monkeypatch.setattr(run_scheduler.pd, "read_sql", lambda *a, **k: df)
+
+    captured = {}
+
+    def fake_update_ic_scores(d, group_by=None):
+        captured["data"] = d
+        captured["group_by"] = group_by
+
+    sched = SimpleNamespace(
+        engine=None,
+        ic_update_limit=100,
+        sg=SimpleNamespace(update_ic_scores=fake_update_ic_scores, current_weights={}),
+    )
+
+    run_scheduler.Scheduler.update_ic_scores_from_db(sched)
+
+    assert captured["group_by"] == "symbol"
+    assert list(captured["data"].open_time) == sorted(df.open_time.tolist())
 
