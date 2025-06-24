@@ -1,6 +1,6 @@
 import pytest
 
-from quant_trade.tests.test_signal_generator import make_dummy_rsg
+from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 
 
