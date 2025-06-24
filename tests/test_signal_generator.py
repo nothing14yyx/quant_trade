@@ -1,10 +1,8 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import numpy as np
 import pytest
 from collections import deque
 
-from robust_signal_generator import RobustSignalGenerator, sigmoid_dir
+from quant_trade.robust_signal_generator import RobustSignalGenerator, sigmoid_dir
 
 def compute_vix_proxy(fr, oi):
     return 0.5 * fr + 0.5 * oi
@@ -243,7 +241,7 @@ def test_update_ic_scores_window_group(monkeypatch):
         return {k: len(df_arg) for k in rsg.base_weights}
 
     import types, sys
-    monkeypatch.setitem(sys.modules, "param_search", types.SimpleNamespace(
+    monkeypatch.setitem(sys.modules, "quant_trade.param_search", types.SimpleNamespace(
         compute_ic_scores=fake_compute_ic_scores
     ))
 
@@ -264,7 +262,7 @@ def test_dynamic_weight_update(monkeypatch):
         return {k: i + 1 for i, k in enumerate(rsg.base_weights)}
 
     import types, sys
-    monkeypatch.setitem(sys.modules, "param_search", types.SimpleNamespace(
+    monkeypatch.setitem(sys.modules, "quant_trade.param_search", types.SimpleNamespace(
         compute_ic_scores=fake_compute_ic_scores
     ))
 

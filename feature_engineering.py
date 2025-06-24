@@ -17,19 +17,19 @@ from sqlalchemy import create_engine
 from sklearn.metrics import mutual_info_score
 
 # 不再 import calc_features_full，而改为：
-from utils.helper import (
+from quant_trade.utils.helper import (
     calc_features_raw,
     calc_order_book_features,
 )  # pylint: disable=import-error
 
 # Robust-z 参数持久化工具
-from utils.robust_scaler import (
+from quant_trade.utils.robust_scaler import (
     compute_robust_z_params,
     save_scaler_params_to_json,
     load_scaler_params_from_json,
     apply_robust_z_with_params,
 )
-from utils.feature_health import health_check, apply_health_check_df
+from quant_trade.utils.feature_health import health_check, apply_health_check_df
 
 # Future-related columns to drop for leakage prevention
 FUTURE_COLS = [

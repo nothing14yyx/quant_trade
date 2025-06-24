@@ -1,9 +1,7 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 from collections import deque
 
-from robust_signal_generator import (
+from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     cap_positive,
     fused_to_risk,
