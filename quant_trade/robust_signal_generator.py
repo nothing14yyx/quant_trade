@@ -545,6 +545,15 @@ class RobustSignalGenerator:
             else:
                 take_profit = price * (1 - max(drawdown_pred, 0))
                 stop_loss = price * (1 - min(rise_pred, 0))
+
+            # 若预测值过小导致 tp/sl 等于入场价，退回 ATR 模式
+            if abs(take_profit - price) < 1e-8 and abs(stop_loss - price) < 1e-8:
+                if direction == 1:
+                    take_profit = price + tp_mult * atr
+                    stop_loss = price - sl_mult * atr
+                else:
+                    take_profit = price - tp_mult * atr
+                    stop_loss = price + sl_mult * atr
         else:
             if direction == 1:
                 take_profit = price + tp_mult * atr
