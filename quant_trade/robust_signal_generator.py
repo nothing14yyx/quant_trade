@@ -882,7 +882,6 @@ class RobustSignalGenerator:
             + 0.5 * np.tanh(safe(f'cci_{period}', 0) / 100)
             + 0.3 * np.tanh(safe(f'cci_delta_{period}', 0) / 20)
             + 0.3 * np.tanh(safe('macd_hist_4h_mul_bb_width_1h', 0) * 5)
-            + 0.2 * np.tanh(safe('rsi_1h_mul_vol_ma_ratio_4h', 0) / 100)
         )
 
         volatility_raw = (
