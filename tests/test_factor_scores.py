@@ -155,5 +155,21 @@ def test_new_features_affect_scores():
     imbalance['bid_ask_imbalance'] = 0.3
     assert rsg.get_factor_scores(imbalance, '1h')['volume'] > base['volume']
 
+    spread = base_feats.copy()
+    spread['close_spread_1h_4h'] = 0.05
+    assert rsg.get_factor_scores(spread, '1h')['trend'] > base['trend']
+
+    macd_mult = base_feats.copy()
+    macd_mult['macd_hist_4h_mul_bb_width_1h'] = 0.02
+    assert rsg.get_factor_scores(macd_mult, '1h')['momentum'] > base['momentum']
+
+    mom_std = base_feats.copy()
+    mom_std['mom_5m_roll1h_std'] = 0.1
+    assert rsg.get_factor_scores(mom_std, '1h')['volatility'] > base['volatility']
+
+    vol_ratio = base_feats.copy()
+    vol_ratio['vol_ratio_4h_d1'] = 1.2
+    assert rsg.get_factor_scores(vol_ratio, '1h')['volume'] > base['volume']
+
 
 
