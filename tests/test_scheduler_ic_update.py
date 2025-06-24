@@ -1,11 +1,8 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 import datetime as dt
 from types import SimpleNamespace
 from concurrent.futures import Future
 
-import run_scheduler
+from quant_trade import run_scheduler
 
 class DummyExecutor:
     def submit(self, func, *args, **kwargs):

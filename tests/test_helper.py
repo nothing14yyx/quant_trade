@@ -1,10 +1,7 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 import pandas as pd
 import pandas_ta as ta
 
-from utils.helper import _safe_ta, calc_mfi_np
+from quant_trade.utils.helper import _safe_ta, calc_mfi_np
 
 
 def test_safe_ta_with_short_series():

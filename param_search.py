@@ -7,8 +7,8 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import optuna
 
-from robust_signal_generator import RobustSignalGenerator
-from backtester import (
+from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.backtester import (
     FEATURE_COLS_1H,
     FEATURE_COLS_4H,
     FEATURE_COLS_D1,
