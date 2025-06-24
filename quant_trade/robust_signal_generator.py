@@ -187,11 +187,15 @@ class RobustSignalGenerator:
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         self.calibrators = {}
+        base_dir = Path(__file__).resolve().parent
         for period, path_dict in model_paths.items():
             self.models[period] = {}
             self.calibrators[period] = {}
             for direction, path in path_dict.items():
-                loaded = joblib.load(path)
+                p = Path(path)
+                if not p.is_absolute():
+                    p = base_dir / p
+                loaded = joblib.load(p)
                 pipe = loaded["pipeline"]
                 if hasattr(pipe, "set_output"):
                     pipe.set_output(transform="pandas")
