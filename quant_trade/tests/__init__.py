@@ -1,8 +1,8 @@
 import os
 
 # Expose repository-level tests package for internal imports
-__path__ = [os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tests'))]
-
-
-def test_signal_generator():
-    return None
+base_tests_path = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', '..', 'tests')
+)
+package_tests_path = os.path.abspath(os.path.dirname(__file__))
+__path__ = [base_tests_path, package_tests_path]
