@@ -1,8 +1,7 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import json
 import numpy as np
-from run_scheduler import _to_builtin, safe_json_dumps
+
+from quant_trade.run_scheduler import _to_builtin, safe_json_dumps
 
 
 def test_to_builtin_conversion():

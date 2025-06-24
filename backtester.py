@@ -4,8 +4,8 @@ import pandas as pd
 import numpy as np
 import yaml
 from sqlalchemy import create_engine
-from robust_signal_generator import RobustSignalGenerator
-from utils.helper import calc_features_raw, collect_feature_cols
+from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
 
 # 配置文件路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
@@ -154,7 +154,7 @@ def run_backtest(*, recent_days: int | None = None):
     )
 
     # 根据近期历史数据更新因子 IC 分数
-    sg.update_ic_scores(df.tail(1000))
+    sg.update_ic_scores(df.tail(1000), group_by="symbol")
 
     results = []
     trades_all = []

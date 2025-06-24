@@ -959,7 +959,7 @@ class RobustSignalGenerator:
             排序所依据的时间列名。
         """
 
-        from param_search import compute_ic_scores
+        from quant_trade.param_search import compute_ic_scores
 
         def _compute(sub_df: pd.DataFrame) -> dict:
             sub_df = sub_df.sort_values(time_col)

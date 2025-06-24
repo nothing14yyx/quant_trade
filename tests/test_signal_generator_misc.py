@@ -1,8 +1,7 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 import numpy as np
-from robust_signal_generator import RobustSignalGenerator
+
+from quant_trade.robust_signal_generator import RobustSignalGenerator
 
 
 def make_rsg():

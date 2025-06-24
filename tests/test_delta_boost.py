@@ -1,7 +1,4 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import RobustSignalGenerator
 
 
 def _fake_feat(**kv):

@@ -1,9 +1,7 @@
-import os, sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import numpy as np
 import pandas as pd
-from utils.robust_scaler import (
+
+from quant_trade.utils.robust_scaler import (
     compute_robust_z_params,
     save_scaler_params_to_json,
     load_scaler_params_from_json,

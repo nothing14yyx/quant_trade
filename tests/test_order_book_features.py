@@ -1,13 +1,12 @@
-import os, sys, json
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import json
 
 import pandas as pd
 import pytest
-
-from utils.helper import calc_order_book_features
-from feature_engineering import FeatureEngineer
-from data_loader import DataLoader
 import sqlalchemy
+
+from quant_trade.utils.helper import calc_order_book_features
+from quant_trade.feature_engineering import FeatureEngineer
+from quant_trade.data_loader import DataLoader
 
 
 def test_calc_order_book_features():
