@@ -171,5 +171,11 @@ def test_new_features_affect_scores():
     vol_ratio['vol_ratio_4h_d1'] = 1.2
     assert rsg.get_factor_scores(vol_ratio, '1h')['volume'] > base['volume']
 
+    vol_rsi = base_feats.copy()
+    vol_rsi['rsi_1h_mul_vol_ma_ratio_4h'] = 10
+    scores = rsg.get_factor_scores(vol_rsi, '1h')
+    assert scores['volume'] > base['volume']
+    assert scores['momentum'] == base['momentum']
+
 
 
