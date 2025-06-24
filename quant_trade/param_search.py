@@ -186,12 +186,35 @@ def run_param_search(
     trials: int = 30,
     tune_delta: bool = False,
     n_jobs: int = 1,
+    test_ratio: float = 0.2,
 ) -> None:
+    """Search for optimal parameters using a train/validation split.
+
+    Parameters
+    ----------
+    rows: int | None
+        Number of recent rows to use from the features table.
+    method: str
+        Search algorithm: "grid" or "optuna".
+    trials: int
+        Number of trials when using optuna.
+    tune_delta: bool
+        Whether to tune delta boost parameters.
+    n_jobs: int
+        Parallel jobs for grid search.
+    test_ratio: float
+        Portion of data used as validation set.
+    """
     cfg = load_config()
     engine = connect_mysql(cfg)
-    df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time", "close_time"])
+    df = pd.read_sql(
+        "SELECT * FROM features", engine, parse_dates=["open_time", "close_time"]
+    )
     if rows:
         df = df.tail(rows)
+    df = df.sort_values("open_time").reset_index(drop=True)
+    train_len = int(len(df) * (1 - test_ratio))
+    train_df, valid_df = df.iloc[:train_len], df.iloc[train_len:]
 
     # 预先加载模型并实例化一次信号生成器
     sg = RobustSignalGenerator(
@@ -200,7 +223,7 @@ def run_param_search(
         feature_cols_4h=FEATURE_COLS_4H,
         feature_cols_d1=FEATURE_COLS_D1,
     )
-    cached_ic = precompute_ic_scores(df, sg)
+    cached_ic = precompute_ic_scores(train_df, sg)
     base_delta = sg.delta_params.copy()
     if method == "grid":
         param_grid = {
@@ -291,7 +314,7 @@ def run_param_search(
                 delta_params=delta_params,
             )
             tot_ret, sharpe = run_single_backtest(
-                df,
+                valid_df,
                 base_weights,
                 _get(params["history_window"]),
                 th_params,
@@ -384,7 +407,12 @@ def run_param_search(
                 delta_params=delta_params,
             )
             _, sharpe = run_single_backtest(
-                df, base_weights, history_window, th_params, cached_ic, sg_iter
+                valid_df,
+                base_weights,
+                history_window,
+                th_params,
+                cached_ic,
+                sg_iter,
             )
             return sharpe if not np.isnan(sharpe) else -np.inf
 
@@ -415,6 +443,12 @@ def main() -> None:
         default=1,
         help="并行搜索的任务数，仅对 grid 模式有效",
     )
+    parser.add_argument(
+        "--test-ratio",
+        type=float,
+        default=0.2,
+        help="验证集所占比例",
+    )
     args = parser.parse_args()
     run_param_search(
         rows=args.rows,
@@ -422,6 +456,7 @@ def main() -> None:
         trials=args.trials,
         tune_delta=args.tune_delta,
         n_jobs=args.n_jobs,
+        test_ratio=args.test_ratio,
     )
 
 
