@@ -114,13 +114,44 @@ def test_ret_and_win_rate_with_position_sizes():
     })
 
     trades = simulate_trades(df_sym, sig_df, fee_rate=0, slippage=0)
+    assert len(trades) == 2
     assert trades['ret'].tolist() == [
         pytest.approx(0.03),
         pytest.approx(-3 / 103),
-        0.0,
     ]
 
     weights = trades['position_size']
     win_mask = trades['ret'] > 0
     win_rate = weights[win_mask].sum() / weights.sum()
     assert win_rate == pytest.approx(1 / 3)
+
+    series = trades['ret'] * trades['position_size']
+    total_ret = (series + 1.0).cumprod().iloc[-1] - 1.0
+    assert total_ret == pytest.approx(-0.014563, rel=1e-4)
+
+
+def test_total_ret_all_in():
+    times = pd.date_range('2020-01-01', periods=6, freq='h')
+    df_sym = pd.DataFrame({
+        'symbol': ['BTC'] * 6,
+        'open_time': times,
+        'close_time': times + pd.Timedelta(hours=1),
+        'open': [100, 100, 102, 103, 104, 99],
+        'high': [100, 103, 103, 105, 107, 100],
+        'low': [100, 99, 101, 102, 102, 98],
+        'close': [100, 102, 103, 104, 99, 100],
+    })
+
+    sig_df = pd.DataFrame({
+        'open_time': times[:-1],
+        'signal': [1, 0, -1, 0, 1],
+        'score': [0.5, 0.0, 0.5, 0.0, 0.5],
+        'position_size': [1.0] * 5,
+        'take_profit': [103, 0, 98, 0, 110],
+        'stop_loss': [90, 0, 106, 0, 90],
+    })
+
+    trades = simulate_trades(df_sym, sig_df, fee_rate=0, slippage=0)
+    series = trades['ret'] * trades['position_size']
+    total_ret = (series + 1.0).cumprod().iloc[-1] - 1.0
+    assert total_ret == pytest.approx(0.010101, rel=1e-4)

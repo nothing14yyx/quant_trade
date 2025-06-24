@@ -51,7 +51,11 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
     entry_price = entry_time = pos_size = score = direction = tp = sl = None
     for i in range(1, len(df_sym)):
         if not in_pos:
-            if i-1 < len(sig_df) and sig_df.at[i-1, 'signal'] != 0:
+            if (
+                i - 1 < len(sig_df)
+                and sig_df.at[i-1, 'signal'] != 0
+                and sig_df.at[i-1, 'position_size'] > 0
+            ):
                 direction = sig_df.at[i-1, 'signal']
                 entry_price = df_sym.at[i, 'open'] * (1 + slippage * direction)
                 entry_time = df_sym.at[i, 'open_time']
@@ -131,6 +135,14 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
         })
 
     return pd.DataFrame(trades)
+
+
+def calc_equity_curve(trades_df: pd.DataFrame) -> pd.Series:
+    """根据仓位权重计算资金曲线"""
+    if trades_df.empty:
+        return pd.Series(dtype=float)
+    weighted_ret = trades_df['ret'] * trades_df['position_size']
+    return (weighted_ret + 1.0).cumprod()
 
 # =========== 融合信号回测 ===========
 def run_backtest(*, recent_days: int | None = None):
@@ -260,7 +272,8 @@ def run_backtest(*, recent_days: int | None = None):
         else:
             n = len(trades_df)
             weights = trades_df['position_size']
-            cumprod = (trades_df['ret'] + 1.0).cumprod()
+            weighted_ret_series = trades_df['ret'] * weights
+            cumprod = calc_equity_curve(trades_df)
             total_ret = cumprod.iloc[-1] - 1.0
 
             win_mask = trades_df['ret'] > 0
@@ -275,8 +288,8 @@ def run_backtest(*, recent_days: int | None = None):
             drawdown = cumprod / hwm - 1.0
             max_dd = drawdown.min()
 
-            weighted_ret = np.average(trades_df['ret'], weights=weights)
-            ret_var = np.average((trades_df['ret'] - weighted_ret) ** 2, weights=weights)
+            weighted_ret = np.average(weighted_ret_series, weights=weights)
+            ret_var = np.average((weighted_ret_series - weighted_ret) ** 2, weights=weights)
             ret_std = np.sqrt(ret_var)
             sharpe = weighted_ret / ret_std * np.sqrt(n) if ret_std else np.nan
 
