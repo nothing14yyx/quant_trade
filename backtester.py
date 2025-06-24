@@ -154,7 +154,7 @@ def run_backtest(*, recent_days: int | None = None):
     )
 
     # 根据近期历史数据更新因子 IC 分数
-    sg.update_ic_scores(df.tail(1000))
+    sg.update_ic_scores(df.tail(1000), group_by="symbol")
 
     results = []
     trades_all = []

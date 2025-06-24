@@ -190,7 +190,7 @@ class Scheduler:
                 logging.warning("update_ic_scores_from_db: no data returned")
                 return
             df = df.sort_values("open_time")
-            self.sg.update_ic_scores(df)
+            self.sg.update_ic_scores(df, group_by="symbol")
             logging.info("[update_ic_scores] %s", self.sg.current_weights)
         except Exception as e:
             logging.exception("update_ic_scores_from_db failed: %s", e)
