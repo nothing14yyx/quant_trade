@@ -168,11 +168,12 @@ def run_single_backtest(
             trades.append(ret)
         if trades:
             series = pd.Series(trades)
+            std = series.std()
             total_ret = (series + 1).prod() - 1
-            sharpe = series.mean() / series.std() * np.sqrt(len(series)) if series.std() else np.nan
+            sharpe = 0.0 if std == 0 else series.mean() / std * np.sqrt(len(series))
         else:
             total_ret = 0
-            sharpe = np.nan
+            sharpe = 0.0
         results.append({"symbol": symbol, "ret": total_ret, "sharpe": sharpe})
 
     df_res = pd.DataFrame(results)
@@ -210,6 +211,8 @@ def run_param_search(
     df = pd.read_sql(
         "SELECT * FROM features", engine, parse_dates=["open_time", "close_time"]
     )
+    if df.empty:
+        raise ValueError("features 表无数据")
     if rows:
         df = df.tail(rows)
     df = df.sort_values("open_time").reset_index(drop=True)
