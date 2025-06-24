@@ -688,4 +688,3 @@ DELETE FROM klines WHERE symbol = 'NEIROETHUSDT';
 
 SHOW COLUMNS FROM features LIKE 'funding_rate_isnan';
 
-select * from klines
