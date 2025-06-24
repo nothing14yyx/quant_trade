@@ -132,6 +132,14 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
 
     return pd.DataFrame(trades)
 
+
+def calc_equity_curve(trades_df: pd.DataFrame) -> pd.Series:
+    """根据仓位权重计算资金曲线"""
+    if trades_df.empty:
+        return pd.Series(dtype=float)
+    weighted_ret = trades_df['ret'] * trades_df['position_size']
+    return (weighted_ret + 1.0).cumprod()
+
 # =========== 融合信号回测 ===========
 def run_backtest(*, recent_days: int | None = None):
     cfg = load_config()
@@ -260,7 +268,8 @@ def run_backtest(*, recent_days: int | None = None):
         else:
             n = len(trades_df)
             weights = trades_df['position_size']
-            cumprod = (trades_df['ret'] + 1.0).cumprod()
+            weighted_ret_series = trades_df['ret'] * weights
+            cumprod = calc_equity_curve(trades_df)
             total_ret = cumprod.iloc[-1] - 1.0
 
             win_mask = trades_df['ret'] > 0
@@ -275,8 +284,8 @@ def run_backtest(*, recent_days: int | None = None):
             drawdown = cumprod / hwm - 1.0
             max_dd = drawdown.min()
 
-            weighted_ret = np.average(trades_df['ret'], weights=weights)
-            ret_var = np.average((trades_df['ret'] - weighted_ret) ** 2, weights=weights)
+            weighted_ret = np.average(weighted_ret_series, weights=weights)
+            ret_var = np.average((weighted_ret_series - weighted_ret) ** 2, weights=weights)
             ret_std = np.sqrt(ret_var)
             sharpe = weighted_ret / ret_std * np.sqrt(n) if ret_std else np.nan
 
