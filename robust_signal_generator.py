@@ -9,7 +9,6 @@ import threading
 import logging
 import time
 
-
 logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
 # Set module logger to WARNING by default so importing modules can
@@ -1055,8 +1054,6 @@ class RobustSignalGenerator:
         history_scores=None,
     ):
         """根据历史波动、趋势强度和市场情绪动态计算阈值并返回额外的反转加成"""
-
-        import numpy as np
 
         th = float(base)
 
