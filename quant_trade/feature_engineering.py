@@ -398,7 +398,7 @@ class FeatureEngineer:
 
     def _finalize_batch(
         self, dfs: list[pd.DataFrame]
-    ) -> tuple[pd.DataFrame, list[str]]:
+    ) -> tuple[pd.DataFrame, list[str], dict | None]:
         df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
 
         base_cols = [
@@ -453,8 +453,6 @@ class FeatureEngineer:
                 params = compute_robust_z_params(g, feat_cols_all)
                 scaler_params[sym] = params
                 scaled_parts.append(apply_robust_z_with_params(g, params))
-            self.scaler_path.parent.mkdir(parents=True, exist_ok=True)
-            save_scaler_params_to_json(scaler_params, str(self.scaler_path))
             df_scaled = pd.concat(scaled_parts, ignore_index=True)
         else:
             if not self.scaler_path.is_file():
@@ -474,7 +472,7 @@ class FeatureEngineer:
         self.feature_cols_all = feat_cols_all
 
         final_other_cols = [c for c in df_final.columns if c not in base_cols]
-        return df_final, final_other_cols
+        return df_final, final_other_cols, scaler_params if self.mode == "train" else None
 
     def _write_output(self, df: pd.DataFrame, save_to_db: bool, append: bool) -> None:
         self.merged_table_path.parent.mkdir(parents=True, exist_ok=True)
@@ -601,6 +599,7 @@ class FeatureEngineer:
 
         all_dfs: list[pd.DataFrame] = []
         final_cols: set[str] = set()
+        all_scaler_params: dict = {}
         append = False
         if n_jobs > 1:
             results = Parallel(n_jobs=n_jobs)(
@@ -619,9 +618,11 @@ class FeatureEngineer:
             all_dfs.append(out)
 
             if batch_size and batch_size > 0 and len(all_dfs) >= batch_size:
-                df_final, other_cols = self._finalize_batch(all_dfs)
+                df_final, other_cols, scaler_params = self._finalize_batch(all_dfs)
                 self._write_output(df_final, save_to_db, append)
                 final_cols.update(other_cols)
+                if scaler_params:
+                    all_scaler_params.update(scaler_params)
                 all_dfs = []
                 append = True
 
@@ -629,20 +630,28 @@ class FeatureEngineer:
             raise RuntimeError("合并结果为空——请确认数据库中三周期数据完整！")
 
         if batch_size and batch_size > 0 and all_dfs:
-            df_final, other_cols = self._finalize_batch(all_dfs)
+            df_final, other_cols, scaler_params = self._finalize_batch(all_dfs)
             self._write_output(df_final, save_to_db, append)
             final_cols.update(other_cols)
+            if scaler_params:
+                all_scaler_params.update(scaler_params)
             all_dfs = []
             append = True
         elif not (batch_size and batch_size > 0):
             df_all = pd.concat(all_dfs, ignore_index=True).replace(
                 [np.inf, -np.inf], np.nan
             )
-            df_final, other_cols = self._finalize_batch([df_all])
+            df_final, other_cols, scaler_params = self._finalize_batch([df_all])
             self._write_output(df_final, save_to_db, append=False)
             final_cols.update(other_cols)
+            if scaler_params:
+                all_scaler_params.update(scaler_params)
             all_dfs = []
             append = True
+
+        if self.mode == "train":
+            self.scaler_path.parent.mkdir(parents=True, exist_ok=True)
+            save_scaler_params_to_json(all_scaler_params, str(self.scaler_path))
 
         self.feature_cols_path.parent.mkdir(parents=True, exist_ok=True)
         self.feature_cols_path.write_text(
