@@ -5,6 +5,7 @@ FeatureEngineer v2.3-patch1 (External indicators removed)  (2025-06-03)
 """
 
 import os
+import logging
 from pathlib import Path
 from typing import List, Optional
 
@@ -29,7 +30,10 @@ from quant_trade.utils.robust_scaler import (
     load_scaler_params_from_json,
     apply_robust_z_with_params,
 )
+
 from quant_trade.utils.feature_health import health_check, apply_health_check_df
+
+logger = logging.getLogger(__name__)
 
 # Future-related columns to drop for leakage prevention
 FUTURE_COLS = [
@@ -275,7 +279,7 @@ class FeatureEngineer:
             if col in out.columns:
                 cnt = out[col].value_counts(dropna=True)
                 ratio = (cnt / cnt.sum()).round(4)
-                print(f"{p} 标签分布: {cnt.to_dict()} 比例: {ratio.to_dict()}")
+                logger.info("%s 标签分布: %s 比例: %s", p, cnt.to_dict(), ratio.to_dict())
 
         rename_map = {
             "target": "target_1h",
@@ -480,13 +484,13 @@ class FeatureEngineer:
             if_exists = "append" if append else "replace"
             df.to_sql("features", self.engine, if_exists=if_exists, index=False)
             msg = "追加写入" if append else "写入"
-            print(f"✅ 已{msg} MySQL 表 `features`")
+            logger.info("✅ 已%s MySQL 表 `features`", msg)
         else:
             mode = "a" if append else "w"
             header = not append
             df.to_csv(self.merged_table_path, mode=mode, index=False, header=header)
             msg = "追加写入" if append else "导出"
-            print(f"✅ CSV 已{msg} → {self.merged_table_path}")
+            logger.info("✅ CSV 已%s → %s", msg, self.merged_table_path)
 
     def _calc_symbol_features(self, sym: str) -> Optional[pd.DataFrame]:
         """计算单个合约的所有特征并返回 DataFrame."""
@@ -657,7 +661,7 @@ class FeatureEngineer:
         self.feature_cols_path.write_text(
             "\n".join(sorted(final_cols)), encoding="utf-8"
         )
-        print(f"✅ feature_cols 保存至 {self.feature_cols_path}")
+        logger.info("✅ feature_cols 保存至 %s", self.feature_cols_path)
 
 
 # ────────────────────────────────────────────────────────────────────────
