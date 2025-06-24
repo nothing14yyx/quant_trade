@@ -1,9 +1,8 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pandas as pd
 import pytest
-from utils.helper import calc_features_raw
-from feature_engineering import calc_cross_features
+
+from quant_trade.utils.helper import calc_features_raw
+from quant_trade.feature_engineering import calc_cross_features
 
 
 def test_calc_features_raw_with_cg():

@@ -1,7 +1,6 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
-from robust_signal_generator import (
+
+from quant_trade.robust_signal_generator import (
     adjust_score,
     volume_guard,
     cap_positive,

@@ -1,7 +1,6 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pandas as pd
-from utils.feature_health import apply_health_check_df
+
+from quant_trade.utils.feature_health import apply_health_check_df
 
 def test_apply_health_check_df_datetime():
     df = pd.DataFrame({

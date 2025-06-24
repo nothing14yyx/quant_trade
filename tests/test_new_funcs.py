@@ -1,9 +1,7 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 
-from tests.test_signal_generator import make_dummy_rsg
-from robust_signal_generator import RobustSignalGenerator
+from quant_trade.tests.test_signal_generator import make_dummy_rsg
+from quant_trade.robust_signal_generator import RobustSignalGenerator
 
 
 def test_calc_factor_scores():

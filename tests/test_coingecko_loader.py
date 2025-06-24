@@ -1,11 +1,10 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pandas as pd
 import sqlalchemy
 import requests
 import pytest
-from data_loader import DataLoader
-from utils.ratelimiter import RateLimiter
+
+from quant_trade.data_loader import DataLoader
+from quant_trade.utils.ratelimiter import RateLimiter
 
 
 def make_dl(engine):
