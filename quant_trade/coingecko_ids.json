@@ -144,5 +144,9 @@
   "ALTUSDT": "altlayer",
   "IPUSDT": "story-2",
   "XCNUSDT": "chain-2",
-  "SIGNUSDT": "sign-global"
+  "SIGNUSDT": "sign-global",
+  "BRUSDT": "binance-bridged-usdt-bnb-smart-chain",
+  "MILKUSDT": "milkyway-2",
+  "HAEDALUSDT": "haedal",
+  "PROMUSDT": "prometeus"
 }

@@ -22,19 +22,19 @@ data_loader:
   aux_interval: ["5m", "15m", "4h", "d1"]   # 辅助周期K线
   start:  "2024-06-09" # 起始日期 例如"2024-06-01" 默认获取一年
   end:     # 结束日期
-  cache_dir: "data/klines"
-  sentiment_cache: "data/sentiment"
+  cache_dir: "quant_trade/data/klines"
+  sentiment_cache: "quant_trade/data/sentiment"
   rate_limit_sleep: 0.05   # 每次请求后休息 50ms，1s 20 次 ≪ 2400/min
   excluded_list: ["BUSDT","NEIROETHUSDT"]
 
 feature_engineering:
-  cache_dir: "data/klines"
-  merged_dir: "data/merged"
-  merged_table_path: "data/merged/merged_table.csv"
-  feature_cols_path: "data/merged/feature_cols.txt"
+  cache_dir: "quant_trade/data/klines"
+  merged_dir: "quant_trade/data/merged"
+  merged_table_path: "quant_trade/data/merged/merged_table.csv"
+  feature_cols_path: "quant_trade/data/merged/feature_cols.txt"
   topn: 100
   mode: train                        # train 或 inference
-  scaler_path: scalers/all_features_scaler.json
+  scaler_path: quant_trade/scalers/all_features_scaler.json
   btc_symbol: "BTCUSDT"
   eth_symbol: "ETHUSDT"
 
@@ -56,20 +56,20 @@ feature_selector:
 
 models:
   1h:
-    cls: models/model_1h_cls.pkl
-    vol: models/model_1h_vol.pkl
-    rise: models/model_1h_rise.pkl
-    drawdown: models/model_1h_drawdown.pkl
+    cls: quant_trade/models/model_1h_cls.pkl
+    vol: quant_trade/models/model_1h_vol.pkl
+    rise: quant_trade/models/model_1h_rise.pkl
+    drawdown: quant_trade/models/model_1h_drawdown.pkl
   4h:
-    cls: models/model_4h_cls.pkl
-    vol: models/model_4h_vol.pkl
-    rise: models/model_4h_rise.pkl
-    drawdown: models/model_4h_drawdown.pkl
+    cls: quant_trade/models/model_4h_cls.pkl
+    vol: quant_trade/models/model_4h_vol.pkl
+    rise: quant_trade/models/model_4h_rise.pkl
+    drawdown: quant_trade/models/model_4h_drawdown.pkl
   d1:
-    cls: models/model_d1_cls.pkl
-    vol: models/model_d1_vol.pkl
-    rise: models/model_d1_rise.pkl
-    drawdown: models/model_d1_drawdown.pkl
+    cls: quant_trade/models/model_d1_cls.pkl
+    vol: quant_trade/models/model_d1_vol.pkl
+    rise: quant_trade/models/model_d1_rise.pkl
+    drawdown: quant_trade/models/model_d1_drawdown.pkl
 
 database:
   uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
