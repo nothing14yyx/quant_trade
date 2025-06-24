@@ -114,10 +114,10 @@ def test_ret_and_win_rate_with_position_sizes():
     })
 
     trades = simulate_trades(df_sym, sig_df, fee_rate=0, slippage=0)
+    assert len(trades) == 2
     assert trades['ret'].tolist() == [
         pytest.approx(0.03),
         pytest.approx(-3 / 103),
-        0.0,
     ]
 
     weights = trades['position_size']
