@@ -74,3 +74,35 @@ def test_param_search_optuna(monkeypatch):
 
     with pytest.raises(ValueError, match="features 表无数据"):
         param_search.run_param_search(method="optuna", trials=1, tune_delta=True)
+
+
+def test_param_search_success(monkeypatch, capsys):
+    monkeypatch.setattr(param_search, "load_config", lambda: {})
+    monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
+    monkeypatch.setattr(param_search, "ParameterGrid", lambda pg: [pg])
+
+    class DummyRSG:
+        def __init__(self, *a, **k):
+            self.delta_params = {"rsi": (1, 1, 0.03)}
+
+    monkeypatch.setattr(param_search, "RobustSignalGenerator", DummyRSG)
+
+    times = pd.date_range("2020-01-01", periods=3, freq="h")
+    df = pd.DataFrame({
+        "symbol": ["BTC"] * 3,
+        "open_time": times,
+        "close_time": times + pd.Timedelta(hours=1),
+    })
+    monkeypatch.setattr(param_search.pd, "read_sql", lambda *a, **k: df)
+
+    monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.1, 0.2))
+
+    import quant_trade.backtester as backtester
+
+    monkeypatch.setattr(backtester, "simulate_trades", lambda *a, **k: pd.DataFrame())
+
+    param_search.run_param_search(method="grid", trials=1)
+
+    out = capsys.readouterr().out
+    assert "best params:" in out
