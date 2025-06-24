@@ -7,20 +7,20 @@ import pandas as pd
 import yaml
 from sqlalchemy import create_engine
 
-from robust_signal_generator import RobustSignalGenerator
-from utils.helper import (
+from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.utils.helper import (
     calc_features_raw,
     calc_order_book_features,
     collect_feature_cols,
 )
 
-from feature_engineering import calc_cross_features
+from quant_trade.feature_engineering import calc_cross_features
 
-from utils.robust_scaler import (
+from quant_trade.utils.robust_scaler import (
     load_scaler_params_from_json,
     apply_robust_z_with_params,
 )
-from data_loader import compute_vix_proxy
+from quant_trade.data_loader import compute_vix_proxy
 from sqlalchemy import text
 
 

@@ -1,6 +1,6 @@
 import pytest
 from collections import deque
-from robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import RobustSignalGenerator
 
 
 def make_rsg():
