@@ -25,7 +25,6 @@ from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.utils.helper import collect_feature_cols
 from sqlalchemy import text
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 def _to_builtin(v):
@@ -370,4 +369,7 @@ class Scheduler:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     Scheduler().run()
