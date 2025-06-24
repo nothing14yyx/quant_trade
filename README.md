@@ -20,6 +20,7 @@
     可根据策略需求适当调小窗口或衰减系数。
 -   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
     帮助更准确地衡量趋势和动量强度。
+    其中 `rsi_1h_mul_vol_ma_ratio_4h` 仅归入 `volume` 因子，不再在 `momentum` 中重复计分。
 - **Backtester**：依据生成的信号回测策略表现。
 - **FeatureSelector**：综合 AUC、SHAP 与 Permutation Importance 评分，筛选去冗余的核心特征。
 
