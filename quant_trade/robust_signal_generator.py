@@ -272,6 +272,12 @@ class RobustSignalGenerator:
         self.max_same_direction_rate = oi_cfg.get("crowding_threshold", 0.90)
         self.veto_level = cfg.get("veto_level", 0.7)
         self.flip_coeff = cfg.get("flip_coeff", 0.5)
+        cw_cfg = cfg.get("cycle_weight", {})
+        self.cycle_weight = {
+            "strong": cw_cfg.get("strong", 1.2),
+            "weak": cw_cfg.get("weak", 0.8),
+            "opposite": cw_cfg.get("opposite", 0.5),
+        }
         self.th_down_d1 = self.cfg.get("th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
         self.th_window = th_window
@@ -425,6 +431,10 @@ class RobustSignalGenerator:
         if name == "flip_coeff":
             setattr(self, name, 0.5)
             return 0.5
+        if name == "cycle_weight":
+            val = {"strong": 1.2, "weak": 0.8, "opposite": 0.5}
+            setattr(self, name, val)
+            return val
         if name == "cfg":
             val = {}
             setattr(self, name, val)
@@ -1351,21 +1361,32 @@ class RobustSignalGenerator:
             conf = 1.0
             if strong_confirm_4h:
                 fused *= 1.15
+            fused *= self.cycle_weight.get("strong", 1.0)
         elif consensus_14:
             total = w1 + w4
             fused = (w1 / total) * s1 + (w4 / total) * s4
             conf = 0.8
             if strong_confirm_4h:
                 fused *= 1.10
+            fused *= self.cycle_weight.get("weak", 1.0)
         elif consensus_4d1:
             total = w4 + wd
             fused = (w4 / total) * s4 + (wd / total) * sd
             conf = 0.7
+            fused *= self.cycle_weight.get("weak", 1.0)
         else:
             fused = s1
             conf = 0.6
 
         fused_score = fused * conf
+        if (
+            np.sign(s1) != 0
+            and (
+                (np.sign(s4) != 0 and np.sign(s1) != np.sign(s4))
+                or (np.sign(sd) != 0 and np.sign(s1) != np.sign(sd))
+            )
+        ):
+            fused_score *= self.cycle_weight.get("opposite", 1.0)
         logger.debug(
             "fuse scores s1=%.3f s4=%.3f sd=%.3f -> %.3f",
             s1,
