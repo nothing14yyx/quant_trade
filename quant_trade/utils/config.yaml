@@ -423,3 +423,7 @@ ic_scores:
   1h: 1.0
   4h: 0.2
   d1: 0.1
+cycle_weight:
+  strong: 1.2
+  weak: 0.8
+  opposite: 0.5
