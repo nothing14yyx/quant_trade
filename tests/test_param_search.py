@@ -76,7 +76,7 @@ def test_param_search_optuna(monkeypatch):
         param_search.run_param_search(method="optuna", trials=1, tune_delta=True)
 
 
-def test_param_search_success(monkeypatch, capsys):
+def test_param_search_success(monkeypatch, caplog):
     monkeypatch.setattr(param_search, "load_config", lambda: {})
     monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
     monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
@@ -102,7 +102,7 @@ def test_param_search_success(monkeypatch, capsys):
 
     monkeypatch.setattr(backtester, "simulate_trades", lambda *a, **k: pd.DataFrame())
 
-    param_search.run_param_search(method="grid", trials=1)
+    with caplog.at_level("INFO"):
+        param_search.run_param_search(method="grid", trials=1)
 
-    out = capsys.readouterr().out
-    assert "best params:" in out
+    assert any("best params:" in record.getMessage() for record in caplog.records)
