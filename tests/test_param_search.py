@@ -1,5 +1,6 @@
 import pandas as pd
 import types
+import pytest
 
 from quant_trade import param_search
 
@@ -45,7 +46,8 @@ def test_param_search_grid(monkeypatch):
     df = pd.DataFrame({'symbol': [], 'open_time': [], 'close_time': []})
     monkeypatch.setattr(param_search.pd, "read_sql", lambda *a, **k: df)
 
-    param_search.run_param_search(method="grid", trials=1, tune_delta=True)
+    with pytest.raises(ValueError, match="features 表无数据"):
+        param_search.run_param_search(method="grid", trials=1, tune_delta=True)
 
 
 def test_param_search_optuna(monkeypatch):
@@ -70,4 +72,5 @@ def test_param_search_optuna(monkeypatch):
     df = pd.DataFrame({'symbol': [], 'open_time': [], 'close_time': []})
     monkeypatch.setattr(param_search.pd, "read_sql", lambda *a, **k: df)
 
-    param_search.run_param_search(method="optuna", trials=1, tune_delta=True)
+    with pytest.raises(ValueError, match="features 表无数据"):
+        param_search.run_param_search(method="optuna", trials=1, tune_delta=True)
