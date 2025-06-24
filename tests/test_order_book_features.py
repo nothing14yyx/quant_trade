@@ -27,6 +27,7 @@ def test_calc_order_book_features():
 def test_merge_features_with_order_book(tmp_path):
     fe = FeatureEngineer()
     fe.feature_cols_path = tmp_path / 'cols.txt'
+    fe.scaler_path = tmp_path / 'scaler.json'
 
     times1h = pd.date_range('2020-01-01', periods=60, freq='h')
     df1h = pd.DataFrame({
@@ -71,6 +72,59 @@ def test_merge_features_with_order_book(tmp_path):
     out_df = fe.out_df
     assert 'bid_ask_imbalance' in out_df.columns
     assert out_df['bid_ask_imbalance'].iloc[0] == pytest.approx((20-10)/30)
+
+
+def test_merge_features_scaler_batch(tmp_path):
+    fe = FeatureEngineer()
+    fe.feature_cols_path = tmp_path / 'cols.txt'
+    fe.scaler_path = tmp_path / 'scaler.json'
+
+    times1h = pd.date_range('2020-01-01', periods=60, freq='h')
+    df1h = pd.DataFrame({
+        'open':1,'high':1,'low':1,'close':1,'volume':1,
+        'close_time': times1h + pd.Timedelta(hours=1),
+        'quote_asset_volume':1,
+        'num_trades':1,
+        'taker_buy_base':0.5,
+        'taker_buy_quote':0.5,
+    }, index=times1h)
+    df1h.index.name = 'open_time'
+    times4h = pd.date_range('2020-01-01', periods=50, freq='4h')
+    df4h = pd.DataFrame({
+        'open':1,'high':1,'low':1,'close':1,'volume':1,
+        'close_time': times4h + pd.Timedelta(hours=4),
+        'quote_asset_volume':1,
+        'num_trades':1,
+        'taker_buy_base':0.5,
+        'taker_buy_quote':0.5,
+    }, index=times4h)
+    df4h.index.name = 'open_time'
+    times1d = pd.date_range('2020-01-01', periods=50, freq='D')
+    df1d = pd.DataFrame({
+        'open':1,'high':1,'low':1,'close':1,'volume':1,
+        'close_time': times1d + pd.Timedelta(days=1),
+        'quote_asset_volume':1,
+        'num_trades':1,
+        'taker_buy_base':0.5,
+        'taker_buy_quote':0.5,
+    }, index=times1d)
+    df1d.index.name = 'open_time'
+    bids = json.dumps([[1,2]]*10)
+    asks = json.dumps([[1,1]]*10)
+    ob_df = pd.DataFrame({'timestamp': times1h, 'bids':[bids]*60, 'asks':[asks]*60})
+
+    def load_klines(sym, iv):
+        mapping = {'1h': df1h, '4h': df4h, 'd1': df1d, '5m': None, '15m': None}
+        return mapping[iv]
+
+    fe.load_klines_db = load_klines
+    fe.load_order_book = lambda sym: ob_df
+    fe.get_symbols = lambda intervals=("1h","4h","d1"): ['BTC', 'ETH']
+    fe._write_output = lambda df, save_to_db, append: None
+
+    fe.merge_features(save_to_db=False, batch_size=1)
+    params = json.loads(fe.scaler_path.read_text())
+    assert set(params.keys()) == {'BTC', 'ETH'}
 
 
 def test_get_latest_order_book_imbalance():
