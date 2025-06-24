@@ -427,7 +427,7 @@ def run_param_search(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, default=10000, help="只取最近 N 行数据")
+    parser.add_argument("--rows", type=int, default=100000, help="只取最近 N 行数据")
     parser.add_argument(
         "--method",
         choices=["grid", "optuna"],
@@ -449,7 +449,7 @@ def main() -> None:
     parser.add_argument(
         "--test-ratio",
         type=float,
-        default=0.2,
+        default=0.4,
         help="验证集所占比例",
     )
     args = parser.parse_args()
