@@ -175,7 +175,7 @@ class RobustSignalGenerator:
         feature_cols_1h,
         feature_cols_4h,
         feature_cols_d1,
-        history_window=220,
+        history_window=606,
         symbol_categories=None,
         config_path=CONFIG_PATH,
         core_keys=None,
@@ -284,13 +284,13 @@ class RobustSignalGenerator:
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         _base_weights = {
-            'ai': 0.10374469306511298,
-            'trend': 0.29541645926817756,
-            'momentum': 0.2889591044255588,
-            'volatility': 0.2,
-            'volume': 0.1,
-            'sentiment': 0.05,
-            'funding': 0.05,
+            'ai': 0.1131,
+            'trend': 0.2326,
+            'momentum': 0.2916,
+            'volatility': 0.1022,
+            'volume': 0.1939,
+            'sentiment': 0.1641,
+            'funding': 0.1061,
         }
         total_w = sum(_base_weights.values())
         if total_w <= 0:
