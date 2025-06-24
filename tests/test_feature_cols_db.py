@@ -3,6 +3,7 @@ import re
 import sqlite3
 from pathlib import Path
 
+# Base directory of repository
 BASE_DIR = Path(__file__).resolve().parents[1]
 SCHEMA = (BASE_DIR / 'schema.sql').read_text()
 
@@ -10,11 +11,8 @@ SCHEMA = (BASE_DIR / 'schema.sql').read_text()
 match = re.search(r"CREATE TABLE `features` \((.*?)PRIMARY KEY", SCHEMA, re.S)
 CREATE_SQL = 'CREATE TABLE features (' + match.group(1) + 'PRIMARY KEY (symbol, open_time))'
 
-FEATURE_COLS = [
-    c.strip()
-    for c in (BASE_DIR / 'data/merged/feature_cols.txt').read_text().splitlines()
-    if c.strip()
-]
+DATA_FILE = BASE_DIR / 'quant_trade' / 'data' / 'merged' / 'feature_cols.txt'
+FEATURE_COLS = [c.strip() for c in DATA_FILE.read_text().splitlines() if c.strip()]
 META_COLS = {'symbol', 'open_time', 'close_time', 'quote_asset_volume', 'num_trades', 'taker_buy_base', 'taker_buy_quote'}
 
 def test_feature_columns_match():
