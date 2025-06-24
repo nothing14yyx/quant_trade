@@ -65,6 +65,8 @@ pip install -r requirements.txt
 pytest -q tests
 ```
 
+无论从哪个目录运行，`RobustSignalGenerator` 都会自动解析相对模型路径，无需手动调整工作目录。
+
 内存不足或特征过多时，可以先在 `utils/config.yaml` 将 `feature_engineering.topn`
 调小（如 20），或在执行 `feature_engineering.py` 时传入
 `merge_features(topn=20)`。此外，`data_loader` 区段的 `start` 与 `end`
