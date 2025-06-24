@@ -112,8 +112,11 @@ cg_total_volume_roc_4h_isnan
 cg_total_volume_roc_d1
 cg_total_volume_roc_d1_isnan
 channel_pos_1h
+channel_pos_1h_isnan
 channel_pos_4h
+channel_pos_4h_isnan
 channel_pos_d1
+channel_pos_d1_isnan
 close_1h
 close_1h_isnan
 close_4h
