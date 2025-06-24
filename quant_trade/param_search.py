@@ -16,6 +16,7 @@ from quant_trade.backtester import (
     load_config,
     connect_mysql,
     convert_model_paths,
+    simulate_trades,
 )
 
 
@@ -152,28 +153,17 @@ def run_single_backtest(
                 "position_size": res.get("position_size", 1.0),
             })
         sig_df = pd.DataFrame(signals)
-        valid_idx = sig_df[sig_df["signal"] != 0].index + 1
-        valid_idx = valid_idx[valid_idx < len(df_sym)]
-        trades = []
-        for idx in valid_idx:
-            entry_price = df_sym.at[idx, "open"] * (1 + slippage * np.sign(sig_df.at[idx - 1, "signal"]))
-            exit_price = df_sym.at[idx, "close"] * (1 - slippage * np.sign(sig_df.at[idx - 1, "signal"]))
-            direction = sig_df.at[idx - 1, "signal"]
-            pos_size = sig_df.at[idx - 1, "position_size"]
-            pnl = (exit_price - entry_price) * direction * pos_size
-            if pos_size:
-                ret = pnl / (entry_price * pos_size) - 2 * fee_rate
-            else:
-                ret = 0.0
-            trades.append(ret)
-        if trades:
-            series = pd.Series(trades)
+        trades_df = simulate_trades(
+            df_sym, sig_df, fee_rate=fee_rate, slippage=slippage
+        )
+        if trades_df.empty:
+            total_ret = 0
+            sharpe = 0.0
+        else:
+            series = trades_df["ret"]
             std = series.std()
             total_ret = (series + 1).prod() - 1
             sharpe = 0.0 if std == 0 else series.mean() / std * np.sqrt(len(series))
-        else:
-            total_ret = 0
-            sharpe = 0.0
         results.append({"symbol": symbol, "ret": total_ret, "sharpe": sharpe})
 
     df_res = pd.DataFrame(results)
