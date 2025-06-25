@@ -75,6 +75,15 @@ def test_dynamic_threshold_recovery():
     assert th_normal == pytest.approx(0.12)
 
 
+def test_dynamic_threshold_quantile_setting():
+    rsg = make_dummy_rsg()
+    rsg.history_scores.extend(np.linspace(0, 1, 200))
+    th_default, _ = rsg.dynamic_threshold(0, 0, 0)
+    rsg.signal_threshold_cfg['quantile'] = 0.60
+    th_lower, _ = rsg.dynamic_threshold(0, 0, 0)
+    assert th_lower < th_default
+
+
 def test_consensus_check():
     rsg = make_dummy_rsg()
     assert rsg.consensus_check(0.2, 0.3, 0.1) == 1
