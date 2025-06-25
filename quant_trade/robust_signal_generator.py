@@ -38,6 +38,7 @@ DEFAULT_AI_DIR_EPS = _load_default_ai_dir_eps(CONFIG_PATH)
 DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
 DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
 DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
+DEFAULT_LOW_VOL_RATIO = 0.3   # 低量能阈值
 
 
 def softmax(x):
@@ -246,6 +247,9 @@ class RobustSignalGenerator:
         pc_cfg = cfg.get("position_coeff", {})
         self.pos_coeff_range = pc_cfg.get("range", DEFAULT_POS_K_RANGE)
         self.pos_coeff_trend = pc_cfg.get("trend", DEFAULT_POS_K_TREND)
+        self.low_vol_ratio = cfg.get(
+            "low_vol_ratio", pc_cfg.get("low_vol_ratio", DEFAULT_LOW_VOL_RATIO)
+        )
 
         self.sentiment_alpha = cfg.get("sentiment_alpha", 0.5)
         self.cap_positive_scale = cfg.get("cap_positive_scale", 0.7)
@@ -461,6 +465,9 @@ class RobustSignalGenerator:
         if name == "pos_coeff_trend":
             setattr(self, name, DEFAULT_POS_K_TREND)
             return DEFAULT_POS_K_TREND
+        if name == "low_vol_ratio":
+            setattr(self, name, DEFAULT_LOW_VOL_RATIO)
+            return DEFAULT_LOW_VOL_RATIO
         if name == "th_window":
             setattr(self, name, 150)
             return 150
@@ -724,7 +731,7 @@ class RobustSignalGenerator:
         if (
             regime == "range"
             and vol_ratio is not None
-            and vol_ratio < 0.3
+            and vol_ratio < self.low_vol_ratio
             and abs(fused_score) < base_th + 0.02
             and not consensus_all
         ):
