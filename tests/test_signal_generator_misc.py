@@ -28,6 +28,11 @@ def test_detect_market_regime():
     assert rsg.detect_market_regime(10, 15, 20) == "range"
 
 
+def test_detect_market_regime_all_nan():
+    rsg = make_rsg()
+    assert rsg.detect_market_regime(np.nan, np.nan, np.nan) == "range"
+
+
 def test_get_ic_period_weights():
     rsg = make_rsg()
     ic = {"1h": 1.0, "4h": 0.5, "d1": 0.2}
