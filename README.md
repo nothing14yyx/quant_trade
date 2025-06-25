@@ -18,6 +18,8 @@
 -   新增 `th_window` 与 `th_decay` 参数，用于控制动态阈值参考的历史得分
     数量及衰减程度，默认 `th_window=150`、`th_decay=1.0`，
     可根据策略需求适当调小窗口或衰减系数。
+-   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.80`，
+    数值越高代表触发门槛越严格。
 -   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
     帮助更准确地衡量趋势和动量强度。
     其中 `rsi_1h_mul_vol_ma_ratio_4h` 仅归入 `volume` 因子，不再在 `momentum` 中重复计分。
