@@ -210,7 +210,7 @@ def run_param_search(
     Parameters
     ----------
     rows: int | None
-        Number of recent rows to use from the features table.
+        Number of recent rows to query from the features table.
     method: str
         Search algorithm: "grid" or "optuna".
     trials: int
@@ -224,13 +224,12 @@ def run_param_search(
     """
     cfg = load_config()
     engine = connect_mysql(cfg)
-    df = pd.read_sql(
-        "SELECT * FROM features", engine, parse_dates=["open_time", "close_time"]
-    )
+    query = "SELECT * FROM features"
+    if rows:
+        query += f" ORDER BY open_time DESC LIMIT {rows}"
+    df = pd.read_sql(query, engine, parse_dates=["open_time", "close_time"])
     if df.empty:
         raise ValueError("features 表无数据")
-    if rows:
-        df = df.tail(rows)
     df = df.sort_values("open_time").reset_index(drop=True)
     train_len = int(len(df) * (1 - test_ratio))
     train_df, valid_df = df.iloc[:train_len], df.iloc[train_len:]
