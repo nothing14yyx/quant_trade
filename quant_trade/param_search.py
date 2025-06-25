@@ -210,7 +210,7 @@ def run_param_search(
     rows: int | None = None,
     method: str = "grid",
     trials: int = 30,
-    tune_delta: bool = False,
+    tune_delta: bool = True,
     n_jobs: int = 1,
     test_ratio: float = 0.2,
 ) -> None:
