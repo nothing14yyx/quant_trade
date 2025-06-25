@@ -3,7 +3,7 @@ from collections import deque
 import logging
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import ParameterGrid
+from sklearn.model_selection import ParameterGrid, TimeSeriesSplit
 from joblib import Parallel, delayed
 from tqdm import tqdm
 import optuna
@@ -213,6 +213,7 @@ def run_param_search(
     tune_delta: bool = True,
     n_jobs: int = 1,
     test_ratio: float = 0.2,
+    n_splits: int = 1,
 ) -> None:
     """Search for optimal parameters using a train/validation split.
 
@@ -230,6 +231,10 @@ def run_param_search(
         Parallel jobs for grid search.
     test_ratio: float
         Portion of data used as validation set.
+    n_splits: int
+        Number of CV folds. When greater than 1, ``TimeSeriesSplit`` is used
+        to generate train/validation splits and the average Sharpe ratio is
+        evaluated.
     """
     cfg = load_config()
     engine = connect_mysql(cfg)
@@ -240,8 +245,15 @@ def run_param_search(
     if df.empty:
         raise ValueError("features 表无数据")
     df = df.sort_values("open_time").reset_index(drop=True)
-    train_len = int(len(df) * (1 - test_ratio))
-    train_df, valid_df = df.iloc[:train_len], df.iloc[train_len:]
+    if n_splits <= 1:
+        train_len = int(len(df) * (1 - test_ratio))
+        splits = [(df.iloc[:train_len], df.iloc[train_len:])]
+    else:
+        tscv = TimeSeriesSplit(n_splits=n_splits)
+        splits = [
+            (df.iloc[tr_idx], df.iloc[val_idx])
+            for tr_idx, val_idx in tscv.split(df)
+        ]
 
     # 预先加载模型并实例化一次信号生成器
     sg = RobustSignalGenerator(
@@ -250,7 +262,7 @@ def run_param_search(
         feature_cols_4h=FEATURE_COLS_4H,
         feature_cols_d1=FEATURE_COLS_D1,
     )
-    cached_ic = precompute_ic_scores(train_df, sg)
+    cached_ics = [precompute_ic_scores(tr, sg) for tr, _ in splits]
     base_delta = sg.delta_params.copy()
     if method == "grid":
         param_grid = {
@@ -333,23 +345,32 @@ def run_param_search(
                     delta_params["funding_rate"][1],
                     _get(params["funding_rate_inc"]),
                 )
-            sg_iter = RobustSignalGenerator(
-                model_paths=convert_model_paths(MODEL_PATHS),
-                feature_cols_1h=FEATURE_COLS_1H,
-                feature_cols_4h=FEATURE_COLS_4H,
-                feature_cols_d1=FEATURE_COLS_D1,
-                delta_params=delta_params,
-            )
-            tot_ret, sharpe, trade_count = run_single_backtest(
-                valid_df,
-                base_weights,
-                _get(params["history_window"]),
-                th_params,
-                cached_ic,
-                sg_iter,
-            )
-            metric = sharpe if not np.isnan(sharpe) else -100.0
-            return metric, params, tot_ret, sharpe, trade_count
+            ret_vals = []
+            sharpe_vals = []
+            trades = 0
+            for (tr_df, val_df), ic in zip(splits, cached_ics):
+                sg_iter = RobustSignalGenerator(
+                    model_paths=convert_model_paths(MODEL_PATHS),
+                    feature_cols_1h=FEATURE_COLS_1H,
+                    feature_cols_4h=FEATURE_COLS_4H,
+                    feature_cols_d1=FEATURE_COLS_D1,
+                    delta_params=delta_params,
+                )
+                tot_ret, sharpe, trade_count = run_single_backtest(
+                    val_df,
+                    base_weights,
+                    _get(params["history_window"]),
+                    th_params,
+                    ic,
+                    sg_iter,
+                )
+                ret_vals.append(tot_ret)
+                sharpe_vals.append(sharpe)
+                trades += trade_count
+            mean_ret = float(np.nanmean(ret_vals)) if ret_vals else np.nan
+            mean_sharpe = float(np.nanmean(sharpe_vals)) if sharpe_vals else np.nan
+            metric = mean_sharpe if not np.isnan(mean_sharpe) else -100.0
+            return metric, params, mean_ret, mean_sharpe, trades
 
         results = Parallel(n_jobs=n_jobs, prefer="threads")(
             delayed(eval_params)(p) for p in tqdm(grid, desc="Grid Search")
@@ -430,21 +451,30 @@ def run_param_search(
                     delta_params["funding_rate"][1],
                     trial.suggest_float("funding_rate_inc", 0.02, 0.05),
                 )
-            sg_iter = RobustSignalGenerator(
-                model_paths=convert_model_paths(MODEL_PATHS),
-                feature_cols_1h=FEATURE_COLS_1H,
-                feature_cols_4h=FEATURE_COLS_4H,
-                feature_cols_d1=FEATURE_COLS_D1,
-                delta_params=delta_params,
-            )
-            tot_ret, sharpe, trade_count = run_single_backtest(
-                valid_df,
-                base_weights,
-                history_window,
-                th_params,
-                cached_ic,
-                sg_iter,
-            )
+            ret_vals = []
+            sharpe_vals = []
+            trades = 0
+            for (tr_df, val_df), ic in zip(splits, cached_ics):
+                sg_iter = RobustSignalGenerator(
+                    model_paths=convert_model_paths(MODEL_PATHS),
+                    feature_cols_1h=FEATURE_COLS_1H,
+                    feature_cols_4h=FEATURE_COLS_4H,
+                    feature_cols_d1=FEATURE_COLS_D1,
+                    delta_params=delta_params,
+                )
+                tot_ret, sharpe, trade_count = run_single_backtest(
+                    val_df,
+                    base_weights,
+                    history_window,
+                    th_params,
+                    ic,
+                    sg_iter,
+                )
+                ret_vals.append(tot_ret)
+                sharpe_vals.append(sharpe)
+                trades += trade_count
+            mean_ret = float(np.nanmean(ret_vals)) if ret_vals else np.nan
+            mean_sharpe = float(np.nanmean(sharpe_vals)) if sharpe_vals else np.nan
             logger.info(
                 "optuna params=%s -> trades=%d total_ret=%.4f, sharpe=%.6f",
                 {
@@ -470,13 +500,13 @@ def run_param_search(
                         else {}
                     ),
                 },
-                trade_count,
-                tot_ret,
-                sharpe,
+                trades,
+                mean_ret,
+                mean_sharpe,
             )
-            if np.isnan(sharpe):
+            if np.isnan(mean_sharpe):
                 return -100.0  # 给可比较的负分，避免 -inf
-            return sharpe
+            return mean_sharpe
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=trials, show_progress_bar=True)
 
@@ -520,6 +550,12 @@ def main() -> None:
         default=0.4,
         help="验证集所占比例",
     )
+    parser.add_argument(
+        "--cv-folds",
+        type=int,
+        default=1,
+        help="交叉验证折数，大于1时启用 TimeSeriesSplit",
+    )
     args = parser.parse_args()
     run_param_search(
         rows=args.rows,
@@ -528,6 +564,7 @@ def main() -> None:
         tune_delta=args.tune_delta,
         n_jobs=args.n_jobs,
         test_ratio=args.test_ratio,
+        n_splits=args.cv_folds,
     )
 
 
