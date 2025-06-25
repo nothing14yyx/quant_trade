@@ -406,6 +406,7 @@ th_down_d1: 0.74  # d1空头AI模型阈值，后续可灵活调整
 position_coeff:
   range: 0.40
   trend: 0.60
+  low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
   base_th: 0.09343581      # 原 dynamic_th_final 的初始值
