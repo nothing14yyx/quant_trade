@@ -48,7 +48,7 @@ def test_run_single_backtest_basic():
 
     sg = DummySG([1, -1, 1, -1])
 
-    avg_ret, avg_sharpe = run_single_backtest(
+    avg_ret, avg_sharpe, trade_count = run_single_backtest(
         df=df,
         base_weights={},
         history_window=10,
@@ -59,4 +59,5 @@ def test_run_single_backtest_basic():
 
     assert avg_ret == pytest.approx(0.0280853, rel=1e-4)
     assert np.isnan(avg_sharpe)
+    assert trade_count == 1
 

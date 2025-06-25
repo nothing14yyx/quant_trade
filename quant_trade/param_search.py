@@ -78,7 +78,7 @@ def run_single_backtest(
     ic_scores: dict,
     sg: RobustSignalGenerator,
 ) -> tuple:
-    """在给定参数下执行一次回测，返回平均收益率和夏普比"""
+    """在给定参数下执行一次回测，返回平均收益率、夏普比和交易笔数"""
     sg.history_scores = deque(maxlen=history_window)
     sg.base_weights = base_weights
 
@@ -130,6 +130,7 @@ def run_single_backtest(
     fee_rate = 0.0005
     slippage = 0.0003
     results = []
+    total_trades = 0
 
     for symbol in all_symbols:
         df_sym = df[df["symbol"] == symbol].copy()
@@ -173,6 +174,7 @@ def run_single_backtest(
 
         trades_df = trades_df.dropna(subset=["ret", "position_size"])
         trade_count = len(trades_df)
+        total_trades += trade_count
         if trade_count == 0:
             logger.debug("%s -> no valid trades after cleaning", symbol)
             total_ret, sharpe = 0.0, 0.0
@@ -191,7 +193,7 @@ def run_single_backtest(
         results.append({"symbol": symbol, "ret": total_ret, "sharpe": sharpe})
 
     df_res = pd.DataFrame(results)
-    return df_res["ret"].mean(), df_res["sharpe"].mean()
+    return df_res["ret"].mean(), df_res["sharpe"].mean(), total_trades
 
 
 
@@ -330,7 +332,7 @@ def run_param_search(
                 feature_cols_d1=FEATURE_COLS_D1,
                 delta_params=delta_params,
             )
-            tot_ret, sharpe = run_single_backtest(
+            tot_ret, sharpe, trade_count = run_single_backtest(
                 valid_df,
                 base_weights,
                 _get(params["history_window"]),
@@ -339,7 +341,7 @@ def run_param_search(
                 sg_iter,
             )
             metric = sharpe if not np.isnan(sharpe) else -100.0
-            return metric, params, tot_ret, sharpe
+            return metric, params, tot_ret, sharpe, trade_count
 
         results = Parallel(n_jobs=n_jobs, prefer="threads")(
             delayed(eval_params)(p) for p in tqdm(grid, desc="Grid Search")
@@ -347,13 +349,14 @@ def run_param_search(
 
         best = None
         best_metric = -np.inf
-        for metric, params, tot_ret, sharpe in results:
+        for metric, params, tot_ret, sharpe, trade_count in results:
             if metric > best_metric:
                 best_metric = metric
                 best = params
             logger.info(
-                "params=%s -> total_ret=%.4f, sharpe=%.4f",
+                "params=%s -> trades=%d total_ret=%.4f, sharpe=%.4f",
                 params,
+                trade_count,
                 tot_ret,
                 sharpe,
             )
@@ -426,13 +429,42 @@ def run_param_search(
                 feature_cols_d1=FEATURE_COLS_D1,
                 delta_params=delta_params,
             )
-            _, sharpe = run_single_backtest(
+            tot_ret, sharpe, trade_count = run_single_backtest(
                 valid_df,
                 base_weights,
                 history_window,
                 th_params,
                 cached_ic,
                 sg_iter,
+            )
+            logger.info(
+                "optuna params=%s -> trades=%d total_ret=%.4f, sharpe=%.4f",
+                {
+                    "ai_w": weights[0],
+                    "trend_w": weights[1],
+                    "momentum_w": weights[2],
+                    "volatility_w": weights[3],
+                    "volume_w": weights[4],
+                    "sentiment_w": weights[5],
+                    "funding_w": weights[6],
+                    "th_base": th_params["base"],
+                    "history_window": history_window,
+                    **(
+                        {
+                            "rsi_inc": delta_params["rsi"][2],
+                            "macd_hist_inc": delta_params["macd_hist"][2],
+                            "ema_diff_inc": delta_params["ema_diff"][2],
+                            "atr_pct_inc": delta_params["atr_pct"][2],
+                            "vol_ma_ratio_inc": delta_params["vol_ma_ratio"][2],
+                            "funding_rate_inc": delta_params["funding_rate"][2],
+                        }
+                        if tune_delta
+                        else {}
+                    ),
+                },
+                trade_count,
+                tot_ret,
+                sharpe,
             )
             if np.isnan(sharpe):
                 return -100.0  # 给可比较的负分，避免 -inf
