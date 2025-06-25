@@ -97,6 +97,7 @@ def calc_price_channel(high: pd.Series, low: pd.Series, close: pd.Series, *, win
 
 def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     df = df.sort_index()
+    df = df.loc[~df.index.duplicated()].copy()
     # 确保时间顺序正确，避免 VWAP 等指标计算异常
     feats = pd.DataFrame(index=df.index)
     for col in ["open", "high", "low", "close", "volume"]:

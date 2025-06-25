@@ -117,3 +117,26 @@ def test_sma_and_ma_ratio():
     # channel position should be 1.0 for increasing series
     assert feats['channel_pos_1h'].iloc[-1] == pytest.approx(1.0)
 
+
+def test_calc_features_raw_index_sort_unique():
+    times = pd.to_datetime([
+        '2020-01-02 01:00',
+        '2020-01-01 00:00',
+        '2020-01-02 01:00',
+    ])
+    df = pd.DataFrame(
+        {
+            'open': [1, 2, 3],
+            'high': [1, 2, 3],
+            'low': [1, 2, 3],
+            'close': [1, 2, 3],
+            'volume': [1, 1, 1],
+        },
+        index=times,
+    )
+
+    feats = calc_features_raw(df, '1h')
+
+    assert feats.index.is_monotonic_increasing
+    assert not feats.index.has_duplicates
+
