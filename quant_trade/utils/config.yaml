@@ -358,12 +358,12 @@ delta_boost:
       - macd_hist_d1
       - ema_diff_d1
   params:
-    rsi: [5, 1.0, 0.05]
-    macd_hist: [0.002, 100.0, 0.05]
-    ema_diff: [0.001, 100.0, 0.03]
-    atr_pct: [0.002, 100.0, 0.03]
-    vol_ma_ratio: [0.2, 1.0, 0.03]
-    funding_rate: [0.0005, 10000, 0.03]
+    rsi: [5, 1.0, 0.04737699101756349]
+    macd_hist: [0.002, 100.0, 0.039995966811749384]
+    ema_diff: [0.001, 100.0, 0.034834546584289305]
+    atr_pct: [0.002, 100.0, 0.02586487094290873]
+    vol_ma_ratio: [0.2, 1.0, 0.031294758869528636]
+    funding_rate: [0.0005, 10000, 0.02578413279782483]
 
 
 vote_system:
@@ -409,7 +409,7 @@ position_coeff:
   low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.09343581      # 原 dynamic_th_final 的初始值
+  base_th: 0.14492872354350025      # 原 dynamic_th_final 的初始值
   gamma: 0.05        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
   quantile: 0.80
