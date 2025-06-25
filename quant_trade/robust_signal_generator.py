@@ -494,7 +494,11 @@ class RobustSignalGenerator:
 
     def detect_market_regime(self, adx1, adx4, adxd):
         """简易市场状态判别：根据平均ADX判断震荡或趋势"""
-        avg_adx = np.nanmean([adx1, adx4, adxd])
+        adx_arr = np.array([adx1, adx4, adxd], dtype=float)
+        adx_arr = adx_arr[~np.isnan(adx_arr)]
+        if adx_arr.size == 0:
+            return "range"
+        avg_adx = adx_arr.mean()
         return "trend" if avg_adx >= 25 else "range"
 
     def get_ic_period_weights(self, ic_scores):
