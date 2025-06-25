@@ -41,6 +41,7 @@ def make_dummy_rsg():
             'base_th': 0.12,
             'gamma': 0.05,
             'min_pos': 0.10,
+            'quantile': 0.80,
         },
         'ob_threshold': {'min_ob_th': 0.10},
     }
