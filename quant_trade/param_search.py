@@ -225,7 +225,7 @@ def run_param_search(
     trials: int
         Number of trials when using optuna.
     tune_delta: bool
-        Whether to tune delta boost parameters.
+        Whether to tune delta boost parameters. Defaults to ``True``.
     n_jobs: int
         Parallel jobs for grid search.
     test_ratio: float
@@ -497,9 +497,17 @@ def main() -> None:
     parser.add_argument("--trials", type=int, default=30, help="Optuna 试验次数")
     parser.add_argument(
         "--tune-delta",
+        dest="tune_delta",
         action="store_true",
         help="同时搜索 Δ 参数增益",
     )
+    parser.add_argument(
+        "--no-tune-delta",
+        dest="tune_delta",
+        action="store_false",
+        help="关闭 Δ 参数增益搜索",
+    )
+    parser.set_defaults(tune_delta=True)
     parser.add_argument(
         "--n-jobs",
         type=int,
