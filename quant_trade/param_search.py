@@ -475,7 +475,7 @@ def run_param_search(
                 trades += trade_count
             mean_ret = float(np.nanmean(ret_vals)) if ret_vals else np.nan
             mean_sharpe = float(np.nanmean(sharpe_vals)) if sharpe_vals else np.nan
-            logger.info(
+            logger.debug(
                 "optuna params=%s -> trades=%d total_ret=%.4f, sharpe=%.6f",
                 {
                     "ai_w": weights[0],
