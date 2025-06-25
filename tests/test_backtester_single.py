@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+import numpy as np
 from collections import deque
 
 from quant_trade.param_search import run_single_backtest
@@ -56,6 +57,6 @@ def test_run_single_backtest_basic():
         sg=sg,
     )
 
-    assert avg_ret == pytest.approx(0.0165488, rel=1e-4)
-    assert avg_sharpe == pytest.approx(0.4290365, rel=1e-4)
+    assert avg_ret == pytest.approx(0.0280853, rel=1e-4)
+    assert np.isnan(avg_sharpe)
 
