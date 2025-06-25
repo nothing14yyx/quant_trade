@@ -106,3 +106,38 @@ def test_param_search_success(monkeypatch, caplog):
         param_search.run_param_search(method="grid", trials=1, tune_delta=False)
 
     assert any("best params:" in record.getMessage() for record in caplog.records)
+
+
+def test_param_search_cv(monkeypatch):
+    monkeypatch.setattr(param_search, "load_config", lambda: {})
+    monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(param_search, "ParameterGrid", lambda pg: [pg])
+    monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
+
+    class DummyRSG:
+        def __init__(self, *a, **k):
+            self.delta_params = {"rsi": (1, 1, 0.03)}
+
+    monkeypatch.setattr(param_search, "RobustSignalGenerator", DummyRSG)
+
+    times = pd.date_range("2020-01-01", periods=4, freq="h")
+    df = pd.DataFrame({
+        "symbol": ["BTC"] * 4,
+        "open_time": times,
+        "close_time": times + pd.Timedelta(hours=1),
+    })
+    monkeypatch.setattr(param_search.pd, "read_sql", lambda *a, **k: df)
+
+    calls = []
+    sharpe_vals = [0.1, 0.3]
+
+    def fake_backtest(*args, **kwargs):
+        idx = len(calls)
+        calls.append(1)
+        return 0.0, sharpe_vals[idx], 0
+
+    monkeypatch.setattr(param_search, "run_single_backtest", fake_backtest)
+
+    param_search.run_param_search(method="grid", tune_delta=False, n_splits=2)
+
+    assert len(calls) == 2
