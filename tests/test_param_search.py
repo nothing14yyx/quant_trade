@@ -103,6 +103,6 @@ def test_param_search_success(monkeypatch, caplog):
     monkeypatch.setattr(backtester, "simulate_trades", lambda *a, **k: pd.DataFrame())
 
     with caplog.at_level("INFO"):
-        param_search.run_param_search(method="grid", trials=1)
+        param_search.run_param_search(method="grid", trials=1, tune_delta=False)
 
     assert any("best params:" in record.getMessage() for record in caplog.records)
