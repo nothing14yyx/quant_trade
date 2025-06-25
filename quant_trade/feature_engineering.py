@@ -34,6 +34,7 @@ from quant_trade.utils.robust_scaler import (
 from quant_trade.utils.feature_health import health_check, apply_health_check_df
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
 
 # Future-related columns to drop for leakage prevention
 FUTURE_COLS = [
@@ -668,5 +669,6 @@ class FeatureEngineer:
 # CLI
 # ────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     fe = FeatureEngineer("utils/config.yaml")
     fe.merge_features(save_to_db=True, batch_size=1)
