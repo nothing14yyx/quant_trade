@@ -28,7 +28,7 @@ def test_param_search_grid(monkeypatch):
     monkeypatch.setattr(param_search, "load_config", lambda: {})
     monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
     monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
-    monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.0, 0.0))
+    monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.0, 0.0, 0))
     monkeypatch.setattr(param_search, "ParameterGrid", lambda pg: [pg])
 
     class DummyRSG:
@@ -54,7 +54,7 @@ def test_param_search_optuna(monkeypatch):
     monkeypatch.setattr(param_search, "load_config", lambda: {})
     monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
     monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
-    monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.0, 0.0))
+    monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.0, 0.0, 0))
     monkeypatch.setattr(param_search.optuna, "create_study", lambda direction="maximize": dummy_study())
 
     class DummyRSG:
@@ -96,7 +96,7 @@ def test_param_search_success(monkeypatch, caplog):
     })
     monkeypatch.setattr(param_search.pd, "read_sql", lambda *a, **k: df)
 
-    monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.1, 0.2))
+    monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.1, 0.2, 0))
 
     import quant_trade.backtester as backtester
 
