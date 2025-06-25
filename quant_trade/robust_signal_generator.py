@@ -237,11 +237,10 @@ class RobustSignalGenerator:
         )
 
         filters_cfg = cfg.get("signal_filters", {})
-        # 将默认 min_vote 从 8 调整为 5，confidence_vote 从 0.33 调整为 0.20
-        # 进一步放宽投票阈值和置信度要求
+        # ↓ 放宽阈值，防止信号被过度过滤
         self.signal_filters = {
-            "min_vote": filters_cfg.get("min_vote", 4),        # 从 5 → 4
-            "confidence_vote": filters_cfg.get("confidence_vote", 0.15),  # 从 0.20 → 0.15
+            "min_vote": filters_cfg.get("min_vote", 2),
+            "confidence_vote": filters_cfg.get("confidence_vote", 0.15),
         }
 
         pc_cfg = cfg.get("position_coeff", {})
@@ -738,8 +737,8 @@ class RobustSignalGenerator:
         if abs(risk_score) > 3 and confidence_factor > 1.05:
             pos_size = min(pos_size * 1.2, 1.0)
 
-        # 放宽最小仓位要求：允许更小的 pos_size
-        if pos_size < cfg_th_sig.get("min_pos", 0.05):  # 从 0.10 → 0.05
+        # ↓ 允许极小仓位，交由风险控制模块再裁剪
+        if pos_size < cfg_th_sig.get("min_pos", 0.01):
             direction, pos_size = 0, 0.0
 
         # 4h 周期 veto 逻辑已停用
