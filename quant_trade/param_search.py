@@ -361,7 +361,7 @@ def run_param_search(
             if metric > best_metric:
                 best_metric = metric
                 best = params
-            logger.info(
+            logger.debug(
                 "params=%s -> trades=%d total_ret=%.4f, sharpe=%.6f",
                 params,
                 trade_count,
