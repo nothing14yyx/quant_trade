@@ -154,5 +154,6 @@
   "GRIFFAINUSDT": "griffain",
   "QUICKUSDT": "quick",
   "STXUSDT": "blockstack",
-  "JASMYUSDT": "jasmycoin"
+  "JASMYUSDT": "jasmycoin",
+  "HUSDT": "ethereum"
 }
