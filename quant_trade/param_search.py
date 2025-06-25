@@ -334,7 +334,7 @@ def run_param_search(
                 cached_ic,
                 sg_iter,
             )
-            metric = sharpe if not np.isnan(sharpe) else -np.inf
+            metric = sharpe if not np.isnan(sharpe) else -100.0
             return metric, params, tot_ret, sharpe
 
         results = Parallel(n_jobs=n_jobs, prefer="threads")(

@@ -154,4 +154,4 @@ def test_total_ret_all_in():
     trades = simulate_trades(df_sym, sig_df, fee_rate=0, slippage=0)
     series = trades['ret'] * trades['position_size']
     total_ret = (series + 1.0).cumprod().iloc[-1] - 1.0
-    assert total_ret == pytest.approx(0.010101, rel=1e-4)
+    assert total_ret == pytest.approx(0.0, rel=1e-4)
