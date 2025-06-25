@@ -1124,16 +1124,17 @@ class RobustSignalGenerator:
                 scores = scores[-int(self.th_window):]
             arr = np.abs(np.asarray(scores, dtype=float))
             if arr.size:
+                quantile = self.signal_threshold_cfg.get('quantile', 0.80)
                 if self.th_decay < 1.0:
                     weights = self.th_decay ** np.arange(len(arr))[::-1]
                     sorter = np.argsort(arr)
                     arr_sorted = arr[sorter]
                     w_sorted = weights[sorter]
                     cumsum = np.cumsum(w_sorted)
-                    target = 0.80 * cumsum[-1]
+                    target = quantile * cumsum[-1]
                     q = np.interp(target, cumsum, arr_sorted)
                 else:
-                    q = np.quantile(arr, 0.80)
+                    q = np.quantile(arr, quantile)
                 th = max(th, q)
 
         # === 市场状态微调 ===
