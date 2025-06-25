@@ -4,6 +4,9 @@ import pandas as pd
 import pandas_ta as ta
 import json
 import warnings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def collect_feature_cols(cfg: dict, period: str) -> list[str]:
@@ -42,6 +45,7 @@ def _safe_ta(func, *args, index=None, cols=None, **kwargs):
                 if c not in res.columns:
                     res[c] = np.nan
             res = res[cols]
+    res = res.sort_index()
     return res
 
 
@@ -70,6 +74,18 @@ def calc_mfi_np(high, low, close, volume, window=14):
     ratio = sum_pmf / (sum_nmf + 1e-12)
     mfi = np.divide(100 * sum_pmf, sum_pmf + sum_nmf + 1e-12)
     return ratio, mfi
+
+
+def vwap_np(high, low, close, volume):
+    """Compute VWAP using cumulative sums."""
+    tp = (np.asarray(high) + np.asarray(low) + np.asarray(close)) / 3
+    volume_arr = np.asarray(volume)
+    cum_vol = np.cumsum(volume_arr)
+    cum_dollar = np.cumsum(tp * volume_arr)
+    vwap = cum_dollar / np.where(cum_vol == 0, np.nan, cum_vol)
+    if isinstance(high, (pd.Series, pd.DataFrame)):
+        return pd.Series(vwap, index=getattr(high, "index", None))
+    return vwap
 
 
 def calc_price_channel(high: pd.Series, low: pd.Series, close: pd.Series, *, window: int = 20) -> pd.DataFrame:
@@ -109,6 +125,11 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     for col in ["open", "high", "low", "close", "volume"]:
         feats[col] = np.full(len(feats), np.nan, dtype="float64")
 
+    def _check_index(name: str):
+        if not feats.index.is_monotonic_increasing:
+            logger.debug("Index broke monotonicity before %s", name)
+            feats.sort_index(inplace=True)
+
     price_cols = ["open", "high", "low", "close"]
     quantiles = df[price_cols].quantile([0.001, 0.999])
     lower = quantiles.loc[0.001]
@@ -126,21 +147,25 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         assign_safe(feats, "fg_index_d1", fg)
     if "funding_rate" in df:
         assign_safe(feats, "funding_rate", df["funding_rate"].astype(float).ffill())
+        _check_index("fr_ema")
         fr_ema = _safe_ta(ta.ema, feats["funding_rate"], length=24, index=df.index)
         fr_ema_s = fr_ema.iloc[:, 0]
         assign_safe(feats, f"funding_rate_anom_{period}", (feats["funding_rate"] - fr_ema_s))
 
+    _check_index("ema_short")
     ema_short = _safe_ta(ta.ema, feats["close"], length=10, index=df.index)
     ema_short_s = ema_short.iloc[:, 0]
     if ema_short_s.isna().all():
         ema_short_s = feats["close"].ewm(span=10, adjust=False).mean()
 
+    _check_index("ema_long")
     ema_long = _safe_ta(ta.ema, feats["close"], length=50, index=df.index)
     ema_long_s = ema_long.iloc[:, 0]
     if ema_long_s.isna().all():
         ema_long_s = feats["close"].ewm(span=50, adjust=False).mean()
 
     assign_safe(feats, f"ema_diff_{period}", ema_short_s - ema_long_s)
+    _check_index("sma")
     assign_safe(feats, f"sma_5_{period}", _safe_ta(ta.sma, feats["close"], length=5, index=df.index))
     assign_safe(feats, f"sma_10_{period}", _safe_ta(ta.sma, feats["close"], length=10, index=df.index))
     assign_safe(feats, f"sma_20_{period}", _safe_ta(ta.sma, feats["close"], length=20, index=df.index))
@@ -153,13 +178,16 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats[f"pct_chg6_{period}"] = (
         feats["close"].pct_change(6, fill_method=None).fillna(0)
     )
+    _check_index("rsi")
     assign_safe(feats, f"rsi_{period}", _safe_ta(ta.rsi, feats["close"], length=14, index=df.index))
     feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
+    _check_index("atr")
     atr = _safe_ta(ta.atr, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
     atr_s = atr.iloc[:, 0]
     assign_safe(feats, f"atr_pct_{period}", atr_s.div(feats["close"], axis=0))
     feats[f"atr_chg_{period}"] = feats[f"atr_pct_{period}"].diff()
 
+    _check_index("adx")
     adx_df = _safe_ta(
         ta.adx,
         feats["high"],
@@ -171,10 +199,12 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     )
     assign_safe(feats, f"adx_{period}", adx_df.get("ADX_14"))
     feats[f"adx_delta_{period}"] = feats[f"adx_{period}"].diff()
+    _check_index("cci")
     assign_safe(
         feats, f"cci_{period}", _safe_ta(ta.cci, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
     )
     feats[f"cci_delta_{period}"] = feats[f"cci_{period}"].diff().fillna(0)
+    _check_index("mfi")
     mfr, mfi = calc_mfi_np(
         feats["high"].values,
         feats["low"].values,
@@ -186,18 +216,18 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"money_flow_ratio_{period}", mfr)
 
     # VWAP 和随机指标
+    _check_index("vwap")
     assign_safe(
         feats,
         f"vwap_{period}",
-        _safe_ta(
-            ta.vwap,
+        vwap_np(
             feats["high"],
             feats["low"],
             feats["close"],
             feats["volume"],
-            index=df.index,
         ),
     )
+    _check_index("stoch")
     stoch = _safe_ta(
         ta.stoch,
         feats["high"],
@@ -213,6 +243,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"stoch_k_{period}", stoch.get("STOCHk_14_3_3"))
     assign_safe(feats, f"stoch_d_{period}", stoch.get("STOCHd_14_3_3"))
 
+    _check_index("bbands")
     bb = _safe_ta(
         ta.bbands,
         feats["close"],
@@ -228,6 +259,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         (feats["close"] - bb.get("BBL_20_2.0")) / (bb.get("BBU_20_2.0") - bb.get("BBL_20_2.0")).replace(0, np.nan),
     )
 
+    _check_index("kc")
     kc = _safe_ta(
         ta.kc,
         feats["high"],
@@ -245,6 +277,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     kc_width = kc.get("KCUe_20_2") - kc.get("KCLe_20_2")
     assign_safe(feats, f"kc_width_pct_chg_{period}", kc_width.pct_change(fill_method=None))
 
+    _check_index("ichimoku")
     ichi_raw = ta.ichimoku(feats["high"], feats["low"], feats["close"])
     if isinstance(ichi_raw, tuple):
         ichi_vis = ichi_raw[0]
@@ -263,6 +296,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         assign_safe(feats, f"ichimoku_conversion_{period}", pd.Series(index=df.index, dtype="float64"))
         assign_safe(feats, f"ichimoku_cloud_thickness_{period}", pd.Series(index=df.index, dtype="float64"))
 
+    _check_index("donchian")
     dc = _safe_ta(
         ta.donchian,
         feats["high"],
@@ -279,13 +313,16 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     )
     assign_safe(feats, f"donchian_delta_{period}", dc.get("DCU_20_20") - dc.get("DCL_20_20"))
 
+    _check_index("vol_roc")
     assign_safe(feats, f"vol_roc_{period}", _safe_ta(ta.roc, feats["volume"], length=5, index=df.index))
+    _check_index("sma_vol_short")
     sma_vol_short = _safe_ta(ta.sma, feats["volume"], length=10, index=df.index).iloc[:, 0]
     assign_safe(
         feats,
         f"vol_ma_ratio_{period}",
         feats["volume"] / sma_vol_short.replace(0, np.nan),
     )
+    _check_index("sma_vol_long")
     sma_vol_long = _safe_ta(ta.sma, feats["volume"], length=30, index=df.index).iloc[:, 0]
     assign_safe(
         feats,
@@ -300,12 +337,14 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
 
     bars_per_day = {"1h": 24, "4h": 6, "d1": 1}.get(period, 1)
     log_ret = np.log(feats["close"] / feats["close"].shift(1))
+    _check_index("hv")
     for d in (7, 14, 30):
         window = d * bars_per_day
         hv = log_ret.rolling(window, min_periods=2).std() * np.sqrt(bars_per_day)
         assign_safe(feats, f"hv_{d}d_{period}", hv)
 
     # 价格通道位置
+    _check_index("price_channel")
     channel = calc_price_channel(feats["high"], feats["low"], feats["close"], window=20)
     assign_safe(feats, f"channel_pos_{period}", channel["channel_pos"])
 
@@ -321,6 +360,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     btc_price = _find_price(["btc_close", "close_btc", "btcusdt_close", "btc_price"])
     eth_price = _find_price(["eth_close", "close_eth", "ethusdt_close", "eth_price"])
     asset_ret = feats["close"].pct_change(fill_method=None)
+    _check_index("correlation")
     if btc_price is not None:
         btc_ret = btc_price.pct_change(fill_method=None)
         corr = asset_ret.rolling(bars_per_day).corr(btc_ret)
@@ -346,6 +386,7 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"long_upper_shadow_{period}", upper_long.astype(float))
     assign_safe(feats, f"long_lower_shadow_{period}", lower_long.astype(float))
 
+    _check_index("sma_bbw")
     sma_bbw = _safe_ta(ta.sma, feats[f"bb_width_{period}"], length=20, index=df.index)
     sma_bbw_s = sma_bbw.iloc[:, 0]
     vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw_s * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
@@ -376,12 +417,14 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     )
 
     assign_safe(feats, f"rsi_mul_vol_ma_ratio_{period}", feats[f"rsi_{period}"] * feats[f"vol_ma_ratio_{period}"])
+    _check_index("willr")
     assign_safe(
         feats,
         f"willr_{period}",
         _safe_ta(ta.willr, feats["high"], feats["low"], feats["close"], length=14, index=df.index),
     )
 
+    _check_index("macd")
     macd = _safe_ta(
         ta.macd,
         feats["close"],
@@ -392,9 +435,11 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     assign_safe(feats, f"macd_signal_{period}", macd["MACDs_12_26_9"])
     assign_safe(feats, f"macd_hist_{period}", macd["MACDh_12_26_9"])
 
+    _check_index("obv")
     assign_safe(feats, f"obv_{period}", _safe_ta(ta.obv, feats["close"], feats["volume"], index=df.index))
     feats[f"obv_delta_{period}"] = feats[f"obv_{period}"].diff()
 
+    _check_index("supertrend")
     st = _safe_ta(
         ta.supertrend,
         feats["high"],
