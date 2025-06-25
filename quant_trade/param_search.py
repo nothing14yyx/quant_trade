@@ -21,6 +21,7 @@ from quant_trade.backtester import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
@@ -484,4 +485,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     main()
