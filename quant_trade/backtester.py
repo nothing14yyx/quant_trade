@@ -136,7 +136,20 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
             'holding_s': holding_s
         })
 
-    return pd.DataFrame(trades)
+    columns = [
+        'symbol',
+        'entry_time',
+        'entry_price',
+        'exit_time',
+        'exit_price',
+        'signal',
+        'score',
+        'position_size',
+        'pnl',
+        'ret',
+        'holding_s',
+    ]
+    return pd.DataFrame(trades, columns=columns)
 
 
 def calc_equity_curve(trades_df: pd.DataFrame) -> pd.Series:
