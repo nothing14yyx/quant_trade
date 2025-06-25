@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-DataLoader v2.3-patch1 (External indicators removed)  (2025-06-03)
+DataLoader v2.3-patch1   (2025-06-03)
 ==================================================================
-在原版 DataLoader v2.3-patch1 的基础上，去掉所有“外部指标（日线）”相关的方法
 （update_onchain_metrics、update_macro_metrics）及其调用，使同步仅包含情绪、fundingRate、K 线。
 """
 

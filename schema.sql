@@ -684,7 +684,7 @@ TRUNCATE TABLE features;
 TRUNCATE TABLE live_full_data;
 TRUNCATE TABLE live_top10_signals;
 
-DELETE FROM klines WHERE symbol = 'NEIROETHUSDT';
+DELETE FROM cg_coin_categories WHERE symbol = 'HUSDT';
 
 SHOW COLUMNS FROM features LIKE 'funding_rate_isnan';
 
