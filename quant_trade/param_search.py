@@ -130,6 +130,7 @@ def run_single_backtest(
     fee_rate = 0.0005
     slippage = 0.0003
     results = []
+    port_rets: list[float] = []
     total_trades = 0
 
     for symbol in all_symbols:
@@ -174,12 +175,10 @@ def run_single_backtest(
 
         trades_df = trades_df.dropna(subset=["ret", "position_size"])
         trade_count = len(trades_df)
-        total_trades += trade_count
         if trade_count == 0:
             logger.debug("%s -> no valid trades after cleaning", symbol)
-            total_ret, sharpe = 0.0, 0.0
-            results.append({"symbol": symbol, "ret": total_ret, "sharpe": sharpe})
             continue
+        total_trades += trade_count
         # === Debug & 清洗 NaN END ===
         series = trades_df["ret"]
         if trade_count < 2:
@@ -189,11 +188,21 @@ def run_single_backtest(
             "%s -> trade_count=%d mean=%.6f std=%.6f", symbol, trade_count, series.mean(), std
         )
         total_ret = (series + 1).prod() - 1
-        sharpe = 0.0 if std == 0 else series.mean() / std * np.sqrt(len(series))
-        results.append({"symbol": symbol, "ret": total_ret, "sharpe": sharpe})
+        symbol_sharpe = (
+            series.mean() / std * np.sqrt(len(series))
+            if trade_count >= 2 and std != 0
+            else np.nan
+        )
+        port_rets.extend(series.tolist())
+        results.append({"symbol": symbol, "ret": total_ret, "sharpe": symbol_sharpe})
 
-    df_res = pd.DataFrame(results)
-    return df_res["ret"].mean(), df_res["sharpe"].mean(), total_trades
+    port_rets = np.asarray(port_rets, dtype=float)
+    if len(port_rets) >= 2 and port_rets.std() != 0:
+        sharpe = port_rets.mean() / port_rets.std() * np.sqrt(len(port_rets))
+    else:
+        sharpe = np.nan
+    mean_ret = port_rets.mean() if len(port_rets) > 0 else np.nan
+    return mean_ret, sharpe, len(port_rets)
 
 
 
@@ -353,14 +362,14 @@ def run_param_search(
                 best_metric = metric
                 best = params
             logger.info(
-                "params=%s -> trades=%d total_ret=%.4f, sharpe=%.4f",
+                "params=%s -> trades=%d total_ret=%.4f, sharpe=%.6f",
                 params,
                 trade_count,
                 tot_ret,
                 sharpe,
             )
 
-        logger.info("best params: %s best_sharpe: %s", best, best_metric)
+        logger.info("best params: %s best_sharpe: %.6f", best, best_metric)
     else:
         def objective(trial: optuna.Trial) -> float:
             keys = [
@@ -437,7 +446,7 @@ def run_param_search(
                 sg_iter,
             )
             logger.info(
-                "optuna params=%s -> trades=%d total_ret=%.4f, sharpe=%.4f",
+                "optuna params=%s -> trades=%d total_ret=%.4f, sharpe=%.6f",
                 {
                     "ai_w": weights[0],
                     "trend_w": weights[1],
@@ -472,7 +481,7 @@ def run_param_search(
         study.optimize(objective, n_trials=trials, show_progress_bar=True)
 
         logger.info(
-            "best params: %s best_sharpe: %s", study.best_params, study.best_value
+            "best params: %s best_sharpe: %.6f", study.best_params, study.best_value
         )
 
 
