@@ -81,10 +81,10 @@ pytest -q tests
 
 通过 `python param_search.py --rows 10000`(可选) 调整信号权重。
 参数搜索默认按时间拆分为训练集和验证集，可通过 `--test-ratio` 调整验证集比例。
-若希望同时优化 Δ-boost 参数，可加入 `--tune-delta`，例如：
+脚本默认同时优化 Δ-boost 参数，例如：
 
 ```bash
-python param_search.py --method optuna --tune-delta --trials 50
+python param_search.py --method optuna --trials 50
 ```
 
 回测脚本 `backtester.py` 支持 `--recent-days N` 参数，可只回测最近 N 天的数据，例如：
