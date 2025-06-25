@@ -149,5 +149,10 @@
   "MILKUSDT": "milkyway-2",
   "HAEDALUSDT": "haedal",
   "PROMUSDT": "prometeus",
-  "DMCUSDT": "datamall-coin"
+  "DMCUSDT": "datamall-coin",
+  "BDXNUSDT": "bondex",
+  "GRIFFAINUSDT": "griffain",
+  "QUICKUSDT": "quick",
+  "STXUSDT": "blockstack",
+  "JASMYUSDT": "jasmycoin"
 }
