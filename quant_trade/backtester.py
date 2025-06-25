@@ -49,12 +49,13 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
     trades = []
     in_pos = False
     entry_price = entry_time = pos_size = score = direction = tp = sl = None
-    for i in range(1, len(df_sym)):
+    for i in range(1, len(df_sym) - 1):
         if not in_pos:
             if (
                 i - 1 < len(sig_df)
                 and sig_df.at[i-1, 'signal'] != 0
                 and sig_df.at[i-1, 'position_size'] > 0
+                and not np.isnan(sig_df.at[i-1, 'position_size'])
             ):
                 direction = sig_df.at[i-1, 'signal']
                 entry_price = df_sym.at[i, 'open'] * (1 + slippage * direction)
@@ -86,8 +87,9 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
                 exit_time = df_sym.at[i, 'open_time']
 
         if exit_price is None and i < len(sig_df) and sig_df.at[i, 'signal'] == -direction:
-            exit_price = df_sym.at[i, 'close'] * (1 - slippage * direction)
-            exit_time = df_sym.at[i, 'close_time']
+            # 用下一根 K 线开盘价平仓，至少吃到完整波动
+            exit_price = df_sym.at[i + 1, 'open'] * (1 - slippage * direction)
+            exit_time = df_sym.at[i + 1, 'open_time']
 
         if exit_price is not None:
             pnl = (exit_price - entry_price) * direction * pos_size
