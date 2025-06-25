@@ -171,19 +171,22 @@ def run_single_backtest(
             )
 
         trades_df = trades_df.dropna(subset=["ret", "position_size"])
-        if trades_df.empty:
+        trade_count = len(trades_df)
+        if trade_count == 0:
+            logger.debug("%s -> no valid trades after cleaning", symbol)
             total_ret, sharpe = 0.0, 0.0
             results.append({"symbol": symbol, "ret": total_ret, "sharpe": sharpe})
             continue
         # === Debug & 清洗 NaN END ===
-        if trades_df.empty:
-            total_ret = 0
-            sharpe = 0.0
-        else:
-            series = trades_df["ret"]
-            std = series.std()
-            total_ret = (series + 1).prod() - 1
-            sharpe = 0.0 if std == 0 else series.mean() / std * np.sqrt(len(series))
+        series = trades_df["ret"]
+        if trade_count < 2:
+            logger.debug("%s -> trades=%d < 2, sharpe may be NaN", symbol, trade_count)
+        std = series.std()
+        logger.debug(
+            "%s -> trade_count=%d mean=%.6f std=%.6f", symbol, trade_count, series.mean(), std
+        )
+        total_ret = (series + 1).prod() - 1
+        sharpe = 0.0 if std == 0 else series.mean() / std * np.sqrt(len(series))
         results.append({"symbol": symbol, "ret": total_ret, "sharpe": sharpe})
 
     df_res = pd.DataFrame(results)
