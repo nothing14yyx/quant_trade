@@ -148,5 +148,6 @@
   "BRUSDT": "binance-bridged-usdt-bnb-smart-chain",
   "MILKUSDT": "milkyway-2",
   "HAEDALUSDT": "haedal",
-  "PROMUSDT": "prometeus"
+  "PROMUSDT": "prometeus",
+  "DMCUSDT": "datamall-coin"
 }

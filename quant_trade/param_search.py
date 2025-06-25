@@ -161,6 +161,21 @@ def run_single_backtest(
         trades_df = simulate_trades(
             df_sym, sig_df, fee_rate=fee_rate, slippage=slippage
         )
+        # === Debug & 清洗 NaN BEGIN ===
+        nan_ret = trades_df["ret"].isna().sum()
+        nan_pos = trades_df["position_size"].isna().sum()
+        if nan_ret or nan_pos:
+            logger.warning(
+                "[NaN DETECT] %s  trades=%d  NaN_ret=%d  NaN_pos=%d",
+                symbol, len(trades_df), nan_ret, nan_pos,
+            )
+
+        trades_df = trades_df.dropna(subset=["ret", "position_size"])
+        if trades_df.empty:
+            total_ret, sharpe = 0.0, 0.0
+            results.append({"symbol": symbol, "ret": total_ret, "sharpe": sharpe})
+            continue
+        # === Debug & 清洗 NaN END ===
         if trades_df.empty:
             total_ret = 0
             sharpe = 0.0
@@ -415,8 +430,9 @@ def run_param_search(
                 cached_ic,
                 sg_iter,
             )
-            return sharpe if not np.isnan(sharpe) else -np.inf
-
+            if np.isnan(sharpe):
+                return -100.0  # 给可比较的负分，避免 -inf
+            return sharpe
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=trials, show_progress_bar=True)
 

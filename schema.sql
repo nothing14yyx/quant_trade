@@ -688,3 +688,8 @@ DELETE FROM klines WHERE symbol = 'NEIROETHUSDT';
 
 SHOW COLUMNS FROM features LIKE 'funding_rate_isnan';
 
+SELECT COUNT(*) FROM features
+WHERE open IS NULL OR high IS NULL OR low IS NULL OR close IS NULL;
+
+SELECT COUNT(*) FROM features
+WHERE high IS NULL OR low IS NULL OR close IS NULL;
