@@ -153,5 +153,8 @@
   "HUSDT": "ethereum",
   "OLUSDT": "solana",
   "STXUSDT": "blockstack",
-  "GRIFFAINUSDT": "griffain"
+  "GRIFFAINUSDT": "griffain",
+  "BSWUSDT": "biswap",
+  "ALPHAUSDT": "alpha-finance",
+  "WUSDT": "wrapped-bitcoin"
 }

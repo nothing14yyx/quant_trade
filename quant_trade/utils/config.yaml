@@ -358,12 +358,12 @@ delta_boost:
       - macd_hist_d1
       - ema_diff_d1
   params:
-    rsi: [5, 1.0, 0.020743098729139237]
-    macd_hist: [0.002, 100.0, 0.02577789802862361]
-    ema_diff: [0.001, 100.0, 0.02464861923563201]
-    atr_pct: [0.002, 100.0, 0.043820430319809256]
-    vol_ma_ratio: [0.2, 1.0, 0.04434505844395059]
-    funding_rate: [0.0005, 10000, 0.042041094324011125]
+    rsi: [5, 1.0, 0.03286276570664013]
+    macd_hist: [0.002, 100.0, 0.053091213072828755]
+    ema_diff: [0.001, 100.0, 0.03903070950443194]
+    atr_pct: [0.002, 100.0, 0.04879036366743362]
+    vol_ma_ratio: [0.2, 1.0, 0.04763319997849706]
+    funding_rate: [0.0005, 10000, 0.04157379578753072]
 
 
 vote_system:
@@ -409,7 +409,7 @@ position_coeff:
   low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.06900049155516114      # 原 dynamic_th_final 的初始值
+  base_th: 0.0887600384894541      # 原 dynamic_th_final 的初始值
   gamma: 0.05        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
   quantile: 0.80
@@ -419,7 +419,7 @@ signal_threshold:
   rev_th_mult: 0.60    # 急反转时降低门槛
 
 # 因子 IC 分数更新设置
-ic_update_rows: 3000          # 从 features 表读取的记录数
+ic_update_rows: 2000          # 从 features 表读取的记录数
 ic_update_interval_hours: 24  # 多少小时刷新一次权重，默认为每日
 ic_scores:
   1h: 1.0
