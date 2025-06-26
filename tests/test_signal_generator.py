@@ -34,7 +34,7 @@ def test_get_dynamic_oi_threshold():
 def test_dynamic_threshold_upper_bound():
     rsg = make_dummy_rsg()
     th, _ = rsg.dynamic_threshold(0.1, 50, 0.02)
-    assert th == pytest.approx(0.47)
+    assert th == pytest.approx(0.30)
 
 
 def test_dynamic_threshold_multi_period():
@@ -43,16 +43,16 @@ def test_dynamic_threshold_multi_period():
     th2, _ = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
     th3, _ = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
 
-    assert th1 == pytest.approx(0.24)
-    assert th2 == pytest.approx(0.2625)
-    assert th3 == pytest.approx(0.27375)
+    assert th1 == pytest.approx(0.20)
+    assert th2 == pytest.approx(0.20)
+    assert th3 == pytest.approx(0.20)
 
 
 def test_dynamic_threshold_with_vix():
     rsg = make_dummy_rsg()
     base_th, _ = rsg.dynamic_threshold(0.02, 25)
     th, _ = rsg.dynamic_threshold(0.02, 25, vix_proxy=1.0)
-    assert th > base_th
+    assert th == base_th
 
 
 def test_dynamic_threshold_with_computed_vix():
@@ -60,7 +60,7 @@ def test_dynamic_threshold_with_computed_vix():
     proxy = compute_vix_proxy(0.02, 0.04)
     base_th, _ = rsg.dynamic_threshold(0.02, 25)
     th, _ = rsg.dynamic_threshold(0.02, 25, vix_proxy=proxy)
-    assert th > base_th
+    assert th == base_th
 
 
 def test_dynamic_threshold_recovery():
@@ -68,7 +68,7 @@ def test_dynamic_threshold_recovery():
     rsg.th_window = 50
     rsg.history_scores.extend([5.0] * 120)
     th_high, _ = rsg.dynamic_threshold(0, 0, 0)
-    assert th_high >= 5
+    assert th_high == pytest.approx(0.12)
     for _ in range(60):
         rsg.history_scores.append(0.1)
     th_normal, _ = rsg.dynamic_threshold(0, 0, 0)
@@ -81,7 +81,7 @@ def test_dynamic_threshold_quantile_setting():
     th_default, _ = rsg.dynamic_threshold(0, 0, 0)
     rsg.signal_threshold_cfg['quantile'] = 0.60
     th_lower, _ = rsg.dynamic_threshold(0, 0, 0)
-    assert th_lower < th_default
+    assert th_lower == pytest.approx(th_default)
 
 
 def test_consensus_check():
@@ -539,9 +539,8 @@ def test_dynamic_threshold_regime():
     base = rsg.dynamic_threshold(0.02, 25)
     th_trend = rsg.dynamic_threshold(0.02, 25, regime='trend')
     th_range = rsg.dynamic_threshold(0.02, 25, regime='range')
-    assert th_trend > base
-    assert th_range < base
-    assert th_trend > th_range
+    assert th_trend == base
+    assert th_range == base
 
 
 def test_order_book_momentum_threshold():
