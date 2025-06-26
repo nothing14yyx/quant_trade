@@ -74,7 +74,10 @@ def test_vol_roc_guard():
     f4h = {'atr_pct_4h': 0, 'adx_4h': 0, 'vol_ma_ratio_4h': 1.0, 'vol_roc_4h': -15}
     fd1 = {}
 
-    res = rsg.generate_signal(f1h, f4h, fd1)
+    res = rsg.generate_signal(f1h, f4h, fd1,
+                              raw_features_1h=f1h,
+                              raw_features_4h=f4h,
+                              raw_features_d1=fd1)
     s1h = res['details']['scores']['1h']
     assert s1h <= 0.35
     assert res['score'] * s1h >= 0

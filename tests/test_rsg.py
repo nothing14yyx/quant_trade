@@ -109,7 +109,15 @@ def test_flip_threshold_allows_switch():
     rsg._last_signal = 1
     rsg._last_score = 0.1
 
-    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, symbol='BTC')
+    res = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+        symbol='BTC'
+    )
     assert res['signal'] == 0
 
 

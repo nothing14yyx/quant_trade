@@ -24,9 +24,9 @@ def test_low_vol_ratio_config():
     )
 
     rsg.low_vol_ratio = 0.4
-    pos1, _ = rsg.compute_position_size(vol_ratio=0.35, **base_params)
+    pos1, _, _ = rsg.compute_position_size(vol_ratio=0.35, **base_params)
 
     rsg.low_vol_ratio = 0.2
-    pos2, _ = rsg.compute_position_size(vol_ratio=0.35, **base_params)
+    pos2, _, _ = rsg.compute_position_size(vol_ratio=0.35, **base_params)
 
     assert pos1 == pytest.approx(pos2 * 0.5)
