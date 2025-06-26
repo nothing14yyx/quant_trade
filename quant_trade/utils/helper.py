@@ -69,8 +69,18 @@ def calc_mfi_np(high, low, close, volume, window=14):
     nmf = np.where(tp < np.roll(tp, 1), mf, 0)
     pmf[0] = 0
     nmf[0] = 0
-    sum_pmf = pd.Series(pmf).rolling(window).sum().to_numpy()
-    sum_nmf = pd.Series(nmf).rolling(window).sum().to_numpy()
+    sum_pmf = (
+        pd.Series(pmf)
+        .rolling(window, min_periods=1)
+        .sum()
+        .to_numpy()
+    )
+    sum_nmf = (
+        pd.Series(nmf)
+        .rolling(window, min_periods=1)
+        .sum()
+        .to_numpy()
+    )
     ratio = sum_pmf / (sum_nmf + 1e-12)
     mfi = np.divide(100 * sum_pmf, sum_pmf + sum_nmf + 1e-12)
     return ratio, mfi
@@ -104,8 +114,18 @@ def calc_price_channel(high: pd.Series, low: pd.Series, close: pd.Series, *, win
         包含 ``upper``、``lower``、``channel_pos`` 三列。
     """
 
-    upper = high.rolling(window, min_periods=1).max()
-    lower = low.rolling(window, min_periods=1).min()
+    upper = (
+        high.fillna(-np.inf)
+        .rolling(window, min_periods=1)
+        .max()
+        .replace(-np.inf, np.nan)
+    )
+    lower = (
+        low.fillna(np.inf)
+        .rolling(window, min_periods=1)
+        .min()
+        .replace(np.inf, np.nan)
+    )
     pos = (close - lower) / (upper - lower).replace(0, np.nan)
     df = pd.DataFrame({"upper": upper, "lower": lower, "channel_pos": pos})
     df.index = close.index
@@ -363,11 +383,11 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     _check_index("correlation")
     if btc_price is not None:
         btc_ret = btc_price.pct_change(fill_method=None)
-        corr = asset_ret.rolling(bars_per_day).corr(btc_ret)
+        corr = asset_ret.rolling(bars_per_day, min_periods=1).corr(btc_ret)
         assign_safe(feats, f"btc_correlation_1h_{period}", corr)
     if eth_price is not None:
         eth_ret = eth_price.pct_change(fill_method=None)
-        corr = asset_ret.rolling(bars_per_day).corr(eth_ret)
+        corr = asset_ret.rolling(bars_per_day, min_periods=1).corr(eth_ret)
         assign_safe(feats, f"eth_correlation_1h_{period}", corr)
 
     range_ = (feats["high"] - feats["low"]).replace(0, np.nan)
@@ -398,8 +418,8 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     )
 
     returns = feats["close"].pct_change(fill_method=None)
-    assign_safe(feats, f"skewness_{period}", returns.rolling(20).skew())
-    assign_safe(feats, f"kurtosis_{period}", returns.rolling(20).kurt())
+    assign_safe(feats, f"skewness_{period}", returns.rolling(20, min_periods=1).skew())
+    assign_safe(feats, f"kurtosis_{period}", returns.rolling(20, min_periods=1).kurt())
 
     feats[f"bull_streak_{period}"] = (
         feats["close"]
