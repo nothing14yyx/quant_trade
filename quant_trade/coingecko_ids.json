@@ -156,5 +156,7 @@
   "GRIFFAINUSDT": "griffain",
   "BSWUSDT": "biswap",
   "ALPHAUSDT": "alpha-finance",
-  "WUSDT": "wrapped-bitcoin"
+  "WUSDT": "wrapped-bitcoin",
+  "SAHARAUSDT": "sahara-ai",
+  "RAREUSDT": "superrare"
 }

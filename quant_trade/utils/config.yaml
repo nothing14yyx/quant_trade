@@ -25,7 +25,7 @@ data_loader:
   cache_dir: "data/klines"
   sentiment_cache: "data/sentiment"
   rate_limit_sleep: 0.05   # 每次请求后休息 50ms，1s 20 次 ≪ 2400/min
-  excluded_list: ["BUSDT","NEIROETHUSDT","HUSDT"]
+  excluded_list: ["BUSDT","NEIROETHUSDT","HUSDT","SAHARAUSDT","RAREUSDT"]
 
 feature_engineering:
 #  cache_dir: "quant_trade/data/klines"
@@ -358,12 +358,12 @@ delta_boost:
       - macd_hist_d1
       - ema_diff_d1
   params:
-    rsi: [5, 1.0, 0.03286276570664013]
-    macd_hist: [0.002, 100.0, 0.053091213072828755]
-    ema_diff: [0.001, 100.0, 0.03903070950443194]
-    atr_pct: [0.002, 100.0, 0.04879036366743362]
-    vol_ma_ratio: [0.2, 1.0, 0.04763319997849706]
-    funding_rate: [0.0005, 10000, 0.04157379578753072]
+    rsi: [5, 1.0, 0.02390007776403681]
+    macd_hist: [0.002, 100.0, 0.03116568078372316]
+    ema_diff: [0.001, 100.0, 0.021505600383487523]
+    atr_pct: [0.002, 100.0, 0.03222511391844919]
+    vol_ma_ratio: [0.2, 1.0, 0.04127839122024289]
+    funding_rate: [0.0005, 10000, 0.045475761726641264]
 
 
 vote_system:
@@ -409,7 +409,7 @@ position_coeff:
   low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.0887600384894541      # 原 dynamic_th_final 的初始值
+  base_th: 0.10393878320955882      # 原 dynamic_th_final 的初始值
   gamma: 0.05        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
   quantile: 0.80
