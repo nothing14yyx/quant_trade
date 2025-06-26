@@ -303,9 +303,8 @@ def run_backtest(*, recent_days: int | None = None):
             drawdown = cumprod / hwm - 1.0
             max_dd = drawdown.min()
 
-            weighted_ret = np.average(weighted_ret_series, weights=weights)
-            ret_var = np.average((weighted_ret_series - weighted_ret) ** 2, weights=weights)
-            ret_std = np.sqrt(ret_var)
+            weighted_ret = weighted_ret_series.mean()
+            ret_std = weighted_ret_series.std(ddof=0)
             sharpe = weighted_ret / ret_std * np.sqrt(n) if ret_std else np.nan
 
             avg_hold = np.average(trades_df['holding_s'], weights=weights)
