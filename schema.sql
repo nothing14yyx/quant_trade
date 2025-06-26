@@ -693,3 +693,10 @@ WHERE open IS NULL OR high IS NULL OR low IS NULL OR close IS NULL;
 
 SELECT COUNT(*) FROM features
 WHERE high IS NULL OR low IS NULL OR close IS NULL;
+
+SELECT symbol, COUNT(*) AS nan_rows
+FROM klines
+WHERE 'interval' = '1h'
+  AND (high IS NULL OR low IS NULL OR close IS NULL)
+GROUP BY symbol
+HAVING nan_rows > 0;

@@ -150,10 +150,8 @@
   "HAEDALUSDT": "haedal",
   "PROMUSDT": "prometeus",
   "DMCUSDT": "datamall-coin",
-  "BDXNUSDT": "bondex",
-  "GRIFFAINUSDT": "griffain",
-  "QUICKUSDT": "quick",
+  "HUSDT": "ethereum",
+  "OLUSDT": "solana",
   "STXUSDT": "blockstack",
-  "JASMYUSDT": "jasmycoin",
-  "HUSDT": "ethereum"
+  "GRIFFAINUSDT": "griffain"
 }
