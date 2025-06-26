@@ -75,8 +75,8 @@ def volume_guard(
     *,
     weak: float = 0.85,
     over: float = 0.9,
-    ratio_low: float = 0.6,
-    ratio_high: float = 2.0,
+    ratio_low: float = -0.5,
+    ratio_high: float = 1.5,
     roc_low: float = -20,
     roc_high: float = 100,
 ) -> float:
@@ -243,7 +243,7 @@ class RobustSignalGenerator:
         # ↓ 放宽阈值，防止信号被过度过滤
         self.signal_filters = {
             "min_vote": filters_cfg.get("min_vote", 2),
-            "confidence_vote": filters_cfg.get("confidence_vote", 0.15),
+            "confidence_vote": filters_cfg.get("confidence_vote", 0.12),
         }
 
         pc_cfg = cfg.get("position_coeff", {})
@@ -727,8 +727,8 @@ class RobustSignalGenerator:
         direction: int,
         exit_mult: float,
         consensus_all: bool = False,
-    ) -> tuple[float, int]:
-        """Calculate final position size given direction and risk factors."""
+    ) -> tuple[float, int, float]:
+        """Calculate final position size and tier given direction and risk factors."""
 
         tier = 0.1 + base_coeff * abs(grad_dir)
         pos_size = tier * confidence_factor * exit_mult
@@ -762,7 +762,7 @@ class RobustSignalGenerator:
         # elif direction == -1 and scores.get("4h", 0) > self.veto_level:
         #     direction, pos_size = 0, 0.0
 
-        return pos_size, direction
+        return pos_size, direction, tier
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
     def get_ai_score(self, features, model_up, model_down, calibrator_up=None, calibrator_down=None):
@@ -1235,7 +1235,7 @@ class RobustSignalGenerator:
         """Adjust score based on open interest change."""
         if th_oi is None or abs(oi_chg) < th_oi:
             # Mild change: slightly reward or penalise according to oi_chg
-            return fused_score * (1 + 0.08 * oi_chg), False
+            return fused_score * (1 + 0.03 * oi_chg), False
 
         logging.info("OI overheat detected: %.4f", oi_chg)
         # Only scale down when overheating
@@ -1465,6 +1465,7 @@ class RobustSignalGenerator:
         raw_f1h = raw_features_1h or {}
         raw_f4h = raw_features_4h or {}
         raw_fd1 = raw_features_d1 or {}
+        raw_dict = {'1h': raw_f1h, '4h': raw_f4h, 'd1': raw_fd1}
 
         cache = self._get_symbol_cache(symbol)
         with self._lock:
@@ -1551,7 +1552,7 @@ class RobustSignalGenerator:
         # ===== 5. 本地因子修正 =====
         scores, local_details = self.apply_local_adjustments(
             scores,
-            {'1h': std_1h, '4h': std_4h, 'd1': std_d1},
+            raw_dict,
             fs,
             deltas,
             rise_preds.get('1h'),
@@ -1889,9 +1890,9 @@ class RobustSignalGenerator:
         if strong_confirm_vote:
             confidence_factor += 0.05
         vol_ratio = std_1h.get('vol_ma_ratio_1h')
-        tier = 0.1 + base_coeff * abs(grad_dir)
+        tier = None  # 占位，真正 tier 由 compute_position_size 返回
         fused_score = float(np.clip(fused_score, -1, 1))
-        pos_size, direction = self.compute_position_size(
+        pos_size, direction, tier = self.compute_position_size(
             grad_dir=grad_dir,
             base_coeff=base_coeff,
             confidence_factor=confidence_factor,
@@ -1953,12 +1954,11 @@ class RobustSignalGenerator:
                 maxlen = 4 if p == "1h" else 2
                 cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
 
-        filters = getattr(self, 'signal_filters', {"min_vote": 5, "confidence_vote": 0.2})
-        # 取消最终置信度硬过滤（让小信号也能进场）
-        # confidence_vote = filters.get('confidence_vote', 0.15)
-        # if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
-        #     direction, pos_size = 0, 0.0
-        #     take_profit = stop_loss = None
+        filters = getattr(self, 'signal_filters', {"min_vote": 5, "confidence_vote": 0.12})
+        confidence_vote = filters.get('confidence_vote', 0.12)
+        if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
+            direction, pos_size = 0, 0.0
+            take_profit = stop_loss = None
         # 放宽 vote 阈值过滤：从 8 → 5
         min_vote = filters.get('min_vote', 4)
         if abs(vote) < min_vote:

@@ -138,7 +138,15 @@ def test_generate_signal_raw_atr():
     assert res['take_profit'] is None
     assert res['stop_loss'] is None
 
-    res2 = rsg.generate_signal(features_1h, features_4h, features_d1, symbol="BTCUSDT")
+    res2 = rsg.generate_signal(
+        features_1h,
+        features_4h,
+        features_d1,
+        raw_features_1h=features_1h,
+        raw_features_4h=features_4h,
+        raw_features_d1=features_d1,
+        symbol="BTCUSDT",
+    )
     assert res2['take_profit'] is None
     assert res2['stop_loss'] is None
 
@@ -334,8 +342,17 @@ def test_generate_signal_with_external_metrics():
 
     gm = {'btc_dom_chg': 0.1, 'mcap_growth': 0.1, 'vol_chg': 0.1}
     oi = {'oi_chg': 0.1}
-    result = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
-                                 global_metrics=gm, open_interest=oi, symbol="BTCUSDT")
+    result = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+        global_metrics=gm,
+        open_interest=oi,
+        symbol="BTCUSDT",
+    )
     expected = result['score']
     assert result['score'] == pytest.approx(expected)
 
@@ -367,8 +384,16 @@ def test_hot_sector_influence():
 
     gm = {'hot_sector_strength': 0.2, 'hot_sector': 'Gaming'}
 
-    result = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
-                                 global_metrics=gm, symbol='ABC')
+    result = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+        global_metrics=gm,
+        symbol='ABC'
+    )
     expected = 0.5 * (1 + 0.05 * 0.2)
     assert result['score'] == pytest.approx(expected)
 
@@ -401,8 +426,16 @@ def test_eth_dominance_influence():
 
     gm = {'eth_dominance': 0.1}
 
-    result = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
-                                 global_metrics=gm, symbol='ETHUSDT')
+    result = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+        global_metrics=gm,
+        symbol='ETHUSDT'
+    )
     expected = 0.5 * (1 + 0.1 * 0.2)
     assert result['score'] == pytest.approx(expected)
 
@@ -438,7 +471,14 @@ def test_short_momentum_and_order_book():
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
 
-    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
+    res = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+    )
     assert res['score'] > 0.5
     assert res['details']['short_momentum'] > 0
     assert res['details']['ob_imbalance'] > 0
@@ -536,7 +576,13 @@ def test_order_book_momentum_threshold():
     feats_d1 = {}
 
     res = rsg.generate_signal(
-        feats_1h, feats_4h, feats_d1, order_book_imbalance=-0.01
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+        order_book_imbalance=-0.01,
     )
     assert res['signal'] == 0
 
@@ -568,7 +614,14 @@ def test_sentiment_reweight_and_guard():
     feats_4h = {'atr_pct_4h': 0, 'adx_4h': 0}
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
-    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
+    res = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+    )
     scores = res['details']['scores']
     assert scores['1h'] == pytest.approx(-0.03899, rel=1e-3)
     assert scores['4h'] == pytest.approx(0.2, rel=1e-3)
@@ -603,7 +656,14 @@ def test_volume_and_funding_penalties():
     feats_4h = {'atr_pct_4h': 0, 'adx_4h': 0}
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
-    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
+    res = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+    )
     assert res['details']['scores']['1h'] == pytest.approx(0.0)
 
 
@@ -637,7 +697,14 @@ def test_momentum_alignment_disables_confirm():
     feats_4h = {'atr_pct_4h': 0, 'adx_4h': 0}
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
-    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1)
+    res = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+    )
     assert res['details'].get('strong_confirm_vote', False) is False
     assert res['details'].get('vote', {}).get('value', 0) < 5
 
@@ -671,8 +738,15 @@ def test_crowding_factor_and_dynamic_threshold():
     feats_d1 = {'atr_pct_d1': 0, 'adx_d1': 0}
 
     oi = {'oi_chg': 0}
-    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1,
-                              open_interest=oi)
+    res = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+        open_interest=oi,
+    )
     assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.1)
     env = res['details']['env']
     expected = env['logic_score'] * env['env_score'] * env['risk_score']
@@ -704,10 +778,26 @@ def test_step_exit_with_order_book_flip():
     f4h = {'atr_pct_4h': 0, 'adx_4h': 0, 'vol_ratio_1h_4h': 1.0}
     fd1 = {}
 
-    res1 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=0.3)
+    res1 = rsg.generate_signal(
+        f1h,
+        f4h,
+        fd1,
+        raw_features_1h=f1h,
+        raw_features_4h=f4h,
+        raw_features_d1=fd1,
+        order_book_imbalance=0.3,
+    )
     assert res1['signal'] == 0
 
-    res2 = rsg.generate_signal(f1h, f4h, fd1, order_book_imbalance=-0.3)
+    res2 = rsg.generate_signal(
+        f1h,
+        f4h,
+        fd1,
+        raw_features_1h=f1h,
+        raw_features_4h=f4h,
+        raw_features_d1=fd1,
+        order_book_imbalance=-0.3,
+    )
     assert res2['signal'] == 0
     assert res2['position_size'] == res1['position_size']
 
@@ -783,6 +873,13 @@ def test_generate_signal_with_cls_model():
     f4h = {'atr_pct_4h': 0}
     fd1 = {}
 
-    res = rsg.generate_signal(f1h, f4h, fd1)
+    res = rsg.generate_signal(
+        f1h,
+        f4h,
+        fd1,
+        raw_features_1h=f1h,
+        raw_features_4h=f4h,
+        raw_features_d1=fd1,
+    )
     assert res['score'] == pytest.approx(0.5)
 
