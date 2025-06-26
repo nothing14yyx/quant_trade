@@ -2,7 +2,7 @@
 """
 DataLoader v2.3-patch1   (2025-06-03)
 ==================================================================
-（update_onchain_metrics、update_macro_metrics）及其调用，使同步仅包含情绪、fundingRate、K 线。
+同步包含情绪、fundingRate、K 线。
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from quant_trade.utils.ratelimiter import RateLimiter  # 你的限速器
 from quant_trade.utils.helper import calc_order_book_features
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 
 def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
