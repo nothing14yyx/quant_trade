@@ -3,6 +3,7 @@ import pandas_ta as ta
 import pytest
 import importlib.util
 from pathlib import Path
+import numpy as np
 
 helper_path = Path(__file__).resolve().parents[1] / "quant_trade" / "utils" / "helper.py"
 spec = importlib.util.spec_from_file_location("helper", helper_path)
@@ -27,6 +28,14 @@ def test_calc_mfi_np_empty():
     assert len(mfi) == 0
 
 
+def test_calc_mfi_np_all_nan_no_warning():
+    arr = np.array([float('nan')] * 5)
+    with pytest.warns(None):
+        ratio, mfi = calc_mfi_np(arr, arr, arr, arr)
+    assert len(ratio) == 5
+    assert len(mfi) == 5
+
+
 def test_calc_price_channel_with_nan():
     idx = pd.date_range('2020-01-01', periods=3, freq='h')
     high = pd.Series([1.0, float('nan'), 3.0], index=idx)
@@ -40,5 +49,8 @@ def test_calc_price_channel_with_nan():
 def test_calc_price_channel_all_nan():
     idx = pd.date_range('2020-01-01', periods=3, freq='h')
     s = pd.Series([float('nan')] * 3, index=idx)
-    ch = calc_price_channel(s, s, s, window=2)
+    with pytest.warns(None):
+        ch = calc_price_channel(s, s, s, window=2)
     assert ch.isna().all().all()
+
+
