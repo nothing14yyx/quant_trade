@@ -132,6 +132,43 @@ def calc_price_channel(high: pd.Series, low: pd.Series, close: pd.Series, *, win
     return df
 
 
+def calc_support_resistance(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    *,
+    window: int = 20,
+) -> pd.DataFrame:
+    """计算支撑阻力水平及突破标记"""
+
+    support = (
+        low.fillna(np.inf)
+        .rolling(window, min_periods=1)
+        .min()
+        .replace(np.inf, np.nan)
+    )
+    resistance = (
+        high.fillna(-np.inf)
+        .rolling(window, min_periods=1)
+        .max()
+        .replace(-np.inf, np.nan)
+    )
+
+    break_support = close < support.shift(1)
+    break_resistance = close > resistance.shift(1)
+
+    df = pd.DataFrame(
+        {
+            "support": support,
+            "resistance": resistance,
+            "break_support": break_support.astype(float),
+            "break_resistance": break_resistance.astype(float),
+        }
+    )
+    df.index = close.index
+    return df
+
+
 def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     df.index = pd.to_datetime(df.index, errors="coerce")
     df = df[~df.index.isna()]
@@ -367,6 +404,12 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     _check_index("price_channel")
     channel = calc_price_channel(feats["high"], feats["low"], feats["close"], window=20)
     assign_safe(feats, f"channel_pos_{period}", channel["channel_pos"])
+
+    sr = calc_support_resistance(feats["high"], feats["low"], feats["close"], window=20)
+    assign_safe(feats, f"support_level_{period}", sr["support"])
+    assign_safe(feats, f"resistance_level_{period}", sr["resistance"])
+    assign_safe(feats, f"break_support_{period}", sr["break_support"])
+    assign_safe(feats, f"break_resistance_{period}", sr["break_resistance"])
 
     # BTC / ETH 短期相关性
     def _find_price(col_candidates):
