@@ -88,9 +88,11 @@ def volume_guard(
     extreme_ratio = ratio_high * 2
     extreme_roc = roc_high * 1.5
     if ratio_high <= ratio < extreme_ratio and roc_low < roc < extreme_roc:
-        return score * 1.05
+        mult = 1 + 0.05 * np.sign(score)
+        return score * mult
     if ratio >= extreme_ratio or roc >= extreme_roc:
-        return score * over
+        mult = 1 + (over - 1) * np.sign(score)
+        return score * mult
     return score
 
 
@@ -678,20 +680,22 @@ class RobustSignalGenerator:
             exit_lag = self._exit_lag
 
         exit_mult = 1.0
+        vote_sign = np.sign(vote)
+        prev_sign = np.sign(prev_vote)
         if last_signal == 1:
-            if prev_vote > 4 and 1 <= vote <= 4:
+            if vote_sign == 1 and prev_vote > vote:
                 exit_mult = 0.5
                 exit_lag = 0
-            elif vote <= 0:
+            elif vote_sign <= 0 and prev_sign > 0:
                 exit_lag += 1
                 exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
             else:
                 exit_lag = 0
         elif last_signal == -1:
-            if prev_vote < -4 and -4 <= vote <= -1:
+            if vote_sign == -1 and prev_vote < vote:
                 exit_mult = 0.5
                 exit_lag = 0
-            elif vote >= 0:
+            elif vote_sign >= 0 and prev_sign < 0:
                 exit_lag += 1
                 exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
             else:
@@ -1097,6 +1101,11 @@ class RobustSignalGenerator:
 
         th = float(base)
 
+        weights = self.signal_threshold_cfg.get('weights', {})
+        w_vol = weights.get('vol', 1.0)
+        w_trend = weights.get('trend', 1.0)
+        w_fund = weights.get('funding', 1.0)
+
         # === 波动因子：max 避免双计 ===
         vol_th = 0.0
         main_vol = max(abs(atr), abs(pred_vol or 0.0))
@@ -1109,19 +1118,21 @@ class RobustSignalGenerator:
             vol_th += 0.25 * min(
                 0.06, max(abs(atr_d1 or 0), abs(pred_vol_d1 or 0)) * 3
             )
-        th += vol_th * 1.5
+        th += vol_th * 1.5 * w_vol
 
         # === 趋势强度 ===
-        th += min(0.12, max(adx - 25, 0) * 0.005)
+        trend_th = min(0.12, max(adx - 25, 0) * 0.005)
         if adx_4h is not None:
-            th += 0.5 * min(0.12, max(adx_4h - 25, 0) * 0.005)
+            trend_th += 0.5 * min(0.12, max(adx_4h - 25, 0) * 0.005)
         if adx_d1 is not None:
-            th += 0.25 * min(0.12, max(adx_d1 - 25, 0) * 0.005)
+            trend_th += 0.25 * min(0.12, max(adx_d1 - 25, 0) * 0.005)
+        th += trend_th * w_trend
 
         # === 资金费率 / 恐慌指数 ===
-        th += min(0.08, abs(funding) * 8)
+        fund_th = min(0.08, abs(funding) * 8)
         if vix_proxy is not None:
-            th += min(0.08, max(vix_proxy, 0.0) * 0.08)
+            fund_th += min(0.08, max(vix_proxy, 0.0) * 0.08)
+        th += fund_th * w_fund
 
         # === 历史 80 分位兜底 ===
         if history_scores is None:
@@ -1190,7 +1201,7 @@ class RobustSignalGenerator:
         cnt = Counter(non_zero)
         if cnt.most_common(1)[0][1] >= min_agree:
             return int(cnt.most_common(1)[0][0])  # 返回方向
-        return 0
+        return int(np.sign(np.sum(signs)))
 
     def crowding_protection(self, scores, current_score, base_th=0.2):
         """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
