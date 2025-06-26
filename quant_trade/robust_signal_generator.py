@@ -151,9 +151,29 @@ class RobustSignalGenerator:
             "atr_pct_1h",
             "vol_ma_ratio_long_1h",
             "funding_rate_1h",
+            "support_level_1h",
+            "resistance_level_1h",
+            "break_support_1h",
+            "break_resistance_1h",
         ],
-        "4h": ["rsi_4h", "macd_hist_4h", "ema_diff_4h"],
-        "d1": ["rsi_d1", "macd_hist_d1", "ema_diff_d1"],
+        "4h": [
+            "rsi_4h",
+            "macd_hist_4h",
+            "ema_diff_4h",
+            "support_level_4h",
+            "resistance_level_4h",
+            "break_support_4h",
+            "break_resistance_4h",
+        ],
+        "d1": [
+            "rsi_d1",
+            "macd_hist_d1",
+            "ema_diff_d1",
+            "support_level_d1",
+            "resistance_level_d1",
+            "break_support_d1",
+            "break_resistance_d1",
+        ],
     }
 
     DELTA_PARAMS = {
@@ -1362,6 +1382,25 @@ class RobustSignalGenerator:
                 roc_d1,
                 adjusted['d1'],
             )
+
+        for p in ['1h', '4h', 'd1']:
+            bs = raw_feats[p].get(f'break_support_{p}')
+            br = raw_feats[p].get(f'break_resistance_{p}')
+            before_sr = adjusted[p]
+            if br:
+                adjusted[p] *= 1.1 if adjusted[p] > 0 else 0.8
+            if bs:
+                adjusted[p] *= 1.1 if adjusted[p] < 0 else 0.8
+            if before_sr != adjusted[p]:
+                logger.debug(
+                    "break SR %s bs=%s br=%s %.3f->%.3f",
+                    p,
+                    bs,
+                    br,
+                    before_sr,
+                    adjusted[p],
+                )
+                details[f'break_sr_{p}'] = adjusted[p] - before_sr
 
         return adjusted, details
 
