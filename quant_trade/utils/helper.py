@@ -104,8 +104,8 @@ def calc_price_channel(high: pd.Series, low: pd.Series, close: pd.Series, *, win
         包含 ``upper``、``lower``、``channel_pos`` 三列。
     """
 
-    upper = high.rolling(window).max()
-    lower = low.rolling(window).min()
+    upper = high.rolling(window, min_periods=1).max()
+    lower = low.rolling(window, min_periods=1).min()
     pos = (close - lower) / (upper - lower).replace(0, np.nan)
     df = pd.DataFrame({"upper": upper, "lower": lower, "channel_pos": pos})
     df.index = close.index
