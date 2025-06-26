@@ -13,6 +13,7 @@ spec.loader.exec_module(helper)
 _safe_ta = helper._safe_ta
 calc_mfi_np = helper.calc_mfi_np
 calc_price_channel = helper.calc_price_channel
+calc_support_resistance = helper.calc_support_resistance
 
 
 def test_safe_ta_with_short_series():
@@ -52,5 +53,34 @@ def test_calc_price_channel_all_nan():
     with pytest.warns(None):
         ch = calc_price_channel(s, s, s, window=2)
     assert ch.isna().all().all()
+
+
+def test_calc_support_resistance_basic():
+    idx = pd.date_range('2020-01-01', periods=4, freq='h')
+    high = pd.Series([1, 1, 1, 1], index=idx)
+    low = pd.Series([1, 1, 1, 1], index=idx)
+    close = pd.Series([1, 0.9, 1.1, 0.8], index=idx)
+    sr = calc_support_resistance(high, low, close, window=2)
+    assert sr['break_support'].iloc[1] == 1.0
+    assert sr['break_resistance'].iloc[2] == 1.0
+
+
+def test_calc_features_raw_support_resistance():
+    times = pd.date_range('2020-01-01', periods=3, freq='h')
+    df = pd.DataFrame({
+        'open': [1, 2, 3],
+        'high': [2, 3, 4],
+        'low': [0.5, 1.5, 2.5],
+        'close': [1.5, 2.5, 3.5],
+        'volume': [100, 100, 100],
+    }, index=times)
+    feats = helper.calc_features_raw(df, '1h')
+    for col in (
+        'support_level_1h',
+        'resistance_level_1h',
+        'break_support_1h',
+        'break_resistance_1h',
+    ):
+        assert col in feats
 
 
