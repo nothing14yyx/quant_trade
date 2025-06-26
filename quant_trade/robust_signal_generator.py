@@ -745,8 +745,8 @@ class RobustSignalGenerator:
         if vol_p is not None:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
 
-        if abs(risk_score) > 3 and confidence_factor > 1.05:
-            pos_size = min(pos_size * 1.2, 1.0)
+        if risk_score > 3:
+            pos_size *= 0.8
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
         if pos_size < cfg_th_sig.get("min_pos", 0.01):
@@ -1221,17 +1221,14 @@ class RobustSignalGenerator:
         return factor
 
     def apply_oi_overheat_protection(self, fused_score, oi_chg, th_oi):
-        """根据 OI 变化率奖励或惩罚分数"""
-        oi_overheat = False
-        if th_oi is None:
-            return fused_score, oi_overheat
-        if abs(oi_chg) < th_oi:
-            fused_score *= 1 + 0.08 * oi_chg
-        else:
-            logging.info("OI overheat detected: %.4f", oi_chg)
-        fused_score *= self.oi_scale
-        oi_overheat = True
-        return fused_score, oi_overheat
+        """Adjust score based on open interest change."""
+        if th_oi is None or abs(oi_chg) < th_oi:
+            # Mild change: slightly reward or penalise according to oi_chg
+            return fused_score * (1 + 0.08 * oi_chg), False
+
+        logging.info("OI overheat detected: %.4f", oi_chg)
+        # Only scale down when overheating
+        return fused_score * self.oi_scale, True
 
     # ===== 新增辅助函数 =====
     def calc_factor_scores(self, ai_scores: dict, factor_scores: dict, weights: dict) -> dict:
@@ -1637,6 +1634,7 @@ class RobustSignalGenerator:
         env_score = fused_score / logic_score if logic_score != 0 else 1.0
         oi_overheat = False
         th_oi = None
+        oi_chg = None
         if open_interest is not None:
             oi_chg = open_interest.get('oi_chg')
             if oi_chg is not None:
@@ -1743,8 +1741,7 @@ class RobustSignalGenerator:
             reversal=bool(rev_dir),
             history_scores=cache["history_scores"],
         )
-        # 放宽动态阈值硬上限，允许更低的触发值
-        base_th = min(base_th, 0.20)
+        # 动态阈值不再设定硬上限
         if rev_dir != 0:
             fused_score += rev_boost * rev_dir
             self._cooldown = 0
@@ -1766,16 +1763,16 @@ class RobustSignalGenerator:
         if not oi_overheat and all_scores_list is not None:
             crowding_factor = self.crowding_protection(all_scores_list, fused_score, base_th)
             fused_score *= crowding_factor
-        if th_oi is not None:
-            oi_crowd = float(np.clip((th_oi - 0.5) * 2, 0, 1))
-            if oi_crowd > 0:
-                mult = 1 - oi_crowd * 0.5
+        if th_oi is not None and oi_chg is not None:
+            oi_crowd = abs(oi_chg) / max(th_oi, 1e-6)
+            mult = 1 - min(0.5, oi_crowd * 0.5)
+            if mult < 1:
                 logging.debug(
-                    "oi threshold %.3f crowding factor %.3f for %s -> score *= %.3f",
+                    "oi change %.4f threshold %.3f -> crowding mult %.3f for %s",
+                    oi_chg,
                     th_oi,
-                    oi_crowd,
-                    coin,
                     mult,
+                    coin,
                 )
                 fused_score *= mult
                 crowding_factor *= mult
@@ -1905,6 +1902,10 @@ class RobustSignalGenerator:
             ),
             consensus_all=consensus_all,
         )
+
+        if direction != 0 and np.sign(vote) != direction:
+            direction = 0
+            pos_size = 0.0
 
         if oi_overheat:
             # OI过热时仅衰减仓位，不强制平仓
