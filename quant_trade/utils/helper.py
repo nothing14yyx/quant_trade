@@ -5,6 +5,7 @@ import pandas_ta as ta
 import json
 import warnings
 import logging
+from sklearn.preprocessing import RobustScaler
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,12 @@ def _safe_ta(func, *args, index=None, cols=None, **kwargs):
         res = None
 
     if res is None:
-        res = pd.DataFrame(index=index, columns=cols or ["val"], dtype="float64")
+        res = pd.DataFrame(
+            0,
+            index=index,
+            columns=cols or ["val"],
+            dtype="float64",
+        )
     else:
         if isinstance(res, pd.Series):
             res = res.to_frame()
@@ -45,8 +51,7 @@ def _safe_ta(func, *args, index=None, cols=None, **kwargs):
                 if c not in res.columns:
                     res[c] = np.nan
             res = res[cols]
-    res = res.sort_index()
-    return res
+    return res.sort_index()
 
 
 def assign_safe(feats: pd.DataFrame, name: str, series):
@@ -179,13 +184,13 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         df = df.sort_index()
     # 确保时间顺序正确，避免 VWAP 等指标计算异常
     feats = pd.DataFrame(index=df.index)
+    feats.sort_index(inplace=True)
     for col in ["open", "high", "low", "close", "volume"]:
         feats[col] = np.full(len(feats), np.nan, dtype="float64")
 
     def _check_index(name: str):
         if not feats.index.is_monotonic_increasing:
             logger.debug("Index broke monotonicity before %s", name)
-            feats.sort_index(inplace=True)
 
     price_cols = ["open", "high", "low", "close"]
     quantiles = df[price_cols].quantile([0.001, 0.999])
@@ -243,6 +248,30 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     atr_s = atr.iloc[:, 0]
     assign_safe(feats, f"atr_pct_{period}", atr_s.div(feats["close"], axis=0))
     feats[f"atr_chg_{period}"] = feats[f"atr_pct_{period}"].diff()
+
+    # === Classic Pivot ==================================================
+    pivot = (feats["high"] + feats["low"] + feats["close"]) / 3
+    feats[f"pivot_{period}"] = pivot
+    feats[f"pivot_r1_{period}"] = 2 * pivot - feats["low"]
+    feats[f"pivot_s1_{period}"] = 2 * pivot - feats["high"]
+    feats[f"close_vs_pivot_{period}"] = (feats["close"] - pivot) / feats["close"]
+
+    # === 简版 VPOC（近 200 根） =========================================
+    def _vpoc(idx):
+        lo = max(0, idx - 200)
+        hist, edges = np.histogram(
+            feats["close"].iloc[lo : idx + 1],
+            bins=24,
+            weights=feats["volume"].iloc[lo : idx + 1],
+        )
+        j = int(hist.argmax())
+        return (edges[j] + edges[j + 1]) / 2
+
+    vpoc = [_vpoc(i) for i in range(len(feats))]
+    feats[f"vpoc_{period}"] = vpoc
+    feats[f"close_vs_vpoc_{period}"] = (
+        feats["close"] - feats[f"vpoc_{period}"]
+    ) / feats["close"]
 
     _check_index("adx")
     adx_df = _safe_ta(
@@ -543,14 +572,8 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
 def calc_features_full(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats = calc_features_raw(df, period)
 
-    for col in feats.columns:
-        if pd.api.types.is_numeric_dtype(feats[col]):
-            arr = feats[col].astype(float).values
-            p1, p99 = np.nanpercentile(arr, [1, 99])
-            clipped = np.clip(arr, p1, p99)
-            mu = np.nanmean(clipped)
-            sigma = np.nanstd(clipped) + 1e-6
-            feats[col] = ((clipped - mu) / sigma).astype("float64")
+    num_cols = feats.select_dtypes("number").columns
+    feats[num_cols] = RobustScaler(quantile_range=(1, 99)).fit_transform(feats[num_cols])
 
     flag_df = pd.DataFrame(index=feats.index)
     for col in feats.columns:
