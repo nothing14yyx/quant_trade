@@ -155,6 +155,10 @@ class RobustSignalGenerator:
             "resistance_level_1h",
             "break_support_1h",
             "break_resistance_1h",
+            "pivot_r1_1h",
+            "pivot_s1_1h",
+            "close_vs_pivot_1h",
+            "close_vs_vpoc_1h",
         ],
         "4h": [
             "rsi_4h",
@@ -164,6 +168,10 @@ class RobustSignalGenerator:
             "resistance_level_4h",
             "break_support_4h",
             "break_resistance_4h",
+            "pivot_r1_4h",
+            "pivot_s1_4h",
+            "close_vs_pivot_4h",
+            "close_vs_vpoc_4h",
         ],
         "d1": [
             "rsi_d1",
@@ -173,6 +181,10 @@ class RobustSignalGenerator:
             "resistance_level_d1",
             "break_support_d1",
             "break_resistance_d1",
+            "pivot_r1_d1",
+            "pivot_s1_d1",
+            "close_vs_pivot_d1",
+            "close_vs_vpoc_d1",
         ],
     }
 
@@ -183,6 +195,8 @@ class RobustSignalGenerator:
         "atr_pct": (0.002, 100.0, 0.03),
         "vol_ma_ratio": (0.2, 1.0, 0.03),
         "funding_rate": (0.0005, 10000, 0.03),
+        "close_vs_pivot": (0.01, 20, 0.04),
+        "close_vs_vpoc": (0.01, 20, 0.04),
     }
 
     VOTE_PARAMS = {
@@ -207,6 +221,10 @@ class RobustSignalGenerator:
         th_window=150,
         th_decay=1.0,
     ):
+        # 多线程访问历史数据时的互斥锁
+        # 使用 RLock 以便在部分函数中嵌套调用
+        self._lock = threading.RLock()
+
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         self.calibrators = {}
@@ -324,10 +342,6 @@ class RobustSignalGenerator:
 
         # 当前权重，初始与 base_weights 相同
         self.current_weights = self.base_weights.copy()
-
-        # 多线程访问历史数据时的互斥锁
-        # 使用 RLock 以便在部分函数中嵌套调用
-        self._lock = threading.RLock()
 
         # 初始化各因子对应的IC分数，可在配置文件中覆盖
         cfg_ic = cfg.get("ic_scores")
@@ -914,6 +928,7 @@ class RobustSignalGenerator:
             )
             + 0.3 * np.tanh(safe('close_spread_1h_4h', 0) * 5)
             + 0.3 * np.tanh(safe('close_spread_1h_d1', 0) * 5)
+            + np.tanh(safe(f"close_vs_pivot_{period}", 0) * 8)
         )
 
         momentum_raw = (
@@ -966,6 +981,7 @@ class RobustSignalGenerator:
             + 0.5 * np.tanh(safe('bid_ask_imbalance', 0) * 10)
             + 0.3 * np.tanh(safe('vol_ratio_4h_d1', 0))
             + 0.3 * np.tanh(safe('rsi_1h_mul_vol_ma_ratio_4h', 0) / 100)
+            + np.tanh(safe(f"close_vs_vpoc_{period}", 0) * 8)
         )
 
         sentiment_raw = (
@@ -1117,83 +1133,11 @@ class RobustSignalGenerator:
         reversal=False,
         history_scores=None,
     ):
-        """根据历史波动、趋势强度和市场情绪动态计算阈值并返回额外的反转加成"""
+        """根据ATR与资金费率计算动态阈值"""
 
-        th = float(base)
-
-        weights = self.signal_threshold_cfg.get('weights', {})
-        w_vol = weights.get('vol', 1.0)
-        w_trend = weights.get('trend', 1.0)
-        w_fund = weights.get('funding', 1.0)
-
-        # === 波动因子：max 避免双计 ===
-        vol_th = 0.0
-        main_vol = max(abs(atr), abs(pred_vol or 0.0))
-        vol_th += min(0.10, main_vol * 4)
-        if atr_4h is not None or pred_vol_4h is not None:
-            vol_th += 0.5 * min(
-                0.06, max(abs(atr_4h or 0), abs(pred_vol_4h or 0)) * 3
-            )
-        if atr_d1 is not None or pred_vol_d1 is not None:
-            vol_th += 0.25 * min(
-                0.06, max(abs(atr_d1 or 0), abs(pred_vol_d1 or 0)) * 3
-            )
-        th += vol_th * 1.5 * w_vol
-
-        # === 趋势强度 ===
-        trend_th = min(0.12, max(adx - 25, 0) * 0.005)
-        if adx_4h is not None:
-            trend_th += 0.5 * min(0.12, max(adx_4h - 25, 0) * 0.005)
-        if adx_d1 is not None:
-            trend_th += 0.25 * min(0.12, max(adx_d1 - 25, 0) * 0.005)
-        th += trend_th * w_trend
-
-        # === 资金费率 / 恐慌指数 ===
-        fund_th = min(0.08, abs(funding) * 8)
-        if vix_proxy is not None:
-            fund_th += min(0.08, max(vix_proxy, 0.0) * 0.08)
-        th += fund_th * w_fund
-
-        # === 历史 80 分位兜底 ===
-        if history_scores is None:
-            with self._lock:
-                hist_scores = list(self.history_scores)
-        else:
-            hist_scores = list(history_scores)
-        if len(hist_scores) > 100:
-            scores = hist_scores
-            if self.th_window:
-                scores = scores[-int(self.th_window):]
-            arr = np.abs(np.asarray(scores, dtype=float))
-            if arr.size:
-                quantile = self.signal_threshold_cfg.get('quantile', 0.80)
-                if self.th_decay < 1.0:
-                    weights = self.th_decay ** np.arange(len(arr))[::-1]
-                    sorter = np.argsort(arr)
-                    arr_sorted = arr[sorter]
-                    w_sorted = weights[sorter]
-                    cumsum = np.cumsum(w_sorted)
-                    target = quantile * cumsum[-1]
-                    q = np.interp(target, cumsum, arr_sorted)
-                else:
-                    q = np.quantile(arr, quantile)
-                th = max(th, q)
-
-        # === 市场状态微调 ===
-        if regime == "trend":
-            th += 0.015
-        elif regime == "range":
-            th -= 0.020
-
+        th = base + min(0.10, abs(atr) * 4) + min(0.08, abs(funding) * 8)
         rev_boost = self.signal_threshold_cfg.get('rev_boost', 0.30)
-
-        if reversal:
-            th *= self.signal_threshold_cfg.get('rev_th_mult', 0.60)
-
-        if low_base is None:
-            low_base = self.signal_threshold_cfg.get('low_base', 0.10)
-
-        return max(th, low_base), rev_boost
+        return max(th, 0.08), rev_boost
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """按固定顺序加权合并各因子得分"""
@@ -1612,6 +1556,11 @@ class RobustSignalGenerator:
             local_details.get('strong_confirm_4h', False),
         )
 
+        raw_1h = raw_dict.get("1h", {})
+        if raw_1h.get("break_resistance_1h"):
+            fused_score *= 1.12
+            local_details["breakout_boost"] = 0.12
+
 
         logic_score = fused_score
         env_score = 1.0
@@ -1911,7 +1860,7 @@ class RobustSignalGenerator:
         if direction != 0:
             align_count = 0
             for p in ('1h', '4h', 'd1'):
-                if np.sign(fs[p]['trend']) == direction and np.sign(fs[p]['momentum']) == direction:
+                if np.sign(fs[p]['trend']) == direction:
                     align_count += 1
             if align_count < 1:  # 从“<2”改为“<1”
                 direction = 0
