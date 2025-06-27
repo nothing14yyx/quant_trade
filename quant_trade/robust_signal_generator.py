@@ -1588,8 +1588,10 @@ class RobustSignalGenerator:
                 drawdown_preds[p] = None
 
         oversold_reversal = False
-        if raw_fd1.get('rsi_d1', 50) < 25 or raw_fd1.get('cci_d1', 0) < -100:
-            ai_scores['d1'] += 0.3
+        rsi = raw_fd1.get('rsi_d1', 50)
+        cci = raw_fd1.get('cci_d1', 0)
+        if rsi < 25 or cci < -100 or rsi > 75 or cci > 100:
+            ai_scores['d1'] *= 0.7
             oversold_reversal = True
 
         # d1 空头阈值特殊规则
