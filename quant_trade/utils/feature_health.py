@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from quant_trade.utils.soft_clip import soft_clip
 
 def health_check(features: dict, abs_clip: dict = None, zero_cols: list[str] | None = None):
     """
@@ -14,7 +15,7 @@ def health_check(features: dict, abs_clip: dict = None, zero_cols: list[str] | N
             else:
                 features[k] = np.nan
         elif isinstance(v, (float, int)):
-            features[k] = min(max(v, -1e4), 1e4)
+            features[k] = float(soft_clip(v, k=5000.0))
     if abs_clip:
         for ck, (vmin, vmax) in abs_clip.items():
             features[ck] = abs(features.get(ck, 0))
@@ -29,7 +30,7 @@ def apply_health_check_df(df: pd.DataFrame, abs_clip: dict = None, zero_cols: li
     # 仅对数值列执行 clip，避免时间列或字符串列报错
     processed = df.copy()
     num_cols = processed.select_dtypes(include="number").columns
-    processed[num_cols] = processed[num_cols].clip(-1e4, 1e4)
+    processed[num_cols] = soft_clip(processed[num_cols], k=5000.0)
     flags_df = processed.isna().astype(int)
     flags_df.columns = [f"{c}_isnan" for c in processed.columns]
     if zero_cols:

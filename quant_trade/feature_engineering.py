@@ -33,6 +33,7 @@ from quant_trade.utils.robust_scaler import (
 )
 
 from quant_trade.utils.feature_health import health_check, apply_health_check_df
+from quant_trade.utils.soft_clip import soft_clip
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -481,7 +482,7 @@ class FeatureEngineer:
                 scaled_parts.append(apply_robust_z_with_params(g, params))
             df_scaled = pd.concat(scaled_parts, ignore_index=True)
 
-        df_scaled[feat_cols_all] = df_scaled[feat_cols_all].clip(-30, 30)
+        df_scaled[feat_cols_all] = soft_clip(df_scaled[feat_cols_all], k=10.0)
         df_final, feat_cols_all = self._add_missing_flags(df_scaled, feat_cols_all)
         # 同步更新全局特征列表，确保后续批次字段一致
         self.feature_cols_all = feat_cols_all
