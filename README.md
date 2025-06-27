@@ -10,6 +10,8 @@
 -```python
 -fe.merge_features(save_to_db=True, batch_size=1)
 -```
+-   现在还可通过 `use_polars=True` 启用 [Polars](https://pola.rs/) 加速批量拼接，
+    与 `n_jobs` 结合能更好利用多核性能。
 - **ModelTrainer**：使用 LightGBM 训练多周期预测模型。
 - **标签系统**：根据历史波动动态设定阈值，并额外提供未来波动率等辅助目标。
 - **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
