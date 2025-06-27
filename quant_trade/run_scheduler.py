@@ -21,7 +21,10 @@ from quant_trade.generate_signal_from_db import (
     load_order_book_imbalance,
     load_symbol_categories,
 )
-from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import (
+    RobustSignalGenerator,
+    robust_signal_generator,
+)
 from quant_trade.utils.helper import collect_feature_cols
 from sqlalchemy import text
 
@@ -207,12 +210,15 @@ class Scheduler:
         now = datetime.now(UTC).replace(second=0, microsecond=0)
         for sym in symbols:
             try:
-                feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = prepare_all_features(
-                    self.engine, sym, self.scaler_params
-                )
+                feats = prepare_all_features(self.engine, sym, self.scaler_params)
+                if feats is None:
+                    logging.warning("skip %s - insufficient data", sym)
+                    continue
+                feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = feats
                 oi = load_latest_open_interest(self.engine, sym)
                 order_imb = load_order_book_imbalance(self.engine, sym)
-                sig = self.sg.generate_signal(
+                sig = robust_signal_generator(
+                    self.sg,
                     feats1h,
                     feats4h,
                     featsd1,
@@ -225,7 +231,7 @@ class Scheduler:
                     symbol=sym,
                 )
                 if sig is None:
-                    logging.debug("no signal generated for %s", sym)
+                    logging.warning("skip %s – signal generator returned None", sym)
                     continue
                 raw1h = {k: _to_builtin(v) for k, v in raw1h.items()}
                 raw4h = {k: _to_builtin(v) for k, v in raw4h.items()}

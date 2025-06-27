@@ -71,7 +71,11 @@ def prepare_features(
 
     """计算单周期特征并返回(缩放后的dict, 原始dict)"""
 
-    feats = calc_features_raw(df.set_index("open_time"), period)
+    feats = calc_features_raw(
+        df.set_index("open_time"),
+        period,
+        symbol=symbol,
+    )
     if len(feats) <= offset:
         raise IndexError("insufficient data for requested offset")
     raw = feats.iloc[-1 - offset]
@@ -109,9 +113,23 @@ def prepare_all_features(
     df5m = load_latest_klines(engine, symbol, "5m")
     df15m = load_latest_klines(engine, symbol, "15m")
 
-    f1h_df = calc_features_raw(df1h.set_index("open_time"), "1h")
-    f4h_df = calc_features_raw(df4h.set_index("open_time"), "4h")
-    fd1_df = calc_features_raw(dfd1.set_index("open_time"), "d1")
+    f1h_df = calc_features_raw(
+        df1h.set_index("open_time"),
+        "1h",
+        symbol=symbol,
+    )
+    f4h_df = calc_features_raw(
+        df4h.set_index("open_time"),
+        "4h",
+        symbol=symbol,
+    )
+    fd1_df = calc_features_raw(
+        dfd1.set_index("open_time"),
+        "d1",
+        symbol=symbol,
+    )
+    if f1h_df is None or f4h_df is None or fd1_df is None:
+        return None
 
     # 若日线数据缺失资金费率异常指标，尝试从 1h 数据构造
     if (
@@ -143,8 +161,12 @@ def prepare_all_features(
 
     # 短周期动量指标
     if not df5m.empty:
-        f5m = calc_features_raw(df5m.set_index("open_time"), "5m")
-        if "pct_chg1_5m" in f5m:
+        f5m = calc_features_raw(
+            df5m.set_index("open_time"),
+            "5m",
+            symbol=symbol,
+        )
+        if f5m is not None and "pct_chg1_5m" in f5m:
             chg5 = f5m["pct_chg1_5m"].shift(1)
             f5m["mom_5m_roll1h"] = chg5.rolling(12, min_periods=1).mean()
             f5m["mom_5m_roll1h_std"] = chg5.rolling(12, min_periods=1).std()
@@ -158,8 +180,12 @@ def prepare_all_features(
                     raw1h[c] = last5[c].iloc[0]
 
     if not df15m.empty:
-        f15m = calc_features_raw(df15m.set_index("open_time"), "15m")
-        if "pct_chg1_15m" in f15m:
+        f15m = calc_features_raw(
+            df15m.set_index("open_time"),
+            "15m",
+            symbol=symbol,
+        )
+        if f15m is not None and "pct_chg1_15m" in f15m:
             chg15 = f15m["pct_chg1_15m"].shift(1)
             f15m["mom_15m_roll1h"] = chg15.rolling(4, min_periods=1).mean()
             f15m["mom_15m_roll1h_std"] = chg15.rolling(4, min_periods=1).std()
