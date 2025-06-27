@@ -224,6 +224,9 @@ class Scheduler:
                     order_book_imbalance=order_imb,
                     symbol=sym,
                 )
+                if sig is None:
+                    logging.debug("no signal generated for %s", sym)
+                    continue
                 raw1h = {k: _to_builtin(v) for k, v in raw1h.items()}
                 raw4h = {k: _to_builtin(v) for k, v in raw4h.items()}
                 rawd1 = {k: _to_builtin(v) for k, v in rawd1.items()}

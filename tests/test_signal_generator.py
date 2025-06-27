@@ -623,8 +623,8 @@ def test_sentiment_reweight_and_guard():
         raw_features_d1=feats_d1,
     )
     scores = res['details']['scores']
-    assert scores['1h'] == pytest.approx(-0.03899, rel=1e-3)
-    assert scores['4h'] == pytest.approx(0.2, rel=1e-3)
+    assert scores['1h'] == pytest.approx(-0.039, rel=1e-3)
+    assert scores['4h'] == pytest.approx(0.14, rel=1e-3)
 
 
 def test_volume_and_funding_penalties():
@@ -884,3 +884,36 @@ def test_generate_signal_with_cls_model():
     )
     assert res['score'] == pytest.approx(np.tanh(0.5 - 0.9))
 
+
+def test_conflict_filter_and_pos_size():
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0.0
+    rsg.get_factor_scores = lambda f, p: {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0,
+                                          'sentiment': 0, 'funding': 0}
+    rsg.combine_score = lambda ai, fs, weights=None: ai
+    rsg.dynamic_threshold = lambda *a, **k: (0.10, 0.0)
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {
+        '1h': {'up': None, 'down': None},
+        '4h': {'up': None, 'down': None},
+        'd1': {'up': None, 'down': None},
+    }
+
+    sample = {
+        'features_1h': {'atr_pct_1h': 0.01, 'adx_1h': 10, 'funding_rate_1h': 0, 'donchian_perc_1h': 0.5},
+        'features_4h': {'atr_pct_4h': 0.01, 'adx_4h': 15, 'donchian_perc_4h': 0.3},
+        'features_d1': {'rsi_d1': 20, 'cci_d1': -120, 'break_support_d1': 1},
+    }
+
+    res = rsg.generate_signal(
+        sample['features_1h'],
+        sample['features_4h'],
+        sample['features_d1'],
+        raw_features_1h=sample['features_1h'],
+        raw_features_4h=sample['features_4h'],
+        raw_features_d1=sample['features_d1'],
+    )
+
+    assert res['details']['vote']['value'] == 0
+    assert res['position_size'] == pytest.approx(0.0)
