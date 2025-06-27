@@ -430,6 +430,21 @@ cycle_weight:
   weak: 0.8
   opposite: 0.5
 
+# ===== 新增风险与仓位参数 =====
+regime:
+  adx_trend: 25
+  adx_range: 20
+
+risk_adjust:
+  factor: 0.9
+  threshold: 0.1
+
+protection_limits:
+  risk_score: 1.05
+  crowding: 0.95
+
+max_position: 0.3
+
 # 调度器设置
 scheduler:
   topn: 50         # run_scheduler 监控的币种数量
