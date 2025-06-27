@@ -1061,6 +1061,8 @@ class RobustSignalGenerator:
             funding_raw = -np.tanh(f_rate * 4000)  # 4000 ≈ 1/0.00025，讓 ±0.002 ≈ tanh(8)
         else:
             funding_raw = np.tanh(f_rate * 4000)
+        if abs(f_rate) < 0.001:
+            funding_raw = 0.0
         funding_raw += np.tanh(f_anom * 50)
         scores = {
             'trend': np.tanh(trend_raw),
@@ -1268,9 +1270,14 @@ class RobustSignalGenerator:
     # ===== 新增辅助函数 =====
     def calc_factor_scores(self, ai_scores: dict, factor_scores: dict, weights: dict) -> dict:
         """计算未调整的各周期得分"""
+        w1 = weights.copy()
+        w4 = weights.copy()
+        for k in ('trend', 'momentum', 'volume'):
+            w1[k] = w1.get(k, 0) * 0.7
+            w4[k] = w4.get(k, 0) * 0.7
         scores = {
-            '1h': self.combine_score(ai_scores['1h'], factor_scores['1h'], weights),
-            '4h': self.combine_score(ai_scores['4h'], factor_scores['4h'], weights),
+            '1h': self.combine_score(ai_scores['1h'], factor_scores['1h'], w1),
+            '4h': self.combine_score(ai_scores['4h'], factor_scores['4h'], w4),
             'd1': self.combine_score(ai_scores['d1'], factor_scores['d1'], weights),
         }
         logger.debug("factor scores: %s", scores)
@@ -1580,6 +1587,11 @@ class RobustSignalGenerator:
             else:
                 drawdown_preds[p] = None
 
+        oversold_reversal = False
+        if raw_fd1.get('rsi_d1', 50) < 25 or raw_fd1.get('cci_d1', 0) < -100:
+            ai_scores['d1'] += 0.3
+            oversold_reversal = True
+
         # d1 空头阈值特殊规则
         if ai_scores['d1'] < 0 and abs(ai_scores['d1']) < self.th_down_d1:
             ai_scores['d1'] = 0.0
@@ -1790,6 +1802,9 @@ class RobustSignalGenerator:
             vix_p = open_interest.get('vix_proxy')
 
         regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
+        if std_d1.get('break_support_d1') == 1 and std_d1.get('rsi_d1', 50) < 30:
+            regime = 'range'
+            rev_dir = 1
         cfg_th = self.signal_threshold_cfg
         base_th, rev_boost = self.dynamic_threshold(
             atr_1h,
@@ -1900,6 +1915,13 @@ class RobustSignalGenerator:
             + vw.get('ai', self.vote_params['weight_ai']) * ai_dir
             + vw.get('vol_breakout', 1) * vol_breakout_dir
         )
+        conflict_filter_triggered = False
+        if (
+            std_1h.get('donchian_perc_1h', 0) > 0.7
+            and (std_4h or {}).get('donchian_perc_4h', 1) < 0.2
+        ):
+            vote = 0
+            conflict_filter_triggered = True
         strong_confirm_vote = abs(vote) >= self.vote_params['strong_min']
 
         # ====== 票数置信度衰减 ======
@@ -1991,6 +2013,13 @@ class RobustSignalGenerator:
             # OI过热时仅衰减仓位，不强制平仓
             pos_size *= 0.5
 
+        pos_map = base_th * 2.0
+        if risk_score > 1 or logic_score < -0.3:
+            pos_map = min(pos_map, 0.5)
+        pos_size = min(pos_size, pos_map)
+        if conflict_filter_triggered:
+            pos_size = 0.0
+
         # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
         price = (raw_features_1h or features_1h).get('close', 0)
         if raw_features_4h is not None and 'atr_pct_4h' in raw_features_4h:
@@ -2064,6 +2093,8 @@ class RobustSignalGenerator:
             'consensus_all': consensus_all,
             'consensus_14': consensus_14,
             'consensus_4d1': consensus_4d1,
+            'oversold_reversal': oversold_reversal,
+            'conflict_filter_triggered': conflict_filter_triggered,
         }
         final_details.update(local_details)
 
@@ -2073,6 +2104,13 @@ class RobustSignalGenerator:
             base_th,
             funding_conflicts,
             fused_score,
+        )
+        logger.debug(
+            "ai_score=%.3f pos_size=%.3f oversold_reversal=%d conflict_filter_triggered=%d",
+            ai_scores['d1'],
+            pos_size,
+            int(oversold_reversal),
+            int(conflict_filter_triggered),
         )
         return {
             'signal': direction,
