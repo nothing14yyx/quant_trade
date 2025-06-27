@@ -1878,8 +1878,20 @@ class RobustSignalGenerator:
         raw_score = fused_score
         fused_score = raw_score - self.risk_adjust_factor * risk_score
         if abs(fused_score) < self.risk_adjust_threshold:
+            logger.info(
+                "fused_score=%.4f threshold=%.3f",
+                fused_score,
+                self.risk_adjust_threshold,
+            )
             return None
         if risk_score > self.risk_score_limit or crowding_factor > self.crowding_limit:
+            logger.info(
+                "risk_score=%.4f limit=%.3f crowding=%.4f limit=%.3f",
+                risk_score,
+                self.risk_score_limit,
+                crowding_factor,
+                self.crowding_limit,
+            )
             return None
         # 所有放大系数后写入历史
         with self._lock:
