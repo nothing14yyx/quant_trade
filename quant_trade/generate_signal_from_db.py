@@ -425,7 +425,10 @@ def main(symbol: str = "ETHUSDT"):
             order_book_imbalance=order_imb if idx == 0 else None,
             symbol=symbol,
         )
-        if idx == 0:
+        if sig is None:
+            logging.debug("generate_signal returned None for idx %s", idx)
+            continue
+        if latest_signal is None:
             latest_signal = sig
         r = {
             "open_time": recent.iloc[-1 - idx]["open_time"],
