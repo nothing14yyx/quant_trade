@@ -22,6 +22,7 @@
     可根据策略需求适当调小窗口或衰减系数。
 -   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.80`，
     数值越高代表触发门槛越严格。
+-   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
 -   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
     帮助更准确地衡量趋势和动量强度。
     其中 `rsi_1h_mul_vol_ma_ratio_4h` 仅归入 `volume` 因子，不再在 `momentum` 中重复计分。
