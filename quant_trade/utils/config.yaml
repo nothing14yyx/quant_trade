@@ -367,12 +367,12 @@ delta_boost:
 
 
 vote_system:
-  weight_ai: 3
+  weight_ai: 4
   strong_min: 3
   conf_min: 0.25
-  ai_dir_eps: 0.04
+  ai_dir_eps: 0.02
 vote_weights:
-  ob: 4
+  ob: 3
   short_mom: 2
   ai: 3
   vol_breakout: 1
@@ -381,9 +381,9 @@ vote_weights:
 sentiment_alpha: 0.5
 cap_positive_scale: 0.85
 volume_guard:
-  weak_scale: 0.85
+  weak_scale: 0.93
   over_scale: 0.9
-  ratio_low: 0.6
+  ratio_low: 0.45
   ratio_high: 2.0
   roc_low: -20
   roc_high: 100
