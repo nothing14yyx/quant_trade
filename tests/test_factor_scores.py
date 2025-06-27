@@ -22,6 +22,13 @@ def make_rsg():
     rsg.ic_history = {k: deque(maxlen=500) for k in rsg.base_weights}
     rsg.symbol_categories = {}
     rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+    rsg.regime_adx_trend = 25
+    rsg.regime_adx_range = 20
+    rsg.risk_adjust_factor = 0.9
+    rsg.risk_adjust_threshold = -2.0
+    rsg.risk_score_limit = 2.0
+    rsg.crowding_limit = 1.1
+    rsg.max_position = 0.3
     return rsg
 
 

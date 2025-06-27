@@ -32,6 +32,13 @@ def make_rsg():
     }
     rsg.ob_th_params = {'min_ob_th': 0.10, 'dynamic_factor': 0.08}
     rsg.risk_score_cap = 5.0
+    rsg.regime_adx_trend = 25
+    rsg.regime_adx_range = 20
+    rsg.risk_adjust_factor = 0.9
+    rsg.risk_adjust_threshold = -2.0
+    rsg.risk_score_limit = 2.0
+    rsg.crowding_limit = 1.1
+    rsg.max_position = 0.3
     rsg.signal_threshold_cfg = {
         'mode': 'sigmoid',
         'base_th': 0.12,
