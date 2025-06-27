@@ -436,12 +436,12 @@ regime:
   adx_range: 20
 
 risk_adjust:
-  factor: 0.7
-  threshold: 0.1
+  factor: 0
+  threshold: 0
 
 protection_limits:
-  risk_score: 1.5
-  crowding: 1.05
+  risk_score: 100
+  crowding: 100
 
 max_position: 0.3
 
