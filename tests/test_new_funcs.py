@@ -13,7 +13,10 @@ def test_calc_factor_scores():
         'd1': {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0, 'sentiment': 0, 'funding': 0},
     }
     scores = rsg.calc_factor_scores(ai, fs, rsg.base_weights)
-    expected = rsg.combine_score(ai['1h'], fs['1h'], rsg.base_weights)
+    w1 = rsg.base_weights.copy()
+    for k in ('trend', 'momentum', 'volume'):
+        w1[k] *= 0.7
+    expected = rsg.combine_score(ai['1h'], fs['1h'], w1)
     assert scores['1h'] == pytest.approx(expected)
 
 
