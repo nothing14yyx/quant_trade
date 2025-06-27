@@ -1877,7 +1877,7 @@ class RobustSignalGenerator:
         )
         raw_score = fused_score
         fused_score = raw_score - self.risk_adjust_factor * risk_score
-        if fused_score < self.risk_adjust_threshold:
+        if abs(fused_score) < self.risk_adjust_threshold:
             return None
         if risk_score > self.risk_score_limit or crowding_factor > self.crowding_limit:
             return None
