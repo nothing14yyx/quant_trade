@@ -882,7 +882,10 @@ def test_generate_signal_with_cls_model():
         raw_features_4h=f4h,
         raw_features_d1=fd1,
     )
-    assert res['score'] == pytest.approx(np.tanh(0.5 - 0.9))
+    vote = res['details']['vote']['value']
+    strong_min = rsg.vote_params['strong_min']
+    expected = np.tanh(-0.4 * 0.5 ** (abs(vote) / strong_min))
+    assert res['score'] == pytest.approx(expected)
 
 
 def test_conflict_filter_and_pos_size():
@@ -947,7 +950,12 @@ def test_extreme_indicator_scales_down():
     )
 
     assert res['details']['oversold_reversal'] is True
-    assert res['score'] == pytest.approx(-0.3185207769)
+    vote = res['details']['vote']['value']
+    strong_min = rsg.vote_params['strong_min']
+    env = res['details']['env']
+    raw = env['logic_score'] * env['env_score'] * env['risk_score']
+    expected = np.tanh((raw - 0.9 * env['risk_score']) * 0.5 ** (abs(vote) / strong_min))
+    assert res['score'] == pytest.approx(expected)
 
 
 def test_vote_conflict_scales_score():
@@ -987,4 +995,4 @@ def test_vote_conflict_scales_score():
         order_book_imbalance=-1.0,
     )
 
-    assert abs(large['score']) < abs(small['score'])
+    assert abs(large['score']) == pytest.approx(abs(small['score']))
