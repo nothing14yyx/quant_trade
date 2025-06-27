@@ -2136,16 +2136,17 @@ class RobustSignalGenerator:
                 maxlen = 4 if p == "1h" else 2
                 cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
 
-        filters = getattr(self, 'signal_filters', {"min_vote": 5, "confidence_vote": 0.12})
-        confidence_vote = filters.get('confidence_vote', 0.12)
-        if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
-            direction, pos_size = 0, 0.0
-            take_profit = stop_loss = None
-        # 放宽 vote 阈值过滤：从 8 → 5
-        min_vote = filters.get('min_vote', 4)
-        if abs(vote) < min_vote:
-            direction, pos_size = 0, 0.0
-            take_profit = stop_loss = None
+        # 移除票数开仓限制，使投票只在分数层面生效
+        # filters = getattr(self, 'signal_filters', {"min_vote": 5, "confidence_vote": 0.12})
+        # confidence_vote = filters.get('confidence_vote', 0.12)
+        # if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
+        #     direction, pos_size = 0, 0.0
+        #     take_profit = stop_loss = None
+        # # 放宽 vote 阈值过滤：从 8 → 5
+        # min_vote = filters.get('min_vote', 4)
+        # if abs(vote) < min_vote:
+        #     direction, pos_size = 0, 0.0
+        #     take_profit = stop_loss = None
 
         final_details = {
             'ai': {'1h': ai_scores['1h'], '4h': ai_scores['4h'], 'd1': ai_scores['d1']},
