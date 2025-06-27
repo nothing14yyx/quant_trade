@@ -6,6 +6,7 @@ import json
 import warnings
 import logging
 from sklearn.preprocessing import RobustScaler
+from numba import njit
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,34 @@ def vwap_np(high, low, close, volume):
     if isinstance(high, (pd.Series, pd.DataFrame)):
         return pd.Series(vwap, index=getattr(high, "index", None))
     return vwap
+
+
+# === Numba 加速的 VPOC 计算 ===============================================
+@njit
+def _vpoc_numba(close: np.ndarray, volume: np.ndarray, window: int = 200, bins: int = 24) -> np.ndarray:
+    """基于成交量的分布计算近 ``window`` 根的成交密集价格 (VPOC)。"""
+
+    n = len(close)
+    out = np.empty(n, dtype=np.float64)
+    for i in range(n):
+        lo = 0 if i < window else i - window + 1
+        c_slice = close[lo : i + 1]
+        v_slice = volume[lo : i + 1]
+        c_min = c_slice.min()
+        c_max = c_slice.max()
+        step = (c_max - c_min) / bins
+        if step == 0:
+            out[i] = c_slice[0]
+            continue
+        hist = np.zeros(bins, dtype=np.float64)
+        for j in range(c_slice.shape[0]):
+            idx = int((c_slice[j] - c_min) / step)
+            if idx == bins:
+                idx -= 1
+            hist[idx] += v_slice[j]
+        max_idx = np.argmax(hist)
+        out[i] = c_min + (max_idx + 0.5) * step
+    return out
 
 
 def calc_price_channel(high: pd.Series, low: pd.Series, close: pd.Series, *, window: int = 20) -> pd.DataFrame:
@@ -257,17 +286,12 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats[f"close_vs_pivot_{period}"] = (feats["close"] - pivot) / feats["close"]
 
     # === 简版 VPOC（近 200 根） =========================================
-    def _vpoc(idx):
-        lo = max(0, idx - 200)
-        hist, edges = np.histogram(
-            feats["close"].iloc[lo : idx + 1],
-            bins=24,
-            weights=feats["volume"].iloc[lo : idx + 1],
-        )
-        j = int(hist.argmax())
-        return (edges[j] + edges[j + 1]) / 2
-
-    vpoc = [_vpoc(i) for i in range(len(feats))]
+    vpoc = _vpoc_numba(
+        feats["close"].to_numpy(dtype=np.float64),
+        feats["volume"].to_numpy(dtype=np.float64),
+        window=200,
+        bins=24,
+    )
     feats[f"vpoc_{period}"] = vpoc
     feats[f"close_vs_vpoc_{period}"] = (
         feats["close"] - feats[f"vpoc_{period}"]
