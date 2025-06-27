@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
+import polars
 import numpy as np
 import pandas as pd
 import yaml
@@ -402,7 +403,7 @@ class FeatureEngineer:
         return df_out, feat_cols
 
     def _finalize_batch(
-        self, dfs: list[pd.DataFrame], use_polars: bool = False
+        self, dfs: list[pd.DataFrame], use_polars: bool = True
     ) -> tuple[pd.DataFrame, list[str], dict | None]:
         if use_polars:
             try:
@@ -609,7 +610,7 @@ class FeatureEngineer:
         save_to_db: bool = False,
         batch_size: int | None = None,
         n_jobs: int = 1,
-        use_polars: bool = False,
+        use_polars: bool = True,
     ) -> None:
         symbols = self.get_symbols(("1h", "4h", "d1", "5m", "15m"))
         symbols = symbols[: (topn or self.topn)]
