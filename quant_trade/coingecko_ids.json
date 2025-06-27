@@ -158,5 +158,7 @@
   "ALPHAUSDT": "alpha-finance",
   "WUSDT": "wrapped-bitcoin",
   "SAHARAUSDT": "sahara-ai",
-  "RAREUSDT": "superrare"
+  "RAREUSDT": "superrare",
+  "LEVERUSDT": "lever",
+  "CTKUSDT": "certik"
 }
