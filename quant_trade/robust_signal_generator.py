@@ -250,6 +250,8 @@ class RobustSignalGenerator:
         self.feature_cols_1h = feature_cols_1h
         self.feature_cols_4h = feature_cols_4h
         self.feature_cols_d1 = feature_cols_d1
+        # 缓存标准化特征列索引，减少 DataFrame 查找开销
+        self._std_index_cache = {p: None for p in ("1h", "4h", "d1")}
 
         cfg = {}
         path = Path(config_path)
@@ -662,6 +664,31 @@ class RobustSignalGenerator:
                     "_prev_raw": {p: None for p in ("1h", "4h", "d1")},
                 }
             return self.symbol_data[symbol]
+
+    def _normalize_features(self, feats, period: str) -> dict:
+        """将 DataFrame/Series 输入转为字典, 并缓存列索引"""
+        if isinstance(feats, dict):
+            return feats
+        if isinstance(feats, pd.Series):
+            cols = tuple(feats.index)
+            cache = self._std_index_cache.get(period)
+            if cache is None or cache[0] != cols:
+                idx_map = {c: i for i, c in enumerate(cols)}
+                self._std_index_cache[period] = (cols, idx_map)
+            else:
+                idx_map = cache[1]
+            return {c: feats.iat[i] for c, i in idx_map.items()}
+        if isinstance(feats, pd.DataFrame) and not feats.empty:
+            row = feats.iloc[-1]
+            cols = tuple(row.index)
+            cache = self._std_index_cache.get(period)
+            if cache is None or cache[0] != cols:
+                idx_map = {c: i for i, c in enumerate(cols)}
+                self._std_index_cache[period] = (cols, idx_map)
+            else:
+                idx_map = cache[1]
+            return {c: row.iat[i] for c, i in idx_map.items()}
+        return {}
 
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> float:
         """根据1h MA5 与 MA20 判断并返回分数乘数"""
@@ -1435,6 +1462,13 @@ class RobustSignalGenerator:
         features_* 为主要输入，多因子评分、动态阈值等逻辑均优先使用这些标准化后的特征。
         raw_features_* 仅在计算绝对价格或绝对幅度（例如止盈止损价）时作为补充使用。
         """
+
+        features_1h = self._normalize_features(features_1h, "1h")
+        features_4h = self._normalize_features(features_4h, "4h")
+        features_d1 = self._normalize_features(features_d1, "d1")
+        raw_features_1h = self._normalize_features(raw_features_1h or {}, "1h")
+        raw_features_4h = self._normalize_features(raw_features_4h or {}, "4h")
+        raw_features_d1 = self._normalize_features(raw_features_d1 or {}, "d1")
 
         ob_imb = (
             order_book_imbalance
