@@ -25,7 +25,7 @@ data_loader:
   cache_dir: "data/klines"
   sentiment_cache: "data/sentiment"
   rate_limit_sleep: 0.05   # 每次请求后休息 50ms，1s 20 次 ≪ 2400/min
-  excluded_list: ["BUSDT","NEIROETHUSDT","HUSDT","SAHARAUSDT","RAREUSDT"]
+  excluded_list: ["BUSDT","NEIROETHUSDT","HUSDT","SAHARAUSDT","RAREUSDT","NEWTUSDT"]
 
 feature_engineering:
 #  cache_dir: "quant_trade/data/klines"
