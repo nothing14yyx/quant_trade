@@ -42,6 +42,34 @@ DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
 DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
 DEFAULT_LOW_VOL_RATIO = 0.3   # 低量能阈值
 
+from dataclasses import dataclass
+
+
+@dataclass
+class SignalThresholdParams:
+    """Container for all signal threshold related parameters."""
+
+    base_th: float = 0.12
+    gamma: float = 0.05
+    min_pos: float = 0.10
+    quantile: float = 0.80
+    low_base: float = DEFAULT_LOW_BASE
+    rev_boost: float = 0.30
+    rev_th_mult: float = 0.60
+
+    @classmethod
+    def from_cfg(cls, cfg: dict | None):
+        cfg = cfg or {}
+        return cls(
+            base_th=float(cfg.get("base_th", cls.base_th)),
+            gamma=float(cfg.get("gamma", cls.gamma)),
+            min_pos=float(cfg.get("min_pos", cls.min_pos)),
+            quantile=float(cfg.get("quantile", cls.quantile)),
+            low_base=float(cfg.get("low_base", cls.low_base)),
+            rev_boost=float(cfg.get("rev_boost", cls.rev_boost)),
+            rev_th_mult=float(cfg.get("rev_th_mult", cls.rev_th_mult)),
+        )
+
 
 def robust_signal_generator(model, *args, **kwargs):
     """Safely call ``model.generate_signal`` and catch common errors."""
@@ -516,6 +544,7 @@ class RobustSignalGenerator:
                 "rev_th_mult": 0.60,
             }
             setattr(self, name, val)
+            self.signal_params = SignalThresholdParams.from_cfg(val)
             return val
         if name == "ai_dir_eps":
             val = self.cfg.get("vote_system", {}).get("ai_dir_eps", DEFAULT_AI_DIR_EPS)
@@ -537,6 +566,25 @@ class RobustSignalGenerator:
             setattr(self, name, 1.0)
             return 1.0
         raise AttributeError(name)
+
+    @property
+    def signal_threshold_cfg(self):
+        if not hasattr(self, "_signal_threshold_cfg"):
+            self._signal_threshold_cfg = {
+                "base_th": 0.08,
+                "gamma": 0.05,
+                "min_pos": 0.10,
+                "low_base": DEFAULT_LOW_BASE,
+                "rev_boost": 0.30,
+                "rev_th_mult": 0.60,
+            }
+            self.signal_params = SignalThresholdParams.from_cfg(self._signal_threshold_cfg)
+        return self._signal_threshold_cfg
+
+    @signal_threshold_cfg.setter
+    def signal_threshold_cfg(self, value):
+        self._signal_threshold_cfg = value or {}
+        self.signal_params = SignalThresholdParams.from_cfg(self._signal_threshold_cfg)
 
 
     def get_dynamic_oi_threshold(self, pred_vol=None, base=0.5, quantile=0.9):
@@ -856,7 +904,8 @@ class RobustSignalGenerator:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
-        if pos_size < cfg_th_sig.get("min_pos", 0.01):
+        min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
+        if pos_size < min_pos:
             direction, pos_size = 0, 0.0
 
         # 4h 周期 veto 逻辑已停用
@@ -1206,9 +1255,14 @@ class RobustSignalGenerator:
     ):
         """根据ATR与资金费率计算动态阈值"""
 
+        params = self.signal_params
+        if base is None:
+            base = params.base_th
+        if low_base is None:
+            low_base = params.low_base
         th = base + min(0.10, abs(atr) * 4) + min(0.08, abs(funding) * 8)
-        rev_boost = self.signal_threshold_cfg.get('rev_boost', 0.30)
-        return max(th, 0.08), rev_boost
+        rev_boost = params.rev_boost
+        return max(th, low_base), rev_boost
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """按固定顺序加权合并各因子得分"""
