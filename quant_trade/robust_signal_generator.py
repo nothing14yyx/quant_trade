@@ -2083,8 +2083,8 @@ class RobustSignalGenerator:
         )
 
         if direction != 0 and np.sign(vote) != direction:
-            direction = 0
-            pos_size = 0.0
+            # 投票方向与梯度方向不一致时，仅削弱仓位
+            pos_size *= 0.5
 
         if oi_overheat:
             # OI过热时仅衰减仓位，不强制平仓
