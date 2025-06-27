@@ -948,3 +948,43 @@ def test_extreme_indicator_scales_down():
 
     assert res['details']['oversold_reversal'] is True
     assert res['score'] == pytest.approx(-0.3185207769)
+
+
+def test_vote_conflict_scales_score():
+    """当投票方向与分数相反时, 投票越多削弱越明显"""
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0.6
+    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.combine_score = lambda ai, fs, weights=None: ai
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {
+        '1h': {'up': None, 'down': None},
+        '4h': {'up': None, 'down': None},
+        'd1': {'up': None, 'down': None},
+    }
+
+    f1h = {
+        'close': 100,
+        'atr_pct_1h': 0,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'mom_5m_roll1h': 0,
+        'mom_15m_roll1h': 0,
+    }
+    f4h = {'atr_pct_4h': 0, 'adx_4h': 0}
+    fd1 = {}
+
+    small = rsg.generate_signal(
+        f1h, f4h, fd1,
+        raw_features_1h=f1h, raw_features_4h=f4h, raw_features_d1=fd1,
+        order_book_imbalance=-0.2,
+    )
+    large = rsg.generate_signal(
+        f1h, f4h, fd1,
+        raw_features_1h=f1h, raw_features_4h=f4h, raw_features_d1=fd1,
+        order_book_imbalance=-1.0,
+    )
+
+    assert abs(large['score']) < abs(small['score'])

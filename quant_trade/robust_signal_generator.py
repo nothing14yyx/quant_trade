@@ -2007,6 +2007,13 @@ class RobustSignalGenerator:
         if abs(vote) >= strong_min:
             fused_score *= max(1, conf_vote)
 
+        vote_sign = int(np.sign(vote))
+        if vote_sign != 0 and np.sign(fused_score) != vote_sign:
+            # 投票方向与分数方向相反时，按照票数强度削弱分数
+            strong_min = max(self.vote_params.get('strong_min', 1), 1)
+            penalty = abs(vote) / strong_min
+            fused_score *= 0.5 ** penalty
+
         cfg_th_sig = self.signal_threshold_cfg
         grad_dir = sigmoid_dir(
             fused_score,
@@ -2083,8 +2090,9 @@ class RobustSignalGenerator:
         )
 
         if direction != 0 and np.sign(vote) != direction:
-            direction = 0
-            pos_size = 0.0
+            # 投票方向与梯度方向不一致时，已在分数层面处理
+            pass
+
 
         if oi_overheat:
             # OI过热时仅衰减仓位，不强制平仓
