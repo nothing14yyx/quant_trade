@@ -25,6 +25,13 @@ def make_simple_rsg():
     }
     rsg.ob_th_params = {'min_ob_th': 0.10, 'dynamic_factor': 0.08}
     rsg.risk_score_cap = 5.0
+    rsg.regime_adx_trend = 25
+    rsg.regime_adx_range = 20
+    rsg.risk_adjust_factor = 0.9
+    rsg.risk_adjust_threshold = -2.0
+    rsg.risk_score_limit = 2.0
+    rsg.crowding_limit = 1.1
+    rsg.max_position = 0.3
     return rsg
 
 
@@ -41,5 +48,6 @@ def test_layer_scores_product():
     feats={'close':100,'atr_pct_1h':0,'adx_1h':0,'funding_rate_1h':0}
     res = rsg.generate_signal(feats, {'atr_pct_4h':0}, {}, symbol='BTC')
     env = res['details']['env']
-    expected = np.tanh(env['logic_score'] * env['env_score'] * env['risk_score'])
+    raw = env['logic_score'] * env['env_score'] * env['risk_score']
+    expected = np.tanh(raw - 0.9 * env['risk_score'])
     assert res['score'] == pytest.approx(expected)
