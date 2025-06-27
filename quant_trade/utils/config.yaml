@@ -373,9 +373,12 @@ vote_system:
   ai_dir_eps: 0.02
 vote_weights:
   ob: 3
-  short_mom: 2
+  short_mom: 3
   ai: 3
   vol_breakout: 1
+
+oversold_filter:
+  enable: false
 
 # === 调参选项 ===
 sentiment_alpha: 0.5
@@ -399,7 +402,7 @@ signal_filters:
   require_strong_confirm_4h: false
 oi_protection:
   scale: 0.9
-  crowding_threshold: 0.90
+  crowding_threshold: 0.98
 veto_level: 0.9
 flip_coeff: 0.8
 th_down_d1: 0.74  # d1空头AI模型阈值，后续可灵活调整
@@ -409,8 +412,8 @@ position_coeff:
   low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.12      # 原 dynamic_th_final 的初始值
-  gamma: 0.05        # 过渡宽度
+  base_th: 0.08      # 原 dynamic_th_final 的初始值
+  gamma: 0.08        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
   quantile: 0.80
   low_base: 0.06
@@ -436,12 +439,12 @@ regime:
   adx_range: 20
 
 risk_adjust:
-  factor: 0.7
-  threshold: 0.1
+  factor: 0.6
+  threshold: 0.05
 
 protection_limits:
   risk_score: 1.5
-  crowding: 1.05
+  crowding: 0.98
 
 max_position: 0.3
 
