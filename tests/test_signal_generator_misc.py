@@ -19,6 +19,13 @@ def make_rsg():
     }
     r.ob_th_params = {'min_ob_th': 0.10, 'dynamic_factor': 0.08}
     r.risk_score_cap = 5.0
+    r.regime_adx_trend = 25
+    r.regime_adx_range = 20
+    r.risk_adjust_factor = 0.9
+    r.risk_adjust_threshold = -2.0
+    r.risk_score_limit = 2.0
+    r.crowding_limit = 1.1
+    r.max_position = 0.3
     return r
 
 
