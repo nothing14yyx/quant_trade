@@ -397,7 +397,8 @@ risk_score_cap: 5.0
 exit_lag_bars: 1
 # quantile: 0.88
 signal_filters:
-  confidence_vote: 0.33
+  confidence_vote: 0
+  min_vote: 0
   ob_th_min: 0.10
   require_strong_confirm_4h: false
 oi_protection:
