@@ -917,3 +917,34 @@ def test_conflict_filter_and_pos_size():
 
     assert res['details']['vote']['value'] == 0
     assert res['position_size'] == pytest.approx(0.0)
+
+
+def test_extreme_indicator_scales_down():
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0.6
+    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.combine_score = lambda ai, fs, weights=None: ai
+    rsg.dynamic_threshold = lambda *a, **k: (0.10, 0.0)
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {
+        '1h': {'up': None, 'down': None},
+        '4h': {'up': None, 'down': None},
+        'd1': {'up': None, 'down': None},
+    }
+
+    feats_1h = {'atr_pct_1h': 0, 'adx_1h': 0, 'funding_rate_1h': 0}
+    feats_4h = {'atr_pct_4h': 0, 'adx_4h': 0}
+    feats_d1 = {'rsi_d1': 80, 'cci_d1': 120}
+
+    res = rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+        raw_features_4h=feats_4h,
+        raw_features_d1=feats_d1,
+    )
+
+    assert res['details']['oversold_reversal'] is True
+    assert res['score'] == pytest.approx(0.6 * 0.7)
