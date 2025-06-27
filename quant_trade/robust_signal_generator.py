@@ -2093,6 +2093,7 @@ class RobustSignalGenerator:
             # 投票方向与梯度方向不一致时，已在分数层面处理
             pass
 
+
         if oi_overheat:
             # OI过热时仅衰减仓位，不强制平仓
             pos_size *= 0.5
