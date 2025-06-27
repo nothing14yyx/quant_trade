@@ -450,4 +450,4 @@ max_position: 0.3
 
 # 调度器设置
 scheduler:
-  topn: 50         # run_scheduler 监控的币种数量
+  topn: 100         # run_scheduler 监控的币种数量
