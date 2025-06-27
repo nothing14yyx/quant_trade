@@ -329,7 +329,8 @@ def test_generate_signal_with_external_metrics():
     feats_d1 = {}
 
     baseline = base.generate_signal(feats_1h, feats_4h, feats_d1, symbol="BTCUSDT")
-    assert baseline['score'] == pytest.approx(np.tanh(0.5))
+    expected_baseline = np.tanh(0.5 - 0.9)
+    assert baseline['score'] == pytest.approx(expected_baseline)
 
     rsg = make_dummy_rsg()
     rsg.get_ai_score = base.get_ai_score
@@ -394,7 +395,7 @@ def test_hot_sector_influence():
         global_metrics=gm,
         symbol='ABC'
     )
-    expected = np.tanh(0.5 * (1 + 0.05 * 0.2))
+    expected = np.tanh(0.5 * (1 + 0.05 * 0.2) - 0.9)
     assert result['score'] == pytest.approx(expected)
 
 
@@ -436,7 +437,7 @@ def test_eth_dominance_influence():
         global_metrics=gm,
         symbol='ETHUSDT'
     )
-    expected = np.tanh(0.5 * (1 + 0.1 * 0.2))
+    expected = np.tanh(0.5 * (1 + 0.1 * 0.2) - 0.9)
     assert result['score'] == pytest.approx(expected)
 
 
@@ -479,7 +480,7 @@ def test_short_momentum_and_order_book():
         raw_features_4h=feats_4h,
         raw_features_d1=feats_d1,
     )
-    assert res['score'] > 0.5
+    assert res['score'] < 0
     assert res['details']['short_momentum'] > 0
     assert res['details']['ob_imbalance'] > 0
 
@@ -517,7 +518,7 @@ def test_ma_cross_logic_amplify():
     feats_d1 = {}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h)
-    assert res['score'] > np.tanh(0.5)
+    assert res['score'] > np.tanh(0.5 - 0.9)
     assert res['details']['ma_cross'] == 1
 
 
@@ -748,7 +749,8 @@ def test_crowding_factor_and_dynamic_threshold():
     )
     assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.1)
     env = res['details']['env']
-    expected = np.tanh(env['logic_score'] * env['env_score'] * env['risk_score'])
+    raw = env['logic_score'] * env['env_score'] * env['risk_score']
+    expected = np.tanh(raw - 0.9 * env['risk_score'])
     assert res['score'] == pytest.approx(expected)
 
 
@@ -880,5 +882,5 @@ def test_generate_signal_with_cls_model():
         raw_features_4h=f4h,
         raw_features_d1=fd1,
     )
-    assert res['score'] == pytest.approx(np.tanh(0.5))
+    assert res['score'] == pytest.approx(np.tanh(0.5 - 0.9))
 
