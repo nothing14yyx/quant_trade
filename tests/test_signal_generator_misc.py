@@ -22,7 +22,7 @@ def make_rsg():
     r.regime_adx_trend = 25
     r.regime_adx_range = 20
     r.risk_adjust_factor = 0.9
-    r.risk_adjust_threshold = -2.0
+    r.risk_adjust_threshold = 0
     r.risk_score_limit = 2.0
     r.crowding_limit = 1.1
     r.max_position = 0.3
