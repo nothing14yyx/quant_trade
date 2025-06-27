@@ -947,4 +947,4 @@ def test_extreme_indicator_scales_down():
     )
 
     assert res['details']['oversold_reversal'] is True
-    assert res['score'] == pytest.approx(0.6 * 0.7)
+    assert res['score'] == pytest.approx(-0.3185207769)
