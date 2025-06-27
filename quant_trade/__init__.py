@@ -11,6 +11,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type hints only
 from .data_loader import DataLoader
 from .feature_engineering import FeatureEngineer
 from .robust_signal_generator import RobustSignalGenerator
+from .offline_price_table import generate_offline_price_table
 
 
 def __getattr__(name: str):
@@ -20,4 +21,9 @@ def __getattr__(name: str):
         return module
     raise AttributeError(f"module {__name__} has no attribute {name}")
 
-__all__ = ["DataLoader", "FeatureEngineer", "RobustSignalGenerator"]
+__all__ = [
+    "DataLoader",
+    "FeatureEngineer",
+    "RobustSignalGenerator",
+    "generate_offline_price_table",
+]
