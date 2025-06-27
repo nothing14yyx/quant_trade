@@ -402,9 +402,20 @@ class FeatureEngineer:
         return df_out, feat_cols
 
     def _finalize_batch(
-        self, dfs: list[pd.DataFrame]
+        self, dfs: list[pd.DataFrame], use_polars: bool = False
     ) -> tuple[pd.DataFrame, list[str], dict | None]:
-        df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
+        if use_polars:
+            try:
+                import polars as pl
+
+                df_all_pl = pl.concat([pl.from_pandas(df) for df in dfs])
+                df_all_pl = df_all_pl.replace([float("inf"), float("-inf")], None)
+                df_all = df_all_pl.to_pandas()
+            except Exception as e:  # pragma: no cover - optional dependency
+                logger.warning("polars 未安装或初始化失败，回退至 pandas：%s", e)
+                df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
+        else:
+            df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
 
         base_cols = [
             "open_time",
@@ -598,6 +609,7 @@ class FeatureEngineer:
         save_to_db: bool = False,
         batch_size: int | None = None,
         n_jobs: int = 1,
+        use_polars: bool = False,
     ) -> None:
         symbols = self.get_symbols(("1h", "4h", "d1", "5m", "15m"))
         symbols = symbols[: (topn or self.topn)]
@@ -623,7 +635,7 @@ class FeatureEngineer:
             all_dfs.append(out)
 
             if batch_size and batch_size > 0 and len(all_dfs) >= batch_size:
-                df_final, other_cols, scaler_params = self._finalize_batch(all_dfs)
+                df_final, other_cols, scaler_params = self._finalize_batch(all_dfs, use_polars)
                 self._write_output(df_final, save_to_db, append)
                 final_cols.update(other_cols)
                 if scaler_params:
@@ -635,7 +647,7 @@ class FeatureEngineer:
             raise RuntimeError("合并结果为空——请确认数据库中三周期数据完整！")
 
         if batch_size and batch_size > 0 and all_dfs:
-            df_final, other_cols, scaler_params = self._finalize_batch(all_dfs)
+            df_final, other_cols, scaler_params = self._finalize_batch(all_dfs, use_polars)
             self._write_output(df_final, save_to_db, append)
             final_cols.update(other_cols)
             if scaler_params:
@@ -643,10 +655,25 @@ class FeatureEngineer:
             all_dfs = []
             append = True
         elif not (batch_size and batch_size > 0):
-            df_all = pd.concat(all_dfs, ignore_index=True).replace(
-                [np.inf, -np.inf], np.nan
-            )
-            df_final, other_cols, scaler_params = self._finalize_batch([df_all])
+            if use_polars:
+                try:
+                    import polars as pl
+
+                    df_all_pl = pl.concat([pl.from_pandas(df) for df in all_dfs])
+                    df_all_pl = df_all_pl.replace([float("inf"), float("-inf")], None)
+                    df_all = df_all_pl.to_pandas()
+                except Exception as e:  # pragma: no cover - optional dependency
+                    logger.warning("polars 未安装或初始化失败，回退至 pandas：%s", e)
+                    df_all = pd.concat(all_dfs, ignore_index=True).replace([
+                        np.inf,
+                        -np.inf,
+                    ], np.nan)
+            else:
+                df_all = pd.concat(all_dfs, ignore_index=True).replace([
+                    np.inf,
+                    -np.inf,
+                ], np.nan)
+            df_final, other_cols, scaler_params = self._finalize_batch([df_all], use_polars)
             self._write_output(df_final, save_to_db, append=False)
             final_cols.update(other_cols)
             if scaler_params:
