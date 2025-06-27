@@ -11,9 +11,9 @@ def test_apply_health_check_df_datetime():
     res = apply_health_check_df(df)
     # time 列应保持不变
     assert res['time'].equals(df['time'])
-    # 数值列应被 clip 至 [-1e4, 1e4]
-    assert res['value'].tolist() == [1e4, -1e4]
-    assert res['other'].tolist() == [1e4, -1e4]
+    # 数值列应被软裁剪至约 [-5e3, 5e3]
+    assert res['value'].tolist() == [5000.0, -5000.0]
+    assert res['other'].tolist() == [5000.0, -5000.0]
     # 确保生成 _isnan 标志列
     for c in ['time_isnan', 'value_isnan', 'other_isnan']:
         assert c in res

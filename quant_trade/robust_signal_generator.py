@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
 import joblib
 import numpy as np
-
-def soft_clip(x: float) -> float:
-    """Smoothly limits score to (-1, 1) via tanh."""
-    return float(np.tanh(x))
+from quant_trade.utils.soft_clip import soft_clip
 
 import pandas as pd
 from collections import Counter, deque
@@ -861,7 +858,7 @@ class RobustSignalGenerator:
             prob_down = calibrator_down.transform(prob_down.reshape(-1, 1)).ravel()
         denom = prob_up + prob_down
         ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
-        ai_score = soft_clip(ai_score)
+        ai_score = soft_clip(ai_score, k=1.0)
         if ai_score.size == 1:
             return float(ai_score[0])
         return ai_score
@@ -889,7 +886,7 @@ class RobustSignalGenerator:
         if denom == 0:
             return 0.0
         ai_score = (prob_up - prob_down) / denom
-        return float(np.clip(ai_score, -1.0, 1.0))
+        return float(soft_clip(ai_score, k=1.0))
 
     def get_vol_prediction(self, features, model_dict):
         """根据回归模型预测未来波动率"""
@@ -1918,7 +1915,7 @@ class RobustSignalGenerator:
             confidence_factor += 0.05
         vol_ratio = std_1h.get('vol_ma_ratio_1h')
         tier = None  # 占位，真正 tier 由 compute_position_size 返回
-        fused_score = soft_clip(fused_score)
+        fused_score = soft_clip(fused_score, k=1.0)
         pos_size, direction, tier = self.compute_position_size(
             grad_dir=grad_dir,
             base_coeff=base_coeff,
