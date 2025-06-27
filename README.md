@@ -97,6 +97,16 @@ python param_search.py --method optuna --trials 50
 python backtester.py --recent-days 7
 ```
 
+## 生成离线价位表与缩放参数
+
+同步行情数据后，可运行：
+
+```bash
+python -m quant_trade.offline_price_table
+```
+
+脚本会在 `data/offline_prices/` 下为每个币种导出多周期价位表，同时生成 `price_scaler.json`，后续标准化特征时直接加载即可。
+
 回测中每笔交易的收益率计算为：
 
 ```
