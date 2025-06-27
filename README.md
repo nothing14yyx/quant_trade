@@ -77,6 +77,21 @@ pytest -q tests
 `merge_features(topn=20)`。此外，`data_loader` 区段的 `start` 与 `end`
 参数也可限定日期范围，以减少同步的历史数据行数。
 
+## 风险参数调整
+
+若发现信号过少，可在 `utils/config.yaml` 放宽以下阈值：
+
+```yaml
+risk_adjust:
+  factor: 0.7        # 风险惩罚系数，值越低得分扣减越轻
+  threshold: 0.0     # 调整后的得分必须高于该值才会生成信号
+protection_limits:
+  risk_score: 1.5    # 允许的风险得分上限
+  crowding: 1.05     # 允许的拥挤度上限
+```
+
+修改后重启调度器即可生效。
+
 ## 数据库初始化
 
 执行 `mysql < scripts/init_db.sql` 即可创建所需表格。
