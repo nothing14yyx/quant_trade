@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 import joblib
 import numpy as np
+
+def soft_clip(x: float) -> float:
+    """Smoothly limits score to (-1, 1) via tanh."""
+    return float(np.tanh(x))
+
 import pandas as pd
 from collections import Counter, deque
 from pathlib import Path
@@ -856,7 +861,7 @@ class RobustSignalGenerator:
             prob_down = calibrator_down.transform(prob_down.reshape(-1, 1)).ravel()
         denom = prob_up + prob_down
         ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
-        ai_score = np.clip(ai_score, -1.0, 1.0)
+        ai_score = soft_clip(ai_score)
         if ai_score.size == 1:
             return float(ai_score[0])
         return ai_score
@@ -1913,7 +1918,7 @@ class RobustSignalGenerator:
             confidence_factor += 0.05
         vol_ratio = std_1h.get('vol_ma_ratio_1h')
         tier = None  # 占位，真正 tier 由 compute_position_size 返回
-        fused_score = float(np.clip(fused_score, -1, 1))
+        fused_score = soft_clip(fused_score)
         pos_size, direction, tier = self.compute_position_size(
             grad_dir=grad_dir,
             base_coeff=base_coeff,

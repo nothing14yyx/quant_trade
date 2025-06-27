@@ -1,4 +1,5 @@
 import pytest
+import numpy as np
 from collections import deque
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 
@@ -40,4 +41,5 @@ def test_layer_scores_product():
     feats={'close':100,'atr_pct_1h':0,'adx_1h':0,'funding_rate_1h':0}
     res = rsg.generate_signal(feats, {'atr_pct_4h':0}, {}, symbol='BTC')
     env = res['details']['env']
-    assert env['logic_score'] * env['env_score'] * env['risk_score'] == pytest.approx(res['score'])
+    expected = np.tanh(env['logic_score'] * env['env_score'] * env['risk_score'])
+    assert res['score'] == pytest.approx(expected)
