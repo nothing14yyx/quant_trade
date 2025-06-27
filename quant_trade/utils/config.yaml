@@ -25,7 +25,7 @@ data_loader:
   cache_dir: "data/klines"
   sentiment_cache: "data/sentiment"
   rate_limit_sleep: 0.05   # 每次请求后休息 50ms，1s 20 次 ≪ 2400/min
-  excluded_list: ["BUSDT","NEIROETHUSDT","HUSDT","SAHARAUSDT","RAREUSDT","NEWTUSDT"]
+  excluded_list: ["BUSDT","NEIROETHUSDT","HUSDT","SAHARAUSDT","RAREUSDT"]
 
 feature_engineering:
 #  cache_dir: "quant_trade/data/klines"
@@ -409,7 +409,7 @@ position_coeff:
   low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.05      # 原 dynamic_th_final 的初始值
+  base_th: 0.12      # 原 dynamic_th_final 的初始值
   gamma: 0.05        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
   quantile: 0.80
@@ -436,12 +436,12 @@ regime:
   adx_range: 20
 
 risk_adjust:
-  factor: 0
-  threshold: 0
+  factor: 0.7
+  threshold: 0.1
 
 protection_limits:
-  risk_score: 100
-  crowding: 100
+  risk_score: 1.5
+  crowding: 1.05
 
 max_position: 0.3
 
