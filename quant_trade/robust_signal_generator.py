@@ -324,6 +324,19 @@ class RobustSignalGenerator:
             "weak": cw_cfg.get("weak", 0.8),
             "opposite": cw_cfg.get("opposite", 0.5),
         }
+        regime_cfg = cfg.get("regime", {})
+        self.regime_adx_trend = regime_cfg.get("adx_trend", 25)
+        self.regime_adx_range = regime_cfg.get("adx_range", 20)
+
+        risk_adj_cfg = cfg.get("risk_adjust", {})
+        self.risk_adjust_factor = risk_adj_cfg.get("factor", 0.9)
+        self.risk_adjust_threshold = risk_adj_cfg.get("threshold", 0.1)
+
+        protect_cfg = cfg.get("protection_limits", {})
+        self.risk_score_limit = protect_cfg.get("risk_score", 1.05)
+        self.crowding_limit = protect_cfg.get("crowding", 0.95)
+
+        self.max_position = cfg.get("max_position", 0.3)
         self.th_down_d1 = self.cfg.get("th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
         self.th_window = th_window
@@ -531,6 +544,21 @@ class RobustSignalGenerator:
         if pred_vol is not None:
             th += min(0.1, abs(pred_vol) * 0.5)
         return max(th, 0.30)
+
+    def classify_regime(self, adx, bb_width, channel_pos):
+        """根据ADX和布林带宽度变化判别市场状态"""
+        if adx is None or bb_width is None:
+            return "unknown"
+        try:
+            adx = float(adx)
+            bb_chg = float(bb_width)
+        except Exception:
+            return "unknown"
+        if adx >= self.regime_adx_trend and bb_chg > 0:
+            return "trend"
+        if adx <= self.regime_adx_range and bb_chg < 0:
+            return "range"
+        return "unknown"
 
     def detect_market_regime(self, adx1, adx4, adxd):
         """简易市场状态判别：根据平均ADX判断震荡或趋势"""
@@ -793,8 +821,14 @@ class RobustSignalGenerator:
     ) -> tuple[float, int, float]:
         """Calculate final position size and tier given direction and risk factors."""
 
-        tier = 0.1 + base_coeff * abs(grad_dir)
-        pos_size = tier * confidence_factor * exit_mult
+        tier = base_coeff * abs(grad_dir)
+        base_size = tier
+        def _sigmoid(x):
+            return 1 / (1 + np.exp(-x))
+
+        pos_size = base_size * _sigmoid(confidence_factor) * (1 - risk_score)
+        pos_size *= exit_mult
+        pos_size = min(pos_size, self.max_position)
         pos_size *= crowding_factor
         if direction == 0:
             pos_size = 0.0
@@ -811,9 +845,6 @@ class RobustSignalGenerator:
 
         if vol_p is not None:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
-
-        if risk_score > 3:
-            pos_size *= 0.8
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
         if pos_size < cfg_th_sig.get("min_pos", 0.01):
@@ -1818,6 +1849,12 @@ class RobustSignalGenerator:
             env_score,
             cap=self.risk_score_cap,
         )
+        raw_score = fused_score
+        fused_score = raw_score - self.risk_adjust_factor * risk_score
+        if fused_score < self.risk_adjust_threshold:
+            return None
+        if risk_score > self.risk_score_limit or crowding_factor > self.crowding_limit:
+            return None
         # 所有放大系数后写入历史
         with self._lock:
             cache["history_scores"].append(fused_score)
@@ -1877,6 +1914,13 @@ class RobustSignalGenerator:
             base_th,
             cfg_th_sig.get('gamma', 0.05),
         )
+        st1 = int(np.sign(std_1h.get('supertrend_dir_1h', 0)))
+        st4 = int(np.sign(std_4h.get('supertrend_dir_4h', 0))) if std_4h else 0
+        stdir = int(np.sign(std_d1.get('supertrend_dir_d1', 0))) if std_d1 else 0
+        gd = int(np.sign(grad_dir))
+        if all(v != 0 for v in (st1, st4, stdir)):
+            if not (st1 == gd == st4 == stdir):
+                return None
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
 
         if self._cooldown > 0:
