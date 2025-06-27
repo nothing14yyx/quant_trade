@@ -43,6 +43,15 @@ DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
 DEFAULT_LOW_VOL_RATIO = 0.3   # 低量能阈值
 
 
+def robust_signal_generator(model, *args, **kwargs):
+    """Safely call ``model.generate_signal`` and catch common errors."""
+    try:
+        return model.generate_signal(*args, **kwargs)
+    except (ValueError, KeyError, TypeError) as e:
+        logger.warning("generate_signal failed: %s", e)
+        return None
+
+
 def softmax(x):
     """简单 softmax 实现"""
     arr = np.array(x, dtype=float)

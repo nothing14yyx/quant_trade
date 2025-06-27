@@ -203,7 +203,13 @@ def calc_support_resistance(
     return df
 
 
-def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
+def calc_features_raw(
+    df: pd.DataFrame,
+    period: str,
+    *,
+    symbol: str | None = None,
+    long_window: int = 30,
+) -> pd.DataFrame | None:
     df.index = pd.to_datetime(df.index, errors="coerce")
     df = df[~df.index.isna()]
     df = df.sort_index()
@@ -216,6 +222,10 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
     feats.sort_index(inplace=True)
     for col in ["open", "high", "low", "close", "volume"]:
         feats[col] = np.full(len(feats), np.nan, dtype="float64")
+
+    if symbol is not None and len(feats) < long_window:
+        logger.warning("%s < %s rows -> skip", symbol, long_window)
+        return None
 
     def _check_index(name: str):
         if not feats.index.is_monotonic_increasing:
@@ -433,12 +443,9 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
         feats["volume"] / sma_vol_short.replace(0, np.nan),
     )
     _check_index("sma_vol_long")
-    sma_vol_long = _safe_ta(ta.sma, feats["volume"], length=30, index=df.index).iloc[:, 0]
-    assign_safe(
-        feats,
-        f"vol_ma_ratio_long_{period}",
-        feats["volume"] / sma_vol_long.replace(0, np.nan),
-    )
+    sma_vol_long = feats["volume"].rolling(long_window, min_periods=1).mean()
+    vol_ma_ratio_long = feats["volume"].div(sma_vol_long).fillna(0)
+    assign_safe(feats, f"vol_ma_ratio_long_{period}", vol_ma_ratio_long)
 
     if "taker_buy_base" in df:
         buy_vol = pd.to_numeric(df["taker_buy_base"], errors="coerce")
@@ -589,6 +596,12 @@ def calc_features_raw(df: pd.DataFrame, period: str) -> pd.DataFrame:
             f"volume_cg_ratio_{period}",
             feats["volume"] / cg_tv.replace(0, np.nan),
         )
+
+    if symbol is not None:
+        null_ratio = feats.isnull().all(axis=1).mean()
+        if null_ratio > 0.5:
+            logger.warning("%s too many NaN rows -> skip", symbol)
+            return None
 
     return feats
 
