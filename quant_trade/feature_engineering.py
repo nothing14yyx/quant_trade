@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-import polars
+import polars as pl
 import numpy as np
 import pandas as pd
 import yaml
@@ -407,8 +407,6 @@ class FeatureEngineer:
     ) -> tuple[pd.DataFrame, list[str], dict | None]:
         if use_polars:
             try:
-                import polars as pl
-
                 df_all_pl = pl.concat([pl.from_pandas(df) for df in dfs])
                 df_all_pl = df_all_pl.replace([float("inf"), float("-inf")], None)
                 df_all = df_all_pl.to_pandas()
@@ -658,8 +656,6 @@ class FeatureEngineer:
         elif not (batch_size and batch_size > 0):
             if use_polars:
                 try:
-                    import polars as pl
-
                     df_all_pl = pl.concat([pl.from_pandas(df) for df in all_dfs])
                     df_all_pl = df_all_pl.replace([float("inf"), float("-inf")], None)
                     df_all = df_all_pl.to_pandas()

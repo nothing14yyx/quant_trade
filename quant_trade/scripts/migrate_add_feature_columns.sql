@@ -36,3 +36,5 @@ ALTER TABLE features ADD COLUMN IF NOT EXISTS channel_pos_d1 DOUBLE;
 ALTER TABLE features ADD COLUMN IF NOT EXISTS channel_pos_1h_isnan TINYINT;
 ALTER TABLE features ADD COLUMN IF NOT EXISTS channel_pos_4h_isnan TINYINT;
 ALTER TABLE features ADD COLUMN IF NOT EXISTS channel_pos_d1_isnan TINYINT;
+ALTER TABLE 'features' ADD COLUMN IF NOT EXISTS ichimoku_cloud_thickness_d1 DOUBLE;
+ALTER TABLE 'features' ADD COLUMN IF NOT EXISTS ichimoku_cloud_thickness_d1_isnan TINYINT;
