@@ -902,7 +902,8 @@ class RobustSignalGenerator:
         def _sigmoid(x):
             return 1 / (1 + np.exp(-x))
 
-        pos_size = base_size * _sigmoid(confidence_factor) * max(0.0, 1 - risk_score)
+        risk_factor = 1.0 / (1.0 + risk_score)
+        pos_size = base_size * _sigmoid(confidence_factor) * risk_factor
         pos_size *= exit_mult
         pos_size = min(pos_size, self.max_position)
         pos_size *= crowding_factor
