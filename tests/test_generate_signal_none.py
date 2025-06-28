@@ -1,6 +1,7 @@
 import pandas as pd
 
 import quant_trade.generate_signal_from_db as gsdb
+import quant_trade.utils.db as db
 
 
 class DummySG:
@@ -20,12 +21,14 @@ def test_main_handles_none(monkeypatch, capsys):
         "close": [1.0],
     })
 
-    monkeypatch.setattr(gsdb, "load_config", lambda path=gsdb.CONFIG_PATH: {
+    monkeypatch.setattr(db, "load_config", lambda path=db.CONFIG_PATH: {
         "mysql": {},
         "feature_engineering": {"scaler_path": ""},
         "models": {},
     })
-    monkeypatch.setattr(gsdb, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(db, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(gsdb, "load_config", db.load_config)
+    monkeypatch.setattr(gsdb, "connect_mysql", db.connect_mysql)
     monkeypatch.setattr(gsdb, "load_latest_klines", lambda *a, **k: df)
     monkeypatch.setattr(gsdb, "load_scaler_params_from_json", lambda p: {})
     monkeypatch.setattr(gsdb, "load_global_metrics", lambda *a, **k: {})

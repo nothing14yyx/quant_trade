@@ -14,11 +14,10 @@ from quant_trade.backtester import (
     FEATURE_COLS_4H,
     FEATURE_COLS_D1,
     MODEL_PATHS,
-    load_config,
-    connect_mysql,
     convert_model_paths,
     simulate_trades,
 )
+from quant_trade.utils.db import load_config, connect_mysql
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
