@@ -232,6 +232,13 @@ class RobustSignalGenerator:
             "close_vs_pivot_d1",
             "close_vs_vpoc_d1",
         ],
+        "15m": [
+            "rsi_15m",
+            "macd_hist_15m",
+            "ema_diff_15m",
+            "vol_ma_ratio_long_15m",
+            "boll_perc_15m",
+        ],
     }
 
     DELTA_PARAMS = {
@@ -297,7 +304,7 @@ class RobustSignalGenerator:
         self.feature_cols_4h = feature_cols_4h
         self.feature_cols_d1 = feature_cols_d1
         # 缓存标准化特征列索引，减少 DataFrame 查找开销
-        self._std_index_cache = {p: None for p in ("1h", "4h", "d1")}
+        self._std_index_cache = {p: None for p in ("15m", "1h", "4h", "d1")}
 
         cfg = {}
         path = Path(config_path)
@@ -476,7 +483,7 @@ class RobustSignalGenerator:
             setattr(self, name, 0)
             return 0
         if name == "_prev_raw":
-            val = {p: None for p in ("1h", "4h", "d1")}
+            val = {p: None for p in ("15m", "1h", "4h", "d1")}
             setattr(self, name, val)
             return val
         if name == "core_keys":
@@ -503,6 +510,7 @@ class RobustSignalGenerator:
             return False
         if name == "_raw_history":
             val = {
+                "15m": deque(maxlen=4),
                 "1h": deque(maxlen=4),
                 "4h": deque(maxlen=2),
                 "d1": deque(maxlen=2),
@@ -763,11 +771,12 @@ class RobustSignalGenerator:
                     "history_scores": deque(maxlen=self.history_scores.maxlen),
                     "oi_change_history": deque(maxlen=self.oi_change_history.maxlen),
                     "_raw_history": {
+                        "15m": deque(maxlen=4),
                         "1h": deque(maxlen=4),
                         "4h": deque(maxlen=2),
                         "d1": deque(maxlen=2),
                     },
-                    "_prev_raw": {p: None for p in ("1h", "4h", "d1")},
+                    "_prev_raw": {p: None for p in ("15m", "1h", "4h", "d1")},
                 }
             return self.symbol_data[symbol]
 
@@ -1575,10 +1584,12 @@ class RobustSignalGenerator:
         features_1h,
         features_4h,
         features_d1,
+        features_15m=None,
         all_scores_list=None,
         raw_features_1h=None,
         raw_features_4h=None,
         raw_features_d1=None,
+        raw_features_15m=None,
         *,
         global_metrics=None,
         open_interest=None,
@@ -1590,10 +1601,12 @@ class RobustSignalGenerator:
             - features_1h: dict，当前 1h 周期特征（Robust Z 标准化）
             - features_4h: dict，当前 4h 周期特征（Robust Z 标准化）
             - features_d1: dict，当前 d1 周期特征（Robust Z 标准化）
+            - features_15m: dict，可选，15分钟周期特征，用于确认方向
             - all_scores_list: list，可选，当前所有币种的 fused_score 列表，用于极端行情保护
             - raw_features_1h: dict，可选，未标准化的 1h 原始特征
             - raw_features_4h: dict，可选，未标准化的 4h 原始特征
             - raw_features_d1: dict，可选，未标准化的 d1 原始特征
+            - raw_features_15m: dict，可选，未标准化的 15m 原始特征
             - order_book_imbalance: float，可选，L2 Order Book 的买卖盘差值比
             - symbol: str，可选，当前币种，如 'BTCUSDT'
         输出：
@@ -1606,9 +1619,11 @@ class RobustSignalGenerator:
         features_1h = self._normalize_features(features_1h, "1h")
         features_4h = self._normalize_features(features_4h, "4h")
         features_d1 = self._normalize_features(features_d1, "d1")
+        features_15m = self._normalize_features(features_15m or {}, "15m")
         raw_features_1h = self._normalize_features(raw_features_1h or {}, "1h")
         raw_features_4h = self._normalize_features(raw_features_4h or {}, "4h")
         raw_features_d1 = self._normalize_features(raw_features_d1 or {}, "d1")
+        raw_features_15m = self._normalize_features(raw_features_15m or {}, "15m")
 
         ob_imb = (
             order_book_imbalance
@@ -1619,16 +1634,22 @@ class RobustSignalGenerator:
         std_1h = features_1h or {}
         std_4h = features_4h or {}
         std_d1 = features_d1 or {}
+        std_15m = features_15m or {}
         raw_f1h = raw_features_1h or {}
         raw_f4h = raw_features_4h or {}
         raw_fd1 = raw_features_d1 or {}
-        raw_dict = {'1h': raw_f1h, '4h': raw_f4h, 'd1': raw_fd1}
+        raw_f15m = raw_features_15m or {}
+        raw_dict = {'15m': raw_f15m, '1h': raw_f1h, '4h': raw_f4h, 'd1': raw_fd1}
 
         ts = (
             raw_features_1h.get('ts')
             or raw_features_1h.get('timestamp')
+            or raw_features_15m.get('ts')
+            or raw_features_15m.get('timestamp')
             or features_1h.get('ts')
             or features_1h.get('timestamp')
+            or features_15m.get('ts')
+            or features_15m.get('timestamp')
         )
 
         cache = self._get_symbol_cache(symbol)
@@ -1648,6 +1669,7 @@ class RobustSignalGenerator:
 
         deltas = {}
         for p, feats, keys in [
+            ("15m", std_15m, self.core_keys.get("15m", [])),
             ("1h", std_1h, self.core_keys["1h"]),
             ("4h", std_4h, self.core_keys["4h"]),
             ("d1", std_d1, self.core_keys["d1"]),
@@ -1855,16 +1877,31 @@ class RobustSignalGenerator:
             elif short_mom > 0 or ob_imb > 0:
                 fused_score *= 0.9
 
+        confirm_15m = 0.0
+        if std_15m:
+            rsi15 = std_15m.get('rsi_15m')
+            ema15 = std_15m.get('ema_diff_15m')
+            if rsi15 is not None:
+                confirm_15m += (float(rsi15) - 50) / 50
+            if ema15 is not None:
+                confirm_15m += np.tanh(float(ema15) * 5)
+            confirm_15m /= 2
+            if fused_score > 0 and confirm_15m < -0.1:
+                fused_score *= 0.85
+            elif fused_score < 0 and confirm_15m > 0.1:
+                fused_score *= 0.85
+
         # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
             logging.debug("Fused score NaN, returning 0 signal")
             self._last_score = fused_score
             with self._lock:
+                self._prev_raw["15m"] = std_15m
                 self._prev_raw["1h"] = std_1h
                 self._prev_raw["4h"] = std_4h
                 self._prev_raw["d1"] = std_d1
-                for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                    maxlen = 4 if p == "1h" else 2
+                for p, raw in [("15m", raw_f15m), ("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+                    maxlen = 4 if p in ("15m", "1h") else 2
                     self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
             self._last_signal = 0
             self._cooldown = 0
@@ -1890,6 +1927,7 @@ class RobustSignalGenerator:
                     'drawdown_pred_4h': drawdown_preds.get('4h'),
                     'drawdown_pred_d1': drawdown_preds.get('d1'),
                     'funding_conflicts': 0,
+                    'confirm_15m': confirm_15m,
                     'note': 'fused_score was NaN'
                 }
             }
@@ -2207,11 +2245,12 @@ class RobustSignalGenerator:
             self._last_signal = int(np.sign(direction)) if direction else 0
             self._last_score = fused_score
             self._prev_vote = vote
+            cache["_prev_raw"]["15m"] = std_15m
             cache["_prev_raw"]["1h"] = std_1h
             cache["_prev_raw"]["4h"] = std_4h
             cache["_prev_raw"]["d1"] = std_d1
-            for p, raw in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                maxlen = 4 if p == "1h" else 2
+            for p, raw in [("15m", raw_f15m), ("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+                maxlen = 4 if p in ("15m", "1h") else 2
                 cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
 
         # 移除票数开仓限制，使投票只在分数层面生效
@@ -2259,6 +2298,7 @@ class RobustSignalGenerator:
             'consensus_4d1': consensus_4d1,
             'oversold_reversal': oversold_reversal,
             'conflict_filter_triggered': conflict_filter_triggered,
+            'confirm_15m': confirm_15m,
         }
         final_details.update(local_details)
 
