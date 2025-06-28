@@ -164,7 +164,7 @@ def fused_to_risk(
     cap: float = 5.0,
 ) -> float:
     """按安全分母计算并限制 risk score"""
-    denom = max(abs(logic_score) + abs(env_score), 1e-6)
+    denom = max(abs(logic_score), 1e-6)
     risk = abs(fused_score) / denom
     return min(risk, cap)
 
@@ -2192,23 +2192,14 @@ class RobustSignalGenerator:
             or local_details.get('strong_confirm_4h', False)
         )
 
-        # ---------- FINAL DIRECTION & SIZE FIX -------------
-        weak = abs(fused_score) < 0.05
-        if weak and (not strong_confirm or align_count < 1):
-            direction = 0
-        else:
-            direction = -1 if fused_score < 0 else 1
-
-        base_size = tier
-
-        def sigmoid(x: float) -> float:
-            return 1 / (1 + math.exp(-x))
-
-        pos_size = (
-            base_size * sigmoid(confidence_factor) * max(0.0, 1 - risk_score)
-        )
-        if direction != 0 and pos_size < self.signal_params.min_pos:
-            pos_size = self.signal_params.min_pos
+        score_raw = logic_score * env_score * risk_score
+        score_raw -= self.risk_adjust_factor * risk_score
+        vote_sign = int(np.sign(vote))
+        if vote_sign != 0 and np.sign(score_raw) != vote_sign:
+            strong_min = max(self.vote_params.get('strong_min', 1), 1)
+            penalty = abs(vote) / strong_min
+            score_raw *= 0.5 ** penalty
+        final_score = float(np.tanh(score_raw))
 
         # ===== 14. 最终返回 =====
         with self._lock:
@@ -2284,13 +2275,14 @@ class RobustSignalGenerator:
             int(oversold_reversal),
             int(conflict_filter_triggered),
         )
+
         return {
-            "symbol": symbol,
-            "timestamp": ts,
-            "direction": int(math.copysign(1, fused_score)),
-            "pos_size": round(pos_size, 4),
-            "fused": round(fused_score, 4),
-            "risk": round(risk_score, 3),
+            "signal": int(direction),
+            "score": final_score,
+            "position_size": float(round(pos_size, 4)),
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+            "details": final_details,
         }
 
 
