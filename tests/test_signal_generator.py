@@ -3,6 +3,7 @@ import pytest
 
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.data_loader import compute_vix_proxy
+from quant_trade.robust_signal_generator import SignalThresholdParams
 
 
 def test_compute_tp_sl():
@@ -41,18 +42,19 @@ def test_dynamic_threshold_multi_period():
     rsg = make_dummy_rsg()
     th1, _ = rsg.dynamic_threshold(0.02, 25)
     th2, _ = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25)
-    th3, _ = rsg.dynamic_threshold(0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25)
+    th3, _ = rsg.dynamic_threshold(
+        0.02, 25, atr_4h=0.01, adx_4h=25, atr_d1=0.01, adx_d1=25
+    )
 
-    assert th1 == pytest.approx(0.20)
-    assert th2 == pytest.approx(0.20)
-    assert th3 == pytest.approx(0.20)
+    assert th2 > th1
+    assert th3 >= th2
 
 
 def test_dynamic_threshold_with_vix():
     rsg = make_dummy_rsg()
     base_th, _ = rsg.dynamic_threshold(0.02, 25)
     th, _ = rsg.dynamic_threshold(0.02, 25, vix_proxy=1.0)
-    assert th == base_th
+    assert th > base_th
 
 
 def test_dynamic_threshold_with_computed_vix():
@@ -60,28 +62,30 @@ def test_dynamic_threshold_with_computed_vix():
     proxy = compute_vix_proxy(0.02, 0.04)
     base_th, _ = rsg.dynamic_threshold(0.02, 25)
     th, _ = rsg.dynamic_threshold(0.02, 25, vix_proxy=proxy)
-    assert th == base_th
+    assert th > base_th
 
 
 def test_dynamic_threshold_recovery():
     rsg = make_dummy_rsg()
     rsg.th_window = 50
-    rsg.history_scores.extend([5.0] * 120)
-    th_high, _ = rsg.dynamic_threshold(0, 0, 0)
-    assert th_high == pytest.approx(0.08)
+    rsg.history_scores.extend([0.5] * 60)
+    th_high, _ = rsg.dynamic_threshold(0, 0, 0, history_scores=rsg.history_scores)
+    assert th_high > 0.08
     for _ in range(60):
-        rsg.history_scores.append(0.1)
-    th_normal, _ = rsg.dynamic_threshold(0, 0, 0)
-    assert th_normal == pytest.approx(0.08)
+        rsg.history_scores.append(0.05)
+    th_normal, _ = rsg.dynamic_threshold(0, 0, 0, history_scores=rsg.history_scores)
+    assert th_normal < th_high
+    assert th_normal >= 0.08
 
 
 def test_dynamic_threshold_quantile_setting():
     rsg = make_dummy_rsg()
     rsg.history_scores.extend(np.linspace(0, 1, 200))
-    th_default, _ = rsg.dynamic_threshold(0, 0, 0)
+    th_default, _ = rsg.dynamic_threshold(0, 0, 0, history_scores=rsg.history_scores)
     rsg.signal_threshold_cfg['quantile'] = 0.60
-    th_lower, _ = rsg.dynamic_threshold(0, 0, 0)
-    assert th_lower == pytest.approx(th_default)
+    rsg.signal_params = SignalThresholdParams.from_cfg(rsg.signal_threshold_cfg)
+    th_lower, _ = rsg.dynamic_threshold(0, 0, 0, history_scores=rsg.history_scores)
+    assert th_lower < th_default
 
 
 def test_consensus_check():
@@ -537,11 +541,20 @@ def test_ma_cross_logic_overbought_threshold():
 
 def test_dynamic_threshold_regime():
     rsg = make_dummy_rsg()
-    base = rsg.dynamic_threshold(0.02, 25)
-    th_trend = rsg.dynamic_threshold(0.02, 25, regime='trend')
-    th_range = rsg.dynamic_threshold(0.02, 25, regime='range')
-    assert th_trend == base
-    assert th_range == base
+    base, rb = rsg.dynamic_threshold(0.02, 25)
+    th_trend, rb_t = rsg.dynamic_threshold(0.02, 25, regime='trend')
+    th_range, rb_r = rsg.dynamic_threshold(0.02, 25, regime='range')
+    assert th_trend > base
+    assert th_range < base
+    assert rb_t < rb
+    assert rb_r > rb
+
+
+def test_dynamic_threshold_reversal():
+    rsg = make_dummy_rsg()
+    th, _ = rsg.dynamic_threshold(0.02, 25)
+    th_rev, _ = rsg.dynamic_threshold(0.02, 25, reversal=True)
+    assert th_rev < th
 
 
 def test_order_book_momentum_threshold():
