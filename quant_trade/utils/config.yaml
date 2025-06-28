@@ -441,7 +441,7 @@ regime:
 
 risk_adjust:
   factor: 0.6
-risk_adjust_threshold: 0.05
+risk_adjust_threshold: 0.00
 
 protection_limits:
   risk_score: 1.5
