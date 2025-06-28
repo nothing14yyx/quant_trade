@@ -114,6 +114,7 @@ class Scheduler:
         # 启动时同步资金费率
         self.safe_call(self.update_funding_rates, self.symbols)
         self.safe_call(self.update_daily_data, self.symbols)
+        self.safe_call(self.update_features)
         self.safe_call(self.update_ic_scores_from_db)
         self.safe_call(self.generate_signals, self.symbols)
         self.next_ic_update = self._calc_next_ic_update(datetime.now(UTC))
@@ -315,13 +316,7 @@ class Scheduler:
             tasks.append(
                 self.executor.submit(self.safe_call, self.update_klines, self.symbols, "15m")
             )
-        if now >= self.next_ic_update:
-            tasks.append(
-                self.executor.submit(
-                    self.safe_call, self.update_ic_scores_from_db
-                )
-            )
-            self.next_ic_update = self._calc_next_ic_update(now)
+        ic_update_due = now >= self.next_ic_update
 
         if minute == 0:
             tasks.append(
@@ -350,11 +345,20 @@ class Scheduler:
                 self.safe_call(self.update_daily_data, self.symbols)
                 self.safe_call(self.update_features)
             update_future.result()
+            if ic_update_due:
+                if now.hour != 0:
+                    self.safe_call(self.update_features)
+                self.safe_call(self.update_ic_scores_from_db)
+                self.next_ic_update = self._calc_next_ic_update(now)
             tasks.append(
                 self.executor.submit(
                     self.safe_call, self.generate_signals, self.symbols
                 )
             )
+        elif ic_update_due:
+            self.safe_call(self.update_features)
+            self.safe_call(self.update_ic_scores_from_db)
+            self.next_ic_update = self._calc_next_ic_update(now)
 
         for f in tasks:
             try:
