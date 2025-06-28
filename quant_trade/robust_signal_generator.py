@@ -1604,6 +1604,655 @@ class RobustSignalGenerator:
         )
         return fused_score, consensus_all, consensus_14, consensus_4d1
 
+    # ===== 新增私有方法 =====
+    def _normalize_inputs(
+        self,
+        features_1h,
+        features_4h,
+        features_d1,
+        features_15m=None,
+        raw_features_1h=None,
+        raw_features_4h=None,
+        raw_features_d1=None,
+        raw_features_15m=None,
+    ):
+        """规范化输入特征与原始特征"""
+        f1h = self._normalize_features(features_1h, "1h")
+        f4h = self._normalize_features(features_4h, "4h")
+        fd1 = self._normalize_features(features_d1, "d1")
+        f15m = self._normalize_features(features_15m or {}, "15m")
+
+        r1h = self._normalize_features(raw_features_1h or {}, "1h")
+        r4h = self._normalize_features(raw_features_4h or {}, "4h")
+        rd1 = self._normalize_features(raw_features_d1 or {}, "d1")
+        r15m = self._normalize_features(raw_features_15m or {}, "15m")
+
+        return f1h, f4h, fd1, f15m, r1h, r4h, rd1, r15m
+
+    def _compute_ai_scores(self, std_1h, std_4h, std_d1, raw_fd1):
+        """封装 AI 模型推理与校准"""
+        ai_scores: dict[str, float] = {}
+        vol_preds: dict[str, float | None] = {}
+        rise_preds: dict[str, float | None] = {}
+        drawdown_preds: dict[str, float | None] = {}
+
+        for p, feats in [("1h", std_1h), ("4h", std_4h), ("d1", std_d1)]:
+            models_p = self.models.get(p, {})
+            if "cls" in models_p and "up" not in models_p:
+                ai_scores[p] = self.get_ai_score_cls(feats, models_p["cls"])
+            else:
+                cal_up = self.calibrators.get(p, {}).get("up")
+                cal_down = self.calibrators.get(p, {}).get("down")
+                if cal_up is None and cal_down is None:
+                    ai_scores[p] = self.get_ai_score(
+                        feats,
+                        models_p["up"],
+                        models_p["down"],
+                    )
+                else:
+                    ai_scores[p] = self.get_ai_score(
+                        feats,
+                        models_p["up"],
+                        models_p["down"],
+                        cal_up,
+                        cal_down,
+                    )
+            if "vol" in models_p:
+                vol_preds[p] = self.get_vol_prediction(feats, models_p["vol"])
+            if "rise" in models_p:
+                rise_preds[p] = self.get_reg_prediction(feats, models_p["rise"])
+            if "drawdown" in models_p:
+                drawdown_preds[p] = self.get_reg_prediction(
+                    feats, models_p["drawdown"]
+                )
+
+        oversold_reversal = False
+        rsi = raw_fd1.get("rsi_d1", 50)
+        cci = raw_fd1.get("cci_d1", 0)
+        if rsi < 25 or cci < -100 or rsi > 75 or cci > 100:
+            ai_scores["d1"] *= 0.7
+            oversold_reversal = True
+
+        if ai_scores.get("d1", 0) < 0 and abs(ai_scores["d1"]) < self.th_down_d1:
+            ai_scores["d1"] = 0.0
+
+        return ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal
+
+    def _compute_factor_scores(
+        self,
+        ai_scores: dict,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        std_15m: dict,
+        raw_dict: dict,
+        deltas: dict,
+        rise_preds: dict,
+        drawdown_preds: dict,
+        vol_preds: dict,
+        global_metrics: dict | None,
+        open_interest: dict | None,
+        ob_imb,
+        symbol: str | None,
+    ):
+        """计算多因子得分并输出相关中间结果"""
+        fs = {
+            "1h": self.get_factor_scores(std_1h, "1h"),
+            "4h": self.get_factor_scores(std_4h, "4h"),
+            "d1": self.get_factor_scores(std_d1, "d1"),
+        }
+
+        with self._lock:
+            weights = self.current_weights.copy()
+
+        scores = self.calc_factor_scores(ai_scores, fs, weights)
+
+        scores, local_details = self.apply_local_adjustments(
+            scores,
+            raw_dict,
+            fs,
+            deltas,
+            rise_preds.get("1h"),
+            drawdown_preds.get("1h"),
+        )
+
+        ic_periods = {
+            "1h": self.ic_scores.get("1h", 1.0),
+            "4h": self.ic_scores.get("4h", 1.0),
+            "d1": self.ic_scores.get("d1", 1.0),
+        }
+        w1, w4, wd = self.get_ic_period_weights(ic_periods)
+
+        fused_score, consensus_all, consensus_14, consensus_4d1 = self.fuse_multi_cycle(
+            scores,
+            (w1, w4, wd),
+            local_details.get("strong_confirm_4h", False),
+        )
+
+        raw_1h = raw_dict.get("1h", {})
+        if raw_1h.get("break_resistance_1h"):
+            fused_score *= 1.12
+            local_details["breakout_boost"] = 0.12
+
+        logic_score = fused_score
+        env_score = 1.0
+        risk_score = 1.0
+
+        if global_metrics is not None:
+            dom = global_metrics.get("btc_dom_chg")
+            if "btc_dominance" in global_metrics:
+                self.btc_dom_history.append(global_metrics["btc_dominance"])
+                if len(self.btc_dom_history) >= 5:
+                    short = np.mean(list(self.btc_dom_history)[-5:])
+                    long = np.mean(self.btc_dom_history)
+                    dom_diff = (short - long) / long if long else 0
+                    if dom is None:
+                        dom = dom_diff
+                    else:
+                        dom += dom_diff
+            if dom is not None:
+                if symbol and str(symbol).upper().startswith("BTC"):
+                    fused_score *= 1 + 0.1 * dom
+                else:
+                    fused_score *= 1 - 0.1 * dom
+
+            eth_dom = global_metrics.get("eth_dom_chg")
+            if "eth_dominance" in global_metrics:
+                if not hasattr(self, "eth_dom_history"):
+                    self.eth_dom_history = deque(maxlen=500)
+                self.eth_dom_history.append(global_metrics["eth_dominance"])
+                if len(self.eth_dom_history) >= 5:
+                    short_e = np.mean(list(self.eth_dom_history)[-5:])
+                    long_e = np.mean(self.eth_dom_history)
+                    dom_diff_e = (short_e - long_e) / long_e if long_e else 0
+                    if eth_dom is None:
+                        eth_dom = dom_diff_e
+                    else:
+                        eth_dom += dom_diff_e
+            if eth_dom is not None:
+                if symbol and str(symbol).upper().startswith("ETH"):
+                    fused_score *= 1 + 0.1 * eth_dom
+                else:
+                    fused_score *= 1 + 0.05 * eth_dom
+            btc_mcap = global_metrics.get("btc_mcap_growth")
+            alt_mcap = global_metrics.get("alt_mcap_growth")
+            mcap_g = global_metrics.get("mcap_growth")
+            if symbol and str(symbol).upper().startswith("BTC"):
+                base_mcap = btc_mcap if btc_mcap is not None else mcap_g
+            else:
+                base_mcap = alt_mcap if alt_mcap is not None else mcap_g
+            if base_mcap is not None:
+                fused_score *= 1 + 0.1 * base_mcap
+            vol_c = global_metrics.get("vol_chg")
+            if vol_c is not None:
+                fused_score *= 1 + 0.05 * vol_c
+            hot = global_metrics.get("hot_sector_strength")
+            if hot is not None:
+                corr = global_metrics.get("sector_corr")
+                if corr is None:
+                    hot_name = global_metrics.get("hot_sector")
+                    if hot_name and symbol:
+                        cats = self.symbol_categories.get(str(symbol).upper())
+                        if cats:
+                            if isinstance(cats, str):
+                                cats = [c.strip() for c in cats.split(',') if c.strip()]
+                            corr = 1.0 if hot_name in cats else 0.0
+                if corr is None:
+                    corr = 1.0
+                fused_score *= 1 + 0.05 * hot * corr
+
+        env_score = fused_score / logic_score if logic_score != 0 else 1.0
+        oi_overheat = False
+        th_oi = None
+        oi_chg = None
+        if open_interest is not None:
+            oi_chg = open_interest.get("oi_chg")
+            if oi_chg is not None:
+                with self._lock:
+                    cache = self._get_symbol_cache(symbol)
+                    cache["oi_change_history"].append(oi_chg)
+                th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_preds.get("1h"))
+                fused_score, oi_overheat = self.apply_oi_overheat_protection(
+                    fused_score, oi_chg, th_oi
+                )
+
+        mom5 = std_1h.get("mom_5m_roll1h")
+        mom15 = std_1h.get("mom_15m_roll1h")
+        mom_vals = [v for v in (mom5, mom15) if v is not None]
+        short_mom = float(np.nanmean(mom_vals)) if mom_vals else 0.0
+        if np.isnan(short_mom):
+            short_mom = 0.0
+
+        ob_imb = 0.0 if ob_imb is None or np.isnan(ob_imb) else float(ob_imb)
+
+        if fused_score > 0:
+            if short_mom > 0 and ob_imb > 0:
+                fused_score *= 1.1
+            elif short_mom < 0 or ob_imb < 0:
+                fused_score *= 0.9
+        elif fused_score < 0:
+            if short_mom < 0 and ob_imb < 0:
+                fused_score *= 1.1
+            elif short_mom > 0 or ob_imb > 0:
+                fused_score *= 0.9
+
+        confirm_15m = 0.0
+        if std_15m:
+            rsi15 = std_15m.get("rsi_15m")
+            ema15 = std_15m.get("ema_diff_15m")
+            if rsi15 is not None:
+                confirm_15m += (float(rsi15) - 50) / 50
+            if ema15 is not None:
+                confirm_15m += np.tanh(float(ema15) * 5)
+            confirm_15m /= 2
+            if fused_score > 0 and confirm_15m < -0.1:
+                fused_score *= 0.85
+            elif fused_score < 0 and confirm_15m > 0.1:
+                fused_score *= 0.85
+
+        return {
+            "fused_score": fused_score,
+            "logic_score": logic_score,
+            "env_score": env_score,
+            "risk_score": risk_score,
+            "fs": fs,
+            "scores": scores,
+            "local_details": local_details,
+            "consensus_all": consensus_all,
+            "consensus_14": consensus_14,
+            "consensus_4d1": consensus_4d1,
+            "short_mom": short_mom,
+            "ob_imb": ob_imb,
+            "confirm_15m": confirm_15m,
+            "oi_overheat": oi_overheat,
+            "th_oi": th_oi,
+            "oi_chg": oi_chg,
+        }
+
+    def _apply_risk_filters(
+        self,
+        fused_score: float,
+        logic_score: float,
+        env_score: float,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        raw_f1h: dict,
+        raw_f4h: dict,
+        raw_fd1: dict,
+        vol_preds: dict,
+        open_interest: dict | None,
+        all_scores_list: list | None,
+        rev_dir: int,
+        cache: dict,
+        global_metrics: dict | None,
+        features_1h: dict,
+        features_4h: dict,
+        features_d1: dict,
+        symbol: str | None,
+    ):
+        """执行风险限制与拥挤度检查"""
+        atr_1h = features_1h.get("atr_pct_1h", 0)
+        adx_1h = features_1h.get("adx_1h", 0)
+        funding_1h = features_1h.get("funding_rate_1h", 0) or 0
+
+        atr_4h = features_4h.get("atr_pct_4h", 0) if features_4h else None
+        adx_4h = features_4h.get("adx_4h", 0) if features_4h else None
+        atr_d1 = features_d1.get("atr_pct_d1", 0) if features_d1 else None
+        adx_d1 = features_d1.get("adx_d1", 0) if features_d1 else None
+
+        vix_p = None
+        if global_metrics is not None:
+            vix_p = global_metrics.get("vix_proxy")
+        if vix_p is None and open_interest is not None:
+            vix_p = open_interest.get("vix_proxy")
+
+        regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
+        if std_d1.get("break_support_d1") == 1 and std_d1.get("rsi_d1", 50) < 30:
+            regime = "range"
+            rev_dir = 1
+        cfg_th = self.signal_threshold_cfg
+        base_th, rev_boost = self.dynamic_threshold(
+            atr_1h,
+            adx_1h,
+            funding_1h,
+            atr_4h=atr_4h,
+            adx_4h=adx_4h,
+            atr_d1=atr_d1,
+            adx_d1=adx_d1,
+            pred_vol=vol_preds.get("1h"),
+            pred_vol_4h=vol_preds.get("4h"),
+            pred_vol_d1=vol_preds.get("d1"),
+            vix_proxy=vix_p,
+            regime=regime,
+            base=cfg_th.get("base_th", 0.08),
+            reversal=bool(rev_dir),
+            history_scores=cache["history_scores"],
+        )
+        if rev_dir != 0:
+            fused_score += rev_boost * rev_dir
+            self._cooldown = 0
+
+        funding_conflicts = 0
+        for p, raw_f in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+            if raw_f is None:
+                continue
+            f_rate = raw_f.get(f"funding_rate_{p}", 0)
+            if abs(f_rate) > 0.0005 and np.sign(f_rate) * np.sign(fused_score) < 0:
+                penalty = min(abs(f_rate) * 20, 0.20)
+                fused_score *= 1 - penalty
+                funding_conflicts += 1
+        if funding_conflicts >= 2:
+            fused_score *= 0.85 ** funding_conflicts
+
+        crowding_factor = 1.0
+        if not cache.get("oi_overheat") and all_scores_list is not None:
+            crowding_factor = self.crowding_protection(all_scores_list, fused_score, base_th)
+            fused_score *= crowding_factor
+        th_oi = cache.get("th_oi")
+        oi_chg = cache.get("oi_chg")
+        if th_oi is not None and oi_chg is not None:
+            oi_crowd = abs(oi_chg) / max(th_oi, 1e-6)
+            mult = 1 - min(0.5, oi_crowd * 0.5)
+            if mult < 1:
+                logging.debug(
+                    "oi change %.4f threshold %.3f -> crowding mult %.3f for %s",
+                    oi_chg,
+                    th_oi,
+                    mult,
+                    symbol,
+                )
+                fused_score *= mult
+                crowding_factor *= mult
+        risk_score = fused_to_risk(
+            fused_score,
+            logic_score,
+            env_score,
+            cap=self.risk_score_cap,
+        )
+        risk_score = min(1.0, risk_score)
+
+        raw_score = logic_score * env_score * risk_score
+        fused_score = raw_score - self.risk_adjust_factor * risk_score
+        if abs(fused_score) < self.risk_adjust_threshold:
+            return None
+
+        if (
+            risk_score > self.risk_score_limit
+            or crowding_factor < 0
+            or crowding_factor > self.crowding_limit
+        ):
+            return None
+
+        with self._lock:
+            cache["history_scores"].append(fused_score)
+
+        return {
+            "fused_score": fused_score,
+            "risk_score": risk_score,
+            "crowding_factor": crowding_factor,
+            "base_th": base_th,
+            "regime": regime,
+            "rev_dir": rev_dir,
+            "funding_conflicts": funding_conflicts,
+        }
+
+    def _finalize_position(
+        self,
+        fused_score: float,
+        risk_info: dict,
+        ai_scores: dict,
+        fs: dict,
+        scores: dict,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        std_15m: dict,
+        raw_f1h: dict,
+        raw_f4h: dict,
+        raw_fd1: dict,
+        raw_f15m: dict,
+        vol_preds: dict,
+        rise_preds: dict,
+        drawdown_preds: dict,
+        short_mom: float,
+        ob_imb: float,
+        confirm_15m: float,
+        oversold_reversal: bool,
+        cache: dict,
+        symbol: str | None,
+    ):
+        """根据阈值与信号方向计算仓位和止盈止损"""
+        base_th = risk_info["base_th"]
+        crowding_factor = risk_info["crowding_factor"]
+        risk_score = risk_info["risk_score"]
+        regime = risk_info["regime"]
+        rev_dir = risk_info["rev_dir"]
+        funding_conflicts = risk_info["funding_conflicts"]
+
+        vol_ratio_1h_4h = std_1h.get("vol_ratio_1h_4h")
+        if vol_ratio_1h_4h is None and std_4h is not None:
+            vol_ratio_1h_4h = std_4h.get("vol_ratio_1h_4h")
+        if vol_ratio_1h_4h is None:
+            vol_ratio_1h_4h = 1.0
+        ob_th = max(
+            self.ob_th_params["min_ob_th"],
+            self.ob_th_params["dynamic_factor"] * vol_ratio_1h_4h,
+        )
+        if ob_imb is not None and ob_imb > ob_th:
+            ob_dir = 1
+        elif ob_imb is not None and ob_imb < -ob_th:
+            ob_dir = -1
+        else:
+            ob_dir = 0
+
+        short_mom_dir = int(np.sign(short_mom)) if short_mom != 0 else 0
+        vol_breakout_val = std_1h.get("vol_breakout_1h")
+        vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
+
+        th = self.ai_dir_eps
+        if ai_scores["1h"] >= th:
+            ai_dir = 1
+        elif ai_scores["1h"] <= -th:
+            ai_dir = -1
+        else:
+            ai_dir = 0
+
+        vw = self.vote_weights
+        vote = (
+            vw.get("ob", 4) * ob_dir
+            + vw.get("short_mom", 2) * short_mom_dir
+            + vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
+            + vw.get("vol_breakout", 1) * vol_breakout_dir
+        )
+        conflict_filter_triggered = False
+        if (
+            std_1h.get("donchian_perc_1h", 0) > 0.7
+            and (std_4h or {}).get("donchian_perc_4h", 1) < 0.2
+        ):
+            vote = 0
+            conflict_filter_triggered = True
+        strong_confirm_vote = abs(vote) >= self.vote_params["strong_min"]
+
+        strong_min = self.vote_params["strong_min"]
+        conf_vote = sigmoid_confidence(vote, strong_min, 1)
+        if abs(vote) >= strong_min:
+            fused_score *= max(1, conf_vote)
+
+        vote_sign = int(np.sign(vote))
+        if vote_sign != 0 and np.sign(fused_score) != vote_sign:
+            strong_min = max(self.vote_params.get("strong_min", 1), 1)
+            penalty = abs(vote) / strong_min
+            fused_score *= 0.5 ** penalty
+
+        cfg_th_sig = self.signal_threshold_cfg
+        grad_dir = sigmoid_dir(
+            fused_score,
+            base_th,
+            cfg_th_sig.get("gamma", 0.05),
+        )
+        st1 = int(np.sign(std_1h.get("supertrend_dir_1h", 0)))
+        st4 = int(np.sign(std_4h.get("supertrend_dir_4h", 0))) if std_4h else 0
+        stdir = int(np.sign(std_d1.get("supertrend_dir_d1", 0))) if std_d1 else 0
+        gd = int(np.sign(grad_dir))
+        if all(v != 0 for v in (st1, st4, stdir)):
+            if not (st1 == gd == st4 == stdir):
+                return None
+        direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
+
+        if self._cooldown > 0:
+            self._cooldown -= 1
+
+        if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
+            flip_th = max(base_th, self.flip_coeff * abs(self._last_score))
+            if abs(fused_score) < flip_th or self._cooldown > 0:
+                direction = self._last_signal
+            else:
+                self._cooldown = 2
+
+        prev_vote = getattr(self, "_prev_vote", 0)
+
+        align_count = 0
+        if direction != 0:
+            for p in ("1h", "4h", "d1"):
+                if np.sign(fs[p]["trend"]) == direction:
+                    align_count += 1
+            if align_count < 1:
+                direction = 0
+
+        base_coeff = self.pos_coeff_range if regime == "range" else self.pos_coeff_trend
+        confidence_factor = 1.0
+        if risk_info.get("consensus_all"):
+            confidence_factor += 0.1
+        if strong_confirm_vote:
+            confidence_factor += 0.05
+        vol_ratio = std_1h.get("vol_ma_ratio_1h")
+        tier = None
+        fused_score = soft_clip(fused_score, k=1.0)
+        pos_size, direction, tier = self.compute_position_size(
+            grad_dir=grad_dir,
+            base_coeff=base_coeff,
+            confidence_factor=confidence_factor,
+            vol_ratio=vol_ratio,
+            fused_score=fused_score,
+            base_th=base_th,
+            regime=regime,
+            oi_overheat=risk_info.get("oi_overheat", False),
+            vol_p=vol_preds.get("1h"),
+            risk_score=risk_score,
+            crowding_factor=crowding_factor,
+            cfg_th_sig=cfg_th_sig,
+            scores=scores,
+            direction=direction,
+            exit_mult=(
+                self.compute_exit_multiplier(vote, prev_vote, self._last_signal)
+                if direction == self._last_signal and self._last_signal != 0
+                else 1.0
+            ),
+            consensus_all=risk_info.get("consensus_all", False),
+        )
+
+        if risk_info.get("oi_overheat"):
+            pos_size *= 0.5
+
+        pos_map = base_th * 2.0
+        if risk_score > 1 or risk_info.get("logic_score", 0) < -0.3:
+            pos_map = min(pos_map, 0.5)
+        pos_size = min(pos_size, pos_map)
+        if conflict_filter_triggered:
+            pos_size = 0.0
+
+        price = (raw_f1h or std_1h).get("close", 0)
+        if raw_f4h is not None and "atr_pct_4h" in raw_f4h:
+            atr_pct_4h = raw_f4h["atr_pct_4h"]
+        else:
+            atr_pct_4h = (raw_f4h or std_4h).get("atr_pct_4h", 0)
+        atr_raw = (raw_f1h or std_1h).get("atr_pct_1h", 0)
+        atr_abs = np.hypot(atr_raw, atr_pct_4h) * price
+        atr_abs = max(atr_abs, 0.005 * price)
+        take_profit = stop_loss = None
+        if direction != 0:
+            take_profit, stop_loss = self.compute_tp_sl(
+                price,
+                atr_abs,
+                direction,
+                rise_pred=rise_preds.get("1h"),
+                drawdown_pred=drawdown_preds.get("1h"),
+            )
+
+        logic_score = risk_info.get("logic_score", 0.0)
+        env_score = risk_info.get("env_score", 1.0)
+        score_raw = logic_score * env_score * risk_score
+        score_raw -= self.risk_adjust_factor * risk_score
+        if vote_sign != 0 and np.sign(score_raw) != vote_sign:
+            strong_min = max(self.vote_params.get("strong_min", 1), 1)
+            penalty = abs(vote) / strong_min
+            score_raw *= 0.5 ** penalty
+        final_score = float(np.tanh(score_raw))
+
+        with self._lock:
+            self._last_signal = int(np.sign(direction)) if direction else 0
+            self._last_score = fused_score
+            self._prev_vote = vote
+            cache["_prev_raw"]["15m"] = std_15m
+            cache["_prev_raw"]["1h"] = std_1h
+            cache["_prev_raw"]["4h"] = std_4h
+            cache["_prev_raw"]["d1"] = std_d1
+            for p, raw in [
+                ("15m", raw_f15m),
+                ("1h", raw_f1h),
+                ("4h", raw_f4h),
+                ("d1", raw_fd1),
+            ]:
+                maxlen = 4 if p in ("15m", "1h") else 2
+                cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
+
+        final_details = {
+            "ai": {"1h": ai_scores["1h"], "4h": ai_scores["4h"], "d1": ai_scores["d1"]},
+            "factors": {"1h": fs["1h"], "4h": fs["4h"], "d1": fs["d1"]},
+            "scores": {"1h": scores["1h"], "4h": scores["4h"], "d1": scores["d1"]},
+            "vote": {"value": vote, "confidence": conf_vote, "ob_th": ob_th},
+            "protect": {
+                "oi_overheat": risk_info.get("oi_overheat"),
+                "oi_threshold": risk_info.get("th_oi"),
+                "crowding_factor": crowding_factor,
+                "funding_conflicts": funding_conflicts,
+            },
+            "env": {
+                "logic_score": risk_info.get("logic_score", logic_score),
+                "env_score": risk_info.get("env_score", env_score),
+                "risk_score": risk_score,
+            },
+            "exit": {
+                "regime": regime,
+                "reversal_flag": rev_dir,
+                "dynamic_th_final": base_th,
+            },
+            "grad_dir": float(grad_dir),
+            "pos_size": float(pos_size),
+            "short_momentum": short_mom,
+            "ob_imbalance": ob_imb,
+            "vol_ratio": vol_ratio,
+            "position_tier": tier,
+            "confidence_factor": confidence_factor,
+            "consensus_all": risk_info.get("consensus_all"),
+            "consensus_14": risk_info.get("consensus_14"),
+            "consensus_4d1": risk_info.get("consensus_4d1"),
+            "oversold_reversal": oversold_reversal,
+            "conflict_filter_triggered": conflict_filter_triggered,
+            "confirm_15m": confirm_15m,
+        }
+        final_details.update(risk_info.get("local_details", {}))
+
+        return {
+            "signal": int(direction),
+            "score": final_score,
+            "position_size": float(round(pos_size, 4)),
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+            "details": final_details,
+        }
+
     def generate_signal(
         self,
         features_1h,
@@ -1641,14 +2290,25 @@ class RobustSignalGenerator:
         raw_features_* 仅在计算绝对价格或绝对幅度（例如止盈止损价）时作为补充使用。
         """
 
-        features_1h = self._normalize_features(features_1h, "1h")
-        features_4h = self._normalize_features(features_4h, "4h")
-        features_d1 = self._normalize_features(features_d1, "d1")
-        features_15m = self._normalize_features(features_15m or {}, "15m")
-        raw_features_1h = self._normalize_features(raw_features_1h or {}, "1h")
-        raw_features_4h = self._normalize_features(raw_features_4h or {}, "4h")
-        raw_features_d1 = self._normalize_features(raw_features_d1 or {}, "d1")
-        raw_features_15m = self._normalize_features(raw_features_15m or {}, "15m")
+        (
+            features_1h,
+            features_4h,
+            features_d1,
+            features_15m,
+            raw_features_1h,
+            raw_features_4h,
+            raw_features_d1,
+            raw_features_15m,
+        ) = self._normalize_inputs(
+            features_1h,
+            features_4h,
+            features_d1,
+            features_15m,
+            raw_features_1h,
+            raw_features_4h,
+            raw_features_d1,
+            raw_features_15m,
+        )
 
         ob_imb = (
             order_book_imbalance
@@ -1703,218 +2363,41 @@ class RobustSignalGenerator:
             deltas[p] = self._calc_deltas(feats, prev, keys)
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
-        ai_scores = {}
-        vol_preds = {}
-        rise_preds = {}
-        drawdown_preds = {}
-        for p, feats in [('1h', std_1h), ('4h', std_4h), ('d1', std_d1)]:
-            models_p = self.models.get(p, {})
-            if 'cls' in models_p and 'up' not in models_p:
-                ai_scores[p] = self.get_ai_score_cls(feats, models_p['cls'])
-            else:
-                cal_up = self.calibrators.get(p, {}).get('up')
-                cal_down = self.calibrators.get(p, {}).get('down')
-                if cal_up is None and cal_down is None:
-                    ai_scores[p] = self.get_ai_score(
-                        feats,
-                        models_p['up'],
-                        models_p['down'],
-                    )
-                else:
-                    ai_scores[p] = self.get_ai_score(
-                        feats,
-                        models_p['up'],
-                        models_p['down'],
-                        cal_up,
-                        cal_down,
-                    )
-            if 'vol' in self.models[p]:
-                vol_preds[p] = self.get_vol_prediction(feats, self.models[p]['vol'])
-            else:
-                vol_preds[p] = None
-            if 'rise' in self.models[p]:
-                rise_preds[p] = self.get_reg_prediction(feats, self.models[p]['rise'])
-            else:
-                rise_preds[p] = None
-            if 'drawdown' in self.models[p]:
-                drawdown_preds[p] = self.get_reg_prediction(feats, self.models[p]['drawdown'])
-            else:
-                drawdown_preds[p] = None
+        ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal = self._compute_ai_scores(
+            std_1h, std_4h, std_d1, raw_fd1
+        )
 
-        oversold_reversal = False
-        rsi = raw_fd1.get('rsi_d1', 50)
-        cci = raw_fd1.get('cci_d1', 0)
-        if rsi < 25 or cci < -100 or rsi > 75 or cci > 100:
-            ai_scores['d1'] *= 0.7
-            oversold_reversal = True
-
-        # d1 空头阈值特殊规则
-        if ai_scores['d1'] < 0 and abs(ai_scores['d1']) < self.th_down_d1:
-            ai_scores['d1'] = 0.0
-
-        # ===== 2. 计算多因子部分的分数 =====
-        # 所有因子评分基于标准化后的特征
-        fs = {
-            '1h': self.get_factor_scores(std_1h, '1h'),
-            '4h': self.get_factor_scores(std_4h, '4h'),
-            'd1': self.get_factor_scores(std_d1, 'd1'),
-        }
-
-        # ===== 3. 使用当前因子权重 =====
-        with self._lock:
-            weights = self.current_weights.copy()
-
-        # ===== 4. 单周期总分 =====
-        scores = self.calc_factor_scores(ai_scores, fs, weights)
-
-        # ===== 5. 本地因子修正 =====
-        scores, local_details = self.apply_local_adjustments(
-            scores,
+        result = self._compute_factor_scores(
+            ai_scores,
+            std_1h,
+            std_4h,
+            std_d1,
+            std_15m,
             raw_dict,
-            fs,
             deltas,
-            rise_preds.get('1h'),
-            drawdown_preds.get('1h'),
+            rise_preds,
+            drawdown_preds, vol_preds,
+            global_metrics,
+            open_interest,
+            ob_imb,
+            symbol,
         )
-
-        ic_periods = {
-            "1h": self.ic_scores.get("1h", 1.0),
-            "4h": self.ic_scores.get("4h", 1.0),
-            "d1": self.ic_scores.get("d1", 1.0),
-        }
-        w1, w4, w_d1 = self.get_ic_period_weights(ic_periods)
-
-        # ===== 6. 多周期共振融合 =====
-        fused_score, consensus_all, consensus_14, consensus_4d1 = self.fuse_multi_cycle(
-            scores,
-            (w1, w4, w_d1),
-            local_details.get('strong_confirm_4h', False),
-        )
-
-        raw_1h = raw_dict.get("1h", {})
-        if raw_1h.get("break_resistance_1h"):
-            fused_score *= 1.12
-            local_details["breakout_boost"] = 0.12
-
-
-        logic_score = fused_score
-        env_score = 1.0
-        risk_score = 1.0
-
-        # 根据外部指标微调 fused_score
-        if global_metrics is not None:
-            dom = global_metrics.get('btc_dom_chg')
-            if 'btc_dominance' in global_metrics:
-                self.btc_dom_history.append(global_metrics['btc_dominance'])
-                if len(self.btc_dom_history) >= 5:
-                    short = np.mean(list(self.btc_dom_history)[-5:])
-                    long = np.mean(self.btc_dom_history)
-                    dom_diff = (short - long) / long if long else 0
-                    if dom is None:
-                        dom = dom_diff
-                    else:
-                        dom += dom_diff
-            if dom is not None:
-                if symbol and str(symbol).upper().startswith('BTC'):
-                    fused_score *= 1 + 0.1 * dom
-                else:
-                    fused_score *= 1 - 0.1 * dom
-
-            eth_dom = global_metrics.get('eth_dom_chg')
-            if 'eth_dominance' in global_metrics:
-                if not hasattr(self, 'eth_dom_history'):
-                    self.eth_dom_history = deque(maxlen=500)
-                self.eth_dom_history.append(global_metrics['eth_dominance'])
-                if len(self.eth_dom_history) >= 5:
-                    short_e = np.mean(list(self.eth_dom_history)[-5:])
-                    long_e = np.mean(self.eth_dom_history)
-                    dom_diff_e = (short_e - long_e) / long_e if long_e else 0
-                    if eth_dom is None:
-                        eth_dom = dom_diff_e
-                    else:
-                        eth_dom += dom_diff_e
-            if eth_dom is not None:
-                if symbol and str(symbol).upper().startswith('ETH'):
-                    fused_score *= 1 + 0.1 * eth_dom
-                else:
-                    fused_score *= 1 + 0.05 * eth_dom
-            btc_mcap = global_metrics.get('btc_mcap_growth')
-            alt_mcap = global_metrics.get('alt_mcap_growth')
-            mcap_g = global_metrics.get('mcap_growth')
-            if symbol and str(symbol).upper().startswith('BTC'):
-                base_mcap = btc_mcap if btc_mcap is not None else mcap_g
-            else:
-                base_mcap = alt_mcap if alt_mcap is not None else mcap_g
-            if base_mcap is not None:
-                fused_score *= 1 + 0.1 * base_mcap
-            vol_c = global_metrics.get('vol_chg')
-            if vol_c is not None:
-                fused_score *= 1 + 0.05 * vol_c
-            hot = global_metrics.get('hot_sector_strength')
-            if hot is not None:
-
-                corr = global_metrics.get('sector_corr')
-                if corr is None:
-                    hot_name = global_metrics.get('hot_sector')
-                    if hot_name and symbol:
-                        cats = self.symbol_categories.get(str(symbol).upper())
-                        if cats:
-                            if isinstance(cats, str):
-                                cats = [c.strip() for c in cats.split(',') if c.strip()]
-                            corr = 1.0 if hot_name in cats else 0.0
-                if corr is None:
-                    corr = 1.0
-
-                fused_score *= 1 + 0.05 * hot * corr
-        env_score = fused_score / logic_score if logic_score != 0 else 1.0
-        oi_overheat = False
-        th_oi = None
-        oi_chg = None
-        if open_interest is not None:
-            oi_chg = open_interest.get('oi_chg')
-            if oi_chg is not None:
-                with self._lock:
-                    cache["oi_change_history"].append(oi_chg)
-                th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_preds.get('1h'))
-                fused_score, oi_overheat = self.apply_oi_overheat_protection(
-                    fused_score, oi_chg, th_oi
-                )
-
-        # ===== 新指标：短周期动量与盘口失衡 =====
-        feat1h = std_1h
-        mom5 = feat1h.get('mom_5m_roll1h')
-        mom15 = feat1h.get('mom_15m_roll1h')
-
-        mom_vals = [v for v in (mom5, mom15) if v is not None]
-        short_mom = float(np.nanmean(mom_vals)) if mom_vals else 0.0
-        if np.isnan(short_mom):
-            short_mom = 0.0
-        ob_imb = 0.0 if ob_imb is None or np.isnan(ob_imb) else float(ob_imb)
-
-        if fused_score > 0:
-            if short_mom > 0 and ob_imb > 0:
-                fused_score *= 1.1
-            elif short_mom < 0 or ob_imb < 0:
-                fused_score *= 0.9
-        elif fused_score < 0:
-            if short_mom < 0 and ob_imb < 0:
-                fused_score *= 1.1
-            elif short_mom > 0 or ob_imb > 0:
-                fused_score *= 0.9
-
-        confirm_15m = 0.0
-        if std_15m:
-            rsi15 = std_15m.get('rsi_15m')
-            ema15 = std_15m.get('ema_diff_15m')
-            if rsi15 is not None:
-                confirm_15m += (float(rsi15) - 50) / 50
-            if ema15 is not None:
-                confirm_15m += np.tanh(float(ema15) * 5)
-            confirm_15m /= 2
-            if fused_score > 0 and confirm_15m < -0.1:
-                fused_score *= 0.85
-            elif fused_score < 0 and confirm_15m > 0.1:
-                fused_score *= 0.85
+        fused_score = result["fused_score"]
+        logic_score = result["logic_score"]
+        env_score = result["env_score"]
+        risk_score = result["risk_score"]
+        fs = result["fs"]
+        scores = result["scores"]
+        local_details = result["local_details"]
+        consensus_all = result["consensus_all"]
+        consensus_14 = result["consensus_14"]
+        consensus_4d1 = result["consensus_4d1"]
+        short_mom = result["short_mom"]
+        ob_imb = result["ob_imb"]
+        confirm_15m = result["confirm_15m"]
+        oi_overheat = result["oi_overheat"]
+        th_oi = result["th_oi"]
+        oi_chg = result["oi_chg"]
 
         # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
@@ -1977,379 +2460,50 @@ class RobustSignalGenerator:
         if std_d1.get('break_support_d1') == 1 and std_d1.get('rsi_d1', 50) < 30:
             regime = 'range'
             rev_dir = 1
-        cfg_th = self.signal_threshold_cfg
-        base_th, rev_boost = self.dynamic_threshold(
-            atr_1h,
-            adx_1h,
-            funding_1h,
-            atr_4h=atr_4h,
-            adx_4h=adx_4h,
-            atr_d1=atr_d1,
-            adx_d1=adx_d1,
-            pred_vol=vol_preds.get('1h'),
-            pred_vol_4h=vol_preds.get('4h'),
-            pred_vol_d1=vol_preds.get('d1'),
-            vix_proxy=vix_p,
-            regime=regime,
-            base=cfg_th.get('base_th', 0.08),
-            reversal=bool(rev_dir),
-            history_scores=cache["history_scores"],
-        )
-        # 动态阈值不再设定硬上限
-        if rev_dir != 0:
-            fused_score += rev_boost * rev_dir
-            self._cooldown = 0
-        # ===== 8. 资金费率惩罚 =====
-        funding_conflicts = 0
-        for p, raw_f in [('1h', raw_f1h), ('4h', raw_f4h), ('d1', raw_fd1)]:
-            if raw_f is None:
-                continue
-            f_rate = raw_f.get(f'funding_rate_{p}', 0)
-            if abs(f_rate) > 0.0005 and np.sign(f_rate) * np.sign(fused_score) < 0:
-                penalty = min(abs(f_rate) * 20, 0.20)
-                fused_score *= 1 - penalty
-                funding_conflicts += 1
-        if funding_conflicts >= 2:
-            fused_score *= 0.85 ** funding_conflicts
-
-        # ===== 9. 极端行情保护 =====
-        crowding_factor = 1.0
-        if not oi_overheat and all_scores_list is not None:
-            crowding_factor = self.crowding_protection(all_scores_list, fused_score, base_th)
-            fused_score *= crowding_factor
-        if th_oi is not None and oi_chg is not None:
-            oi_crowd = abs(oi_chg) / max(th_oi, 1e-6)
-            mult = 1 - min(0.5, oi_crowd * 0.5)
-            if mult < 1:
-                logging.debug(
-                    "oi change %.4f threshold %.3f -> crowding mult %.3f for %s",
-                    oi_chg,
-                    th_oi,
-                    mult,
-                    coin,
-                )
-                fused_score *= mult
-                crowding_factor *= mult
-        risk_score = fused_to_risk(
+        risk_info = self._apply_risk_filters(
             fused_score,
             logic_score,
             env_score,
-            cap=self.risk_score_cap,
-        )
-        risk_score = min(1.0, risk_score)
-        logger.info(
-            "pre-risk-check fused=%.4f risk=%.4f crowding=%.3f",
-            fused_score,
-            risk_score,
-            crowding_factor,
-        )
-        raw_score = logic_score * env_score * risk_score
-        fused_score = raw_score - self.risk_adjust_factor * risk_score
-        if abs(fused_score) < self.risk_adjust_threshold:
-            logger.info(
-                "fused_score=%.4f threshold=%.3f",
-                fused_score,
-                self.risk_adjust_threshold,
-            )
-            return None
-        logger.debug(
-            "risk-filter %s fused=%.4f risk=%.3f crowd=%.3f",
+            std_1h,
+            std_4h,
+            std_d1,
+            raw_f1h,
+            raw_f4h,
+            raw_fd1,
+            vol_preds,
+            open_interest,
+            all_scores_list,
+            rev_dir,
+            {
+                "oi_overheat": oi_overheat,
+                "th_oi": th_oi,
+                "oi_chg": oi_chg,
+                "history_scores": cache["history_scores"],
+            },
+            global_metrics,
+            features_1h,
+            features_4h,
+            features_d1,
             symbol,
-            fused_score,
-            risk_score,
-            crowding_factor,
         )
-        if (
-            risk_score > self.risk_score_limit
-            or crowding_factor < 0
-            or crowding_factor > self.crowding_limit
-        ):
-            logger.info(
-                "risk_score=%.4f limit=%.3f crowding=%.4f limit=%.3f",
-                risk_score,
-                self.risk_score_limit,
-                crowding_factor,
-                self.crowding_limit,
-            )
+        if risk_info is None:
             return None
-        # 所有放大系数后写入历史
-        with self._lock:
-            cache["history_scores"].append(fused_score)
-
-        # 细节信息留待方法末统一构建
-
-
-
-
-        # ---- 新增：方向确认与多因子投票 ----
-        vol_ratio_1h_4h = std_1h.get('vol_ratio_1h_4h')
-        if vol_ratio_1h_4h is None and std_4h is not None:
-            vol_ratio_1h_4h = std_4h.get('vol_ratio_1h_4h')
-        if vol_ratio_1h_4h is None:
-            vol_ratio_1h_4h = 1.0
-        ob_th = max(
-            self.ob_th_params["min_ob_th"],
-            self.ob_th_params["dynamic_factor"] * vol_ratio_1h_4h,
+        fused_score = risk_info["fused_score"]
+        risk_score = risk_info["risk_score"]
+        base_th = risk_info["base_th"]
+        crowding_factor = risk_info["crowding_factor"]
+        regime = risk_info["regime"]
+        rev_dir = risk_info["rev_dir"]
+        funding_conflicts = risk_info["funding_conflicts"]
+        risk_info["logic_score"] = logic_score
+        risk_info["env_score"] = env_score
+        risk_info["consensus_all"] = consensus_all
+        risk_info["consensus_14"] = consensus_14
+        risk_info["consensus_4d1"] = consensus_4d1
+        risk_info["local_details"] = local_details
+        return self._finalize_position(
+            fused_score, risk_info, ai_scores, fs, scores, std_1h, std_4h, std_d1, std_15m, raw_f1h, raw_f4h, raw_fd1, raw_f15m, vol_preds, rise_preds, drawdown_preds, short_mom, ob_imb, confirm_15m, oversold_reversal, cache, symbol
         )
-        if ob_imb is not None and ob_imb > ob_th:
-            ob_dir = 1
-        elif ob_imb is not None and ob_imb < -ob_th:
-            ob_dir = -1
-        else:
-            ob_dir = 0
-
-        short_mom_dir = int(np.sign(short_mom)) if short_mom != 0 else 0
-        vol_breakout_val = std_1h.get('vol_breakout_1h')
-        vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
-
-        th = self.ai_dir_eps
-        if ai_scores['1h'] >= th:
-            ai_dir = 1
-        elif ai_scores['1h'] <= -th:
-            ai_dir = -1
-        else:
-            ai_dir = 0
-
-        vw = self.vote_weights
-        vote = (
-            vw.get('ob', 4) * ob_dir
-            + vw.get('short_mom', 2) * short_mom_dir
-            + vw.get('ai', self.vote_params['weight_ai']) * ai_dir
-            + vw.get('vol_breakout', 1) * vol_breakout_dir
-        )
-        logger.info("vote metrics vote=%.2f crowding=%.3f", vote, crowding_factor)
-        conflict_filter_triggered = False
-        if (
-            std_1h.get('donchian_perc_1h', 0) > 0.7
-            and (std_4h or {}).get('donchian_perc_4h', 1) < 0.2
-        ):
-            vote = 0
-            conflict_filter_triggered = True
-        strong_confirm_vote = abs(vote) >= self.vote_params['strong_min']
-
-        # ====== 票数置信度衰减 ======
-        strong_min = self.vote_params['strong_min']
-        conf_vote = sigmoid_confidence(vote, strong_min, 1)
-        if abs(vote) >= strong_min:
-            fused_score *= max(1, conf_vote)
-
-        vote_sign = int(np.sign(vote))
-        if vote_sign != 0 and np.sign(fused_score) != vote_sign:
-            # 投票方向与分数方向相反时，按照票数强度削弱分数
-            strong_min = max(self.vote_params.get('strong_min', 1), 1)
-            penalty = abs(vote) / strong_min
-            fused_score *= 0.5 ** penalty
-
-        cfg_th_sig = self.signal_threshold_cfg
-        grad_dir = sigmoid_dir(
-            fused_score,
-            base_th,
-            cfg_th_sig.get('gamma', 0.05),
-        )
-        st1 = int(np.sign(std_1h.get('supertrend_dir_1h', 0)))
-        st4 = int(np.sign(std_4h.get('supertrend_dir_4h', 0))) if std_4h else 0
-        stdir = int(np.sign(std_d1.get('supertrend_dir_d1', 0))) if std_d1 else 0
-        gd = int(np.sign(grad_dir))
-        if all(v != 0 for v in (st1, st4, stdir)):
-            if not (st1 == gd == st4 == stdir):
-                return None
-        direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
-
-        if self._cooldown > 0:
-            self._cooldown -= 1
-
-        if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
-            flip_th = max(base_th, self.flip_coeff * abs(self._last_score))
-            if abs(fused_score) < flip_th or self._cooldown > 0:
-                direction = self._last_signal
-            else:
-                self._cooldown = 2
-
-        # 阶梯退出逻辑
-        prev_vote = getattr(self, '_prev_vote', 0)
-
-        # —— 放宽多周期对齐：只需任意一个周期同向即可开仓 ——
-        align_count = 0
-        if direction != 0:
-            for p in ('1h', '4h', 'd1'):
-                if np.sign(fs[p]['trend']) == direction:
-                    align_count += 1
-            if align_count < 1:  # 从“<2”改为“<1”
-                direction = 0
-
-        # 移除“range 时的区间突破检查”，避免趋势市中被误杀
-
-
-        # ===== 12. 仓位大小统一计算 =====
-        base_coeff = (
-            self.pos_coeff_range if regime == "range" else self.pos_coeff_trend
-        )
-        confidence_factor = 1.0
-        if consensus_all:
-            confidence_factor += 0.1
-        if strong_confirm_vote:
-            confidence_factor += 0.05
-        vol_ratio = std_1h.get('vol_ma_ratio_1h')
-        tier = None  # 占位，真正 tier 由 compute_position_size 返回
-        fused_score = soft_clip(fused_score, k=1.0)
-        pos_size, direction, tier = self.compute_position_size(
-            grad_dir=grad_dir,
-            base_coeff=base_coeff,
-            confidence_factor=confidence_factor,
-            vol_ratio=vol_ratio,
-            fused_score=fused_score,
-            base_th=base_th,
-            regime=regime,
-            oi_overheat=oi_overheat,
-            vol_p=vol_preds.get('1h'),
-            risk_score=risk_score,
-            crowding_factor=crowding_factor,
-            cfg_th_sig=cfg_th_sig,
-            scores=scores,
-            direction=direction,
-            exit_mult=(
-                self.compute_exit_multiplier(vote, prev_vote, self._last_signal)
-                if direction == self._last_signal and self._last_signal != 0
-                else 1.0
-            ),
-            consensus_all=consensus_all,
-        )
-
-        if direction != 0 and np.sign(vote) != direction:
-            # 投票方向与梯度方向不一致时，已在分数层面处理
-            pass
-
-
-        if oi_overheat:
-            # OI过热时仅衰减仓位，不强制平仓
-            pos_size *= 0.5
-
-        pos_map = base_th * 2.0
-        if risk_score > 1 or logic_score < -0.3:
-            pos_map = min(pos_map, 0.5)
-        pos_size = min(pos_size, pos_map)
-        if conflict_filter_triggered:
-            pos_size = 0.0
-
-        # ===== 13. 止盈止损计算：使用 ATR 动态设置 =====
-        price = (raw_features_1h or features_1h).get('close', 0)
-        if raw_features_4h is not None and 'atr_pct_4h' in raw_features_4h:
-            atr_pct_4h = raw_features_4h['atr_pct_4h']
-        else:
-            atr_pct_4h = (raw_features_4h or features_4h).get('atr_pct_4h', 0)
-        atr_raw = (raw_features_1h or features_1h).get('atr_pct_1h', atr_1h)
-        atr_abs = np.hypot(atr_raw, atr_pct_4h) * price
-        atr_abs = max(atr_abs, 0.005 * price)
-        take_profit = stop_loss = None
-        if direction != 0:
-            take_profit, stop_loss = self.compute_tp_sl(
-                price,
-                atr_abs,
-                direction,
-                rise_pred=rise_preds.get('1h'),
-                drawdown_pred=drawdown_preds.get('1h'),
-            )
-
-        strong_confirm = (
-            strong_confirm_vote
-            or consensus_all
-            or local_details.get('strong_confirm_4h', False)
-        )
-
-        score_raw = logic_score * env_score * risk_score
-        score_raw -= self.risk_adjust_factor * risk_score
-        vote_sign = int(np.sign(vote))
-        if vote_sign != 0 and np.sign(score_raw) != vote_sign:
-            strong_min = max(self.vote_params.get('strong_min', 1), 1)
-            penalty = abs(vote) / strong_min
-            score_raw *= 0.5 ** penalty
-        final_score = float(np.tanh(score_raw))
-
-        # ===== 14. 最终返回 =====
-        with self._lock:
-            self._last_signal = int(np.sign(direction)) if direction else 0
-            self._last_score = fused_score
-            self._prev_vote = vote
-            cache["_prev_raw"]["15m"] = std_15m
-            cache["_prev_raw"]["1h"] = std_1h
-            cache["_prev_raw"]["4h"] = std_4h
-            cache["_prev_raw"]["d1"] = std_d1
-            for p, raw in [("15m", raw_f15m), ("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                maxlen = 4 if p in ("15m", "1h") else 2
-                cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
-
-        # 移除票数开仓限制，使投票只在分数层面生效
-        # filters = getattr(self, 'signal_filters', {"min_vote": 5, "confidence_vote": 0.12})
-        # confidence_vote = filters.get('confidence_vote', 0.12)
-        # if sigmoid_confidence(vote, self.vote_params['strong_min'], 1) < confidence_vote:
-        #     direction, pos_size = 0, 0.0
-        #     take_profit = stop_loss = None
-        # # 放宽 vote 阈值过滤：从 8 → 5
-        # min_vote = filters.get('min_vote', 4)
-        # if abs(vote) < min_vote:
-        #     direction, pos_size = 0, 0.0
-        #     take_profit = stop_loss = None
-
-        final_details = {
-            'ai': {'1h': ai_scores['1h'], '4h': ai_scores['4h'], 'd1': ai_scores['d1']},
-            'factors': {'1h': fs['1h'], '4h': fs['4h'], 'd1': fs['d1']},
-            'scores': {'1h': scores['1h'], '4h': scores['4h'], 'd1': scores['d1']},
-            'vote': {'value': vote, 'confidence': conf_vote, 'ob_th': ob_th},
-            'protect': {
-                'oi_overheat': oi_overheat,
-                'oi_threshold': th_oi,
-                'crowding_factor': crowding_factor,
-                'funding_conflicts': funding_conflicts,
-            },
-            'env': {
-                'logic_score': logic_score,
-                'env_score': env_score,
-                'risk_score': risk_score,
-            },
-            'exit': {
-                'regime': regime,
-                'reversal_flag': rev_dir,
-                'dynamic_th_final': base_th,
-            },
-            'grad_dir': float(grad_dir),
-            'pos_size': float(pos_size),
-            'short_momentum': short_mom,
-            'ob_imbalance': ob_imb,
-            'vol_ratio': vol_ratio,
-            'position_tier': tier,
-            'confidence_factor': confidence_factor,
-            'consensus_all': consensus_all,
-            'consensus_14': consensus_14,
-            'consensus_4d1': consensus_4d1,
-            'oversold_reversal': oversold_reversal,
-            'conflict_filter_triggered': conflict_filter_triggered,
-            'confirm_15m': confirm_15m,
-        }
-        final_details.update(local_details)
-
-        logger.info(
-            "[%s] base_th=%.3f, funding_conflicts=%d, fused=%.4f",
-            symbol,
-            base_th,
-            funding_conflicts,
-            fused_score,
-        )
-        logger.debug(
-            "ai_score=%.3f pos_size=%.3f oversold_reversal=%d conflict_filter_triggered=%d",
-            ai_scores['d1'],
-            pos_size,
-            int(oversold_reversal),
-            int(conflict_filter_triggered),
-        )
-
-        return {
-            "signal": int(direction),
-            "score": final_score,
-            "position_size": float(round(pos_size, 4)),
-            "take_profit": take_profit,
-            "stop_loss": stop_loss,
-            "details": final_details,
-        }
 
 
 if __name__ == "__main__":
