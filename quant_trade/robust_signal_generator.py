@@ -367,11 +367,17 @@ class RobustSignalGenerator:
 
         risk_adj_cfg = cfg.get("risk_adjust", {})
         self.risk_adjust_factor = risk_adj_cfg.get("factor", 0.9)
-        self.risk_adjust_threshold = risk_adj_cfg.get("threshold", 0.01)
+        self.risk_adjust_threshold = cfg.get(
+            "risk_adjust_threshold",
+            risk_adj_cfg.get("threshold", 0.01),
+        )
 
         protect_cfg = cfg.get("protection_limits", {})
         self.risk_score_limit = protect_cfg.get("risk_score", 2.00)
-        self.crowding_limit = protect_cfg.get("crowding", 0.95)
+        self.crowding_limit = cfg.get(
+            "crowding_limit",
+            protect_cfg.get("crowding", 1.05),
+        )
 
         self.max_position = cfg.get("max_position", 0.3)
         self.th_down_d1 = self.cfg.get("th_down_d1", 0.74)

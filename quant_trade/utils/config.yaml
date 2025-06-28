@@ -441,11 +441,13 @@ regime:
 
 risk_adjust:
   factor: 0.6
-  threshold: 0.05
+risk_adjust_threshold: 0.05
 
 protection_limits:
   risk_score: 1.5
-  crowding: 1.05
+
+crowding_limit: 1.05
+
 
 max_position: 0.3
 
