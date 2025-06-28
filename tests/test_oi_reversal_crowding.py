@@ -63,6 +63,6 @@ def test_crowding_factor_reduces_position():
         exit_mult=1.0,
         consensus_all=False,
     )
-    full, _, _ = rsg.compute_position_size(crowding_factor=1.0, **params)
-    reduced, _, _ = rsg.compute_position_size(crowding_factor=0.5, **params)
+    full, _, _, _ = rsg.compute_position_size(crowding_factor=1.0, **params)
+    reduced, _, _, _ = rsg.compute_position_size(crowding_factor=0.5, **params)
     assert reduced == pytest.approx(full * 0.5)
