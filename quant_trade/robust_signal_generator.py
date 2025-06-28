@@ -2607,6 +2607,14 @@ class RobustSignalGenerator:
             cache,
             symbol,
         )
+        if result is None:
+            logger.debug(
+                "step=%s fused=%.3f th=%.3f position skipped",
+                ts,
+                fused_score,
+                base_th,
+            )
+            return None
         if all_scores_list is None:
             all_scores_list = self.all_scores_list
         logger.debug(
