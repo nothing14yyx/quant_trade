@@ -1930,10 +1930,9 @@ class RobustSignalGenerator:
             cap=self.risk_score_cap,
         )
         logger.info(
-            "pre-risk-check fused=%.4f risk=%.4f vote=%.2f crowding=%.3f",
+            "pre-risk-check fused=%.4f risk=%.4f crowding=%.3f",
             fused_score,
             risk_score,
-            vote,
             crowding_factor,
         )
         raw_score = fused_score
@@ -1999,6 +1998,7 @@ class RobustSignalGenerator:
             + vw.get('ai', self.vote_params['weight_ai']) * ai_dir
             + vw.get('vol_breakout', 1) * vol_breakout_dir
         )
+        logger.info("vote metrics vote=%.2f crowding=%.3f", vote, crowding_factor)
         conflict_filter_triggered = False
         if (
             std_1h.get('donchian_perc_1h', 0) > 0.7
