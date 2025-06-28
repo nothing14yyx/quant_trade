@@ -94,7 +94,6 @@ def test_calc_features_raw_support_resistance():
     ):
         assert col in feats
 
-
 def test_calc_features_raw_vwap_window():
     times = pd.date_range('2020-01-01', periods=4, freq='h')
     df = pd.DataFrame({
@@ -122,5 +121,6 @@ def test_calc_features_raw_vwap_window():
     )
     assert feats_all['vwap_1h'].iloc[-1] == pytest.approx(expected_all[-1])
     assert feats_win2['vwap_1h'].iloc[-1] == pytest.approx(expected_win2[-1])
+
 
 
