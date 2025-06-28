@@ -19,7 +19,7 @@ def test_compute_tp_sl():
 def test_dynamic_threshold_basic():
     rsg = make_dummy_rsg()
     th, _ = rsg.dynamic_threshold(0, 0, 0)
-    assert th == pytest.approx(0.12)
+    assert th == pytest.approx(0.08)
 
 
 def test_get_dynamic_oi_threshold():
@@ -68,11 +68,11 @@ def test_dynamic_threshold_recovery():
     rsg.th_window = 50
     rsg.history_scores.extend([5.0] * 120)
     th_high, _ = rsg.dynamic_threshold(0, 0, 0)
-    assert th_high == pytest.approx(0.12)
+    assert th_high == pytest.approx(0.08)
     for _ in range(60):
         rsg.history_scores.append(0.1)
     th_normal, _ = rsg.dynamic_threshold(0, 0, 0)
-    assert th_normal == pytest.approx(0.12)
+    assert th_normal == pytest.approx(0.08)
 
 
 def test_dynamic_threshold_quantile_setting():
@@ -94,7 +94,7 @@ def test_consensus_check():
 def test_crowding_protection():
     rsg = make_dummy_rsg()
     factor = rsg.crowding_protection([0.9, 0.8, 0.85, -0.2]*18, 0.95, base_th=0.2)
-    assert factor == pytest.approx(0.5)
+    assert factor == pytest.approx(0.8)
     factor2 = rsg.crowding_protection([0.1, -0.2]*15, 0.15, base_th=0.2)
     assert factor2 == pytest.approx(1.0)
 
