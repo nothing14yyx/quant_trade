@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import joblib
 import numpy as np
+import math
 from quant_trade.utils.soft_clip import soft_clip
 
 import pandas as pd
@@ -1412,6 +1413,15 @@ class RobustSignalGenerator:
             strong_confirm_4h = False
             details['strong_confirm_4h'] = False
 
+        if (
+            macd_diff is not None
+            and rsi_diff is not None
+            and abs(macd_diff) < 5
+            and abs(rsi_diff) < 15
+        ):
+            strong_confirm_4h = True
+            details['strong_confirm_4h'] = True
+
         for p in ['1h', '4h', 'd1']:
             sent = factor_scores[p]['sentiment']
             before = adjusted[p]
@@ -1595,6 +1605,13 @@ class RobustSignalGenerator:
         raw_f4h = raw_features_4h or {}
         raw_fd1 = raw_features_d1 or {}
         raw_dict = {'1h': raw_f1h, '4h': raw_f4h, 'd1': raw_fd1}
+
+        ts = (
+            raw_features_1h.get('ts')
+            or raw_features_1h.get('timestamp')
+            or features_1h.get('ts')
+            or features_1h.get('timestamp')
+        )
 
         cache = self._get_symbol_cache(symbol)
         with self._lock:
@@ -2071,8 +2088,8 @@ class RobustSignalGenerator:
         prev_vote = getattr(self, '_prev_vote', 0)
 
         # —— 放宽多周期对齐：只需任意一个周期同向即可开仓 ——
+        align_count = 0
         if direction != 0:
-            align_count = 0
             for p in ('1h', '4h', 'd1'):
                 if np.sign(fs[p]['trend']) == direction:
                     align_count += 1
@@ -2152,6 +2169,17 @@ class RobustSignalGenerator:
                 drawdown_pred=drawdown_preds.get('1h'),
             )
 
+        strong_confirm = (
+            strong_confirm_vote
+            or consensus_all
+            or local_details.get('strong_confirm_4h', False)
+        )
+
+        # --- Final gate (soft) ---------------------------------------
+        weak_signal = abs(fused_score) < 0.08
+        if weak_signal and (not strong_confirm or align_count < 1):
+            return None
+
         # ===== 14. 最终返回 =====
         with self._lock:
             self._last_signal = int(np.sign(direction)) if direction else 0
@@ -2227,12 +2255,12 @@ class RobustSignalGenerator:
             int(conflict_filter_triggered),
         )
         return {
-            'signal': direction,
-            'score': fused_score,
-            'position_size': pos_size,
-            'take_profit': take_profit,
-            'stop_loss': stop_loss,
-            'details': final_details,
+            "symbol": symbol,
+            "timestamp": ts,
+            "direction": int(math.copysign(1, fused_score)),
+            "pos_size": round(pos_size, 4),
+            "fused": round(fused_score, 4),
+            "risk": round(risk_score, 3),
         }
 
 
