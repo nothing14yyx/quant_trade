@@ -94,6 +94,22 @@ def softmax(x):
     return ex / ex.sum()
 
 
+def weighted_quantile(values, q, sample_weight=None):
+    """Return the weighted quantile of *values* at quantile *q*."""
+    values = np.asarray(values, dtype=float)
+    if values.size == 0:
+        return float("nan")
+    if sample_weight is None:
+        return float(np.quantile(values, q))
+    sample_weight = np.asarray(sample_weight, dtype=float)
+    sorter = np.argsort(values)
+    values = values[sorter]
+    sample_weight = sample_weight[sorter]
+    cdf = np.cumsum(sample_weight)
+    cdf /= cdf[-1]
+    return float(np.interp(q, cdf, values))
+
+
 def adjust_score(
     score: float,
     sentiment: float,
@@ -1295,7 +1311,7 @@ class RobustSignalGenerator:
         reversal=False,
         history_scores=None,
     ):
-        """根据ATR与资金费率计算动态阈值"""
+        """根据多周期波动与历史得分自适应计算动态阈值"""
 
         params = self.signal_params
         if base is None:
@@ -1303,15 +1319,59 @@ class RobustSignalGenerator:
         if low_base is None:
             low_base = params.low_base
 
-        th = base
-        th += min(0.10, abs(atr) * params.atr_mult)
-        th += min(0.08, abs(funding) * params.funding_mult)
-        th += min(0.04, abs(adx) / params.adx_div)
+        hist_base = base
+        if history_scores:
+            arr = np.asarray(list(history_scores)[-self.th_window:], dtype=float)
+            arr = np.abs(arr)
+            if arr.size > 0:
+                if self.th_decay and self.th_decay != 1.0:
+                    w = np.exp(-self.th_decay * np.arange(arr.size)[::-1])
+                    qv = weighted_quantile(arr, params.quantile, w)
+                else:
+                    qv = float(np.quantile(arr, params.quantile))
+                if not math.isnan(qv):
+                    hist_base = max(base, qv)
 
-        if atr == 0 and adx == 0 and funding == 0:
-            th = min(th, base)
+        th = hist_base
+        atr_eff = abs(atr)
+        if atr_4h is not None:
+            atr_eff += 0.5 * abs(atr_4h)
+        if atr_d1 is not None:
+            atr_eff += 0.25 * abs(atr_d1)
+        th += min(0.10, atr_eff * params.atr_mult)
+
+        fund_eff = abs(funding)
+        if pred_vol is not None:
+            fund_eff += 0.5 * abs(pred_vol)
+        if pred_vol_4h is not None:
+            fund_eff += 0.25 * abs(pred_vol_4h)
+        if pred_vol_d1 is not None:
+            fund_eff += 0.15 * abs(pred_vol_d1)
+        if vix_proxy is not None:
+            fund_eff += 0.25 * abs(vix_proxy)
+        th += min(0.08, fund_eff * params.funding_mult)
+
+        adx_eff = abs(adx)
+        if adx_4h is not None:
+            adx_eff += 0.5 * abs(adx_4h)
+        if adx_d1 is not None:
+            adx_eff += 0.25 * abs(adx_d1)
+        th += min(0.04, adx_eff / params.adx_div)
+
+        if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
+            th = min(th, hist_base)
+
+        if reversal:
+            th *= params.rev_th_mult
 
         rev_boost = params.rev_boost
+        if regime == "trend":
+            th *= 1.05
+            rev_boost *= 0.8
+        elif regime == "range":
+            th *= 0.95
+            rev_boost *= 1.2
+
         return max(th, low_base), rev_boost
 
     def combine_score(self, ai_score, factor_scores, weights=None):
