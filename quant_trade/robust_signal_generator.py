@@ -49,7 +49,7 @@ from dataclasses import dataclass
 class SignalThresholdParams:
     """Container for all signal threshold related parameters."""
 
-    base_th: float = 0.12
+    base_th: float = 0.08
     gamma: float = 0.05
     min_pos: float = 0.10
     quantile: float = 0.80
@@ -157,7 +157,7 @@ def fused_to_risk(
     cap: float = 5.0,
 ) -> float:
     """按安全分母计算并限制 risk score"""
-    denom = max(abs(logic_score) * max(abs(env_score), 1e-6), 1e-6)
+    denom = max(abs(logic_score) + abs(env_score), 1e-6)
     risk = abs(fused_score) / denom
     return min(risk, cap)
 
@@ -367,10 +367,10 @@ class RobustSignalGenerator:
 
         risk_adj_cfg = cfg.get("risk_adjust", {})
         self.risk_adjust_factor = risk_adj_cfg.get("factor", 0.9)
-        self.risk_adjust_threshold = risk_adj_cfg.get("threshold", 0.1)
+        self.risk_adjust_threshold = risk_adj_cfg.get("threshold", 0.03)
 
         protect_cfg = cfg.get("protection_limits", {})
-        self.risk_score_limit = protect_cfg.get("risk_score", 1.05)
+        self.risk_score_limit = protect_cfg.get("risk_score", 1.30)
         self.crowding_limit = protect_cfg.get("crowding", 0.95)
 
         self.max_position = cfg.get("max_position", 0.3)
@@ -1247,7 +1247,7 @@ class RobustSignalGenerator:
         pred_vol_4h=None,
         pred_vol_d1=None,
         vix_proxy=None,
-        base=0.12,
+        base=0.08,
         regime=None,
         low_base=None,
         reversal=False,
@@ -1315,7 +1315,7 @@ class RobustSignalGenerator:
         rank_intensity = max(0.0, rank_pct - 0.8) / 0.2
         intensity = min(1.0, max(ratio_intensity, rank_intensity))
 
-        factor = 1.0 - 0.5 * intensity
+        factor = 1.0 - 0.2 * intensity
         dd = getattr(self, "_equity_drawdown", 0.0)
         factor *= max(0.6, 1 - dd)
         return factor
@@ -1884,7 +1884,7 @@ class RobustSignalGenerator:
             pred_vol_d1=vol_preds.get('d1'),
             vix_proxy=vix_p,
             regime=regime,
-            base=cfg_th.get('base_th', 0.12),
+            base=cfg_th.get('base_th', 0.08),
             reversal=bool(rev_dir),
             history_scores=cache["history_scores"],
         )
@@ -1928,6 +1928,13 @@ class RobustSignalGenerator:
             logic_score,
             env_score,
             cap=self.risk_score_cap,
+        )
+        logger.info(
+            "pre-risk-check fused=%.4f risk=%.4f vote=%.2f crowding=%.3f",
+            fused_score,
+            risk_score,
+            vote,
+            crowding_factor,
         )
         raw_score = fused_score
         fused_score = raw_score - self.risk_adjust_factor * risk_score
