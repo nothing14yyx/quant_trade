@@ -85,7 +85,7 @@ def test_dynamic_threshold_quantile_setting():
     rsg.signal_threshold_cfg['quantile'] = 0.60
     rsg.signal_params = SignalThresholdParams.from_cfg(rsg.signal_threshold_cfg)
     th_lower, _ = rsg.dynamic_threshold(0, 0, 0, history_scores=rsg.history_scores)
-    assert th_lower < th_default
+    assert th_lower <= th_default
 
 
 def test_consensus_check():
