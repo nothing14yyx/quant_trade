@@ -1522,6 +1522,31 @@ class RobustSignalGenerator:
                 )
                 details[f'break_sr_{p}'] = adjusted[p] - before_sr
 
+        for p in ['1h', '4h', 'd1']:
+            perc = raw_feats[p].get(f'boll_perc_{p}')
+            vol_ratio = raw_feats[p].get(f'vol_ma_ratio_{p}')
+            before_bb = adjusted[p]
+            if (
+                perc is not None
+                and vol_ratio is not None
+                and vol_ratio > 1.5
+                and (perc >= 0.98 or perc <= 0.02)
+            ):
+                if perc >= 0.98:
+                    adjusted[p] *= 1.1 if adjusted[p] > 0 else 0.9
+                else:
+                    adjusted[p] *= 1.1 if adjusted[p] < 0 else 0.9
+            if before_bb != adjusted[p]:
+                logger.debug(
+                    "boll breakout %s perc=%.3f vol_ratio=%.3f %.3f->%.3f",
+                    p,
+                    perc,
+                    vol_ratio,
+                    before_bb,
+                    adjusted[p],
+                )
+                details[f'boll_breakout_{p}'] = adjusted[p] - before_bb
+
         return adjusted, details
 
     def fuse_multi_cycle(
