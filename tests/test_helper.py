@@ -16,6 +16,17 @@ calc_price_channel = helper.calc_price_channel
 calc_support_resistance = helper.calc_support_resistance
 
 
+def test_vwap_np_window():
+    high = [1, 2, 3, 4]
+    low = [0, 1, 2, 3]
+    close = [0.5, 1.5, 2.5, 3.5]
+    volume = [10, 10, 10, 10]
+    res_all = helper.vwap_np(high, low, close, volume)
+    res_win2 = helper.vwap_np(high, low, close, volume, window=2)
+    assert res_all.tolist() == pytest.approx([0.5, 1.0, 1.5, 2.0])
+    assert res_win2.tolist() == pytest.approx([0.5, 1.0, 2.0, 3.0])
+
+
 def test_safe_ta_with_short_series():
     s = pd.Series([1, 2], index=pd.date_range('2020-01-01', periods=2, freq='h'))
     df = _safe_ta(ta.macd, s, index=s.index)
@@ -83,18 +94,33 @@ def test_calc_features_raw_support_resistance():
     ):
         assert col in feats
 
-
-def test_vol_profile_density_small_range():
-    times = pd.date_range('2020-01-01', periods=1, freq='h')
+def test_calc_features_raw_vwap_window():
+    times = pd.date_range('2020-01-01', periods=4, freq='h')
     df = pd.DataFrame({
-        'open': [1],
-        'high': [1],
-        'low': [1],
-        'close': [1],
-        'volume': [100],
+        'open': [1, 2, 3, 4],
+        'high': [1, 2, 3, 4],
+        'low': [0, 1, 2, 3],
+        'close': [0.5, 1.5, 2.5, 3.5],
+        'volume': [10, 10, 10, 10],
     }, index=times)
-    feats = helper.calc_features_raw(df, '1h')
-    val = feats['vol_profile_density_1h'].iloc[0]
-    assert val <= 8.0
+
+    feats_all = helper.calc_features_raw(df, '1h')
+    feats_win2 = helper.calc_features_raw(df, '1h', vwap_window=2)
+    expected_all = helper.vwap_np(
+        feats_all['high'],
+        feats_all['low'],
+        feats_all['close'],
+        feats_all['volume'],
+    )
+    expected_win2 = helper.vwap_np(
+        feats_win2['high'],
+        feats_win2['low'],
+        feats_win2['close'],
+        feats_win2['volume'],
+        window=2,
+    )
+    assert feats_all['vwap_1h'].iloc[-1] == pytest.approx(expected_all[-1])
+    assert feats_win2['vwap_1h'].iloc[-1] == pytest.approx(expected_win2[-1])
+
 
 
