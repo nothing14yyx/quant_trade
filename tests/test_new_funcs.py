@@ -29,7 +29,8 @@ def test_apply_local_adjustments():
             'sma_20_1h': 1.0,
             'ma_ratio_5_20': 1.05,
             'sma_20_1h_prev': 0.98,
-            'vol_ma_ratio_1h': 1.0,
+            'vol_ma_ratio_1h': 2.0,
+            'boll_perc_1h': 0.99,
             'vol_roc_1h': 0.0,
         },
         '4h': {'vol_ma_ratio_4h': 1.0, 'vol_roc_4h': 0.0},
@@ -44,6 +45,7 @@ def test_apply_local_adjustments():
     adjusted, det = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.1, -0.05)
     assert 'ma_cross' in det
     assert 'strong_confirm_4h' in det
+    assert 'boll_breakout_1h' in det
     assert adjusted['1h'] != scores['1h']
 
 
