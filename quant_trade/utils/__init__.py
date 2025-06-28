@@ -12,6 +12,7 @@ from .robust_scaler import (
     apply_robust_z_with_params,
 )
 from .feature_health import apply_health_check_df
+from .db import CONFIG_PATH, load_config, connect_mysql
 
 __all__ = [
     "RateLimiter",
@@ -24,4 +25,7 @@ __all__ = [
     "load_scaler_params_from_json",
     "apply_robust_z_with_params",
     "apply_health_check_df",
+    "CONFIG_PATH",
+    "load_config",
+    "connect_mysql",
 ]

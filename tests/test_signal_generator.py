@@ -996,3 +996,37 @@ def test_vote_conflict_scales_score():
     )
 
     assert abs(large['score']) == pytest.approx(abs(small['score']))
+
+
+def test_confirm_15m_adjusts_score():
+    rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.combine_score = lambda ai, fs, weights=None: 0.6
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {
+        '1h': {'up': None, 'down': None},
+        '4h': {'up': None, 'down': None},
+        'd1': {'up': None, 'down': None},
+    }
+
+    f1h = {'close': 100, 'atr_pct_1h': 0, 'adx_1h': 0, 'funding_rate_1h': 0}
+    f4h = {'atr_pct_4h': 0}
+    fd1 = {}
+    f15m = {'rsi_15m': 30, 'ema_diff_15m': -0.02}
+
+    res = rsg.generate_signal(
+        f1h,
+        f4h,
+        fd1,
+        features_15m=f15m,
+        raw_features_1h=f1h,
+        raw_features_4h=f4h,
+        raw_features_d1=fd1,
+        raw_features_15m=f15m,
+    )
+
+    assert res['score'] < 0.6
+    assert res['details']['confirm_15m'] < 0
