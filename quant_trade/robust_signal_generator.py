@@ -1966,13 +1966,7 @@ class RobustSignalGenerator:
                 )
                 fused_score *= mult
                 crowding_factor *= mult
-        risk_score = fused_to_risk(
-            fused_score,
-            logic_score,
-            env_score,
-            cap=self.risk_score_cap,
-        )
-        risk_score = min(1.0, risk_score)
+        risk_score = 1.0
         logger.info(
             "pre-risk-check fused=%.4f risk=%.4f crowding=%.3f",
             fused_score,
@@ -2196,8 +2190,6 @@ class RobustSignalGenerator:
         weak = abs(fused_score) < 0.05
         if weak and (not strong_confirm or align_count < 1):
             direction = 0
-        else:
-            direction = -1 if fused_score < 0 else 1
 
         base_size = tier
 
@@ -2285,12 +2277,12 @@ class RobustSignalGenerator:
             int(conflict_filter_triggered),
         )
         return {
-            "symbol": symbol,
-            "timestamp": ts,
-            "direction": int(math.copysign(1, fused_score)),
-            "pos_size": round(pos_size, 4),
-            "fused": round(fused_score, 4),
-            "risk": round(risk_score, 3),
+            "signal": int(direction),
+            "score": float(fused_score),
+            "position_size": float(pos_size),
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+            "details": final_details,
         }
 
 
