@@ -1,11 +1,7 @@
-import os
-
 import logging
 
-from pathlib import Path
 import pandas as pd
-import yaml
-from sqlalchemy import create_engine
+from quant_trade.utils.db import load_config, connect_mysql
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.utils.helper import (
@@ -24,22 +20,7 @@ from quant_trade.data_loader import compute_vix_proxy
 from sqlalchemy import text
 
 
-CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
-
-
-def load_config(path=CONFIG_PATH):
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
-def connect_mysql(cfg):
-    mysql = cfg["mysql"]
-    url = (
-        f"mysql+pymysql://{mysql['user']}:{os.getenv('MYSQL_PASSWORD', mysql['password'])}"
-        f"@{mysql['host']}:{mysql.get('port', 3306)}/{mysql['database']}?charset=utf8mb4"
-    )
-    return create_engine(url)
 
 
 def load_latest_klines(engine, symbol: str, interval: str, limit: int = 1000) -> pd.DataFrame:
