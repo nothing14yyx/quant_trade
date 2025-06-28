@@ -57,6 +57,9 @@ class SignalThresholdParams:
     low_base: float = DEFAULT_LOW_BASE
     rev_boost: float = 0.30
     rev_th_mult: float = 0.60
+    atr_mult: float = 4.0
+    funding_mult: float = 8.0
+    adx_div: float = 100.0
 
     @classmethod
     def from_cfg(cls, cfg: dict | None):
@@ -69,6 +72,9 @@ class SignalThresholdParams:
             low_base=float(cfg.get("low_base", cls.low_base)),
             rev_boost=float(cfg.get("rev_boost", cls.rev_boost)),
             rev_th_mult=float(cfg.get("rev_th_mult", cls.rev_th_mult)),
+            atr_mult=float(cfg.get("atr_mult", cls.atr_mult)),
+            funding_mult=float(cfg.get("funding_mult", cls.funding_mult)),
+            adx_div=float(cfg.get("adx_div", cls.adx_div)),
         )
 
 
@@ -549,6 +555,9 @@ class RobustSignalGenerator:
                 "low_base": DEFAULT_LOW_BASE,
                 "rev_boost": 0.30,
                 "rev_th_mult": 0.60,
+                "atr_mult": 4.0,
+                "funding_mult": 8.0,
+                "adx_div": 100.0,
             }
             setattr(self, name, val)
             self.signal_params = SignalThresholdParams.from_cfg(val)
@@ -584,6 +593,9 @@ class RobustSignalGenerator:
                 "low_base": DEFAULT_LOW_BASE,
                 "rev_boost": 0.30,
                 "rev_th_mult": 0.60,
+                "atr_mult": 4.0,
+                "funding_mult": 8.0,
+                "adx_div": 100.0,
             }
             self.signal_params = SignalThresholdParams.from_cfg(self._signal_threshold_cfg)
         return self._signal_threshold_cfg
@@ -1267,10 +1279,15 @@ class RobustSignalGenerator:
             base = params.base_th
         if low_base is None:
             low_base = params.low_base
-        th = base + min(0.10, abs(atr) * 4) + min(0.08, abs(funding) * 8)
-        th += min(0.04, abs(adx) / 100)
+
+        th = base
+        th += min(0.10, abs(atr) * params.atr_mult)
+        th += min(0.08, abs(funding) * params.funding_mult)
+        th += min(0.04, abs(adx) / params.adx_div)
+
         if atr == 0 and adx == 0 and funding == 0:
-            th = min(th, 0.08)
+            th = min(th, base)
+
         rev_boost = params.rev_boost
         return max(th, low_base), rev_boost
 
@@ -2175,10 +2192,23 @@ class RobustSignalGenerator:
             or local_details.get('strong_confirm_4h', False)
         )
 
-        # --- Final gate (soft) ---------------------------------------
-        weak_signal = abs(fused_score) < 0.08
-        if weak_signal and (not strong_confirm or align_count < 1):
-            return None
+        # ---------- FINAL DIRECTION & SIZE FIX -------------
+        weak = abs(fused_score) < 0.05
+        if weak and (not strong_confirm or align_count < 1):
+            direction = 0
+        else:
+            direction = -1 if fused_score < 0 else 1
+
+        base_size = tier
+
+        def sigmoid(x: float) -> float:
+            return 1 / (1 + math.exp(-x))
+
+        pos_size = (
+            base_size * sigmoid(confidence_factor) * max(0.0, 1 - risk_score)
+        )
+        if direction != 0 and pos_size < self.signal_params.min_pos:
+            pos_size = self.signal_params.min_pos
 
         # ===== 14. 最终返回 =====
         with self._lock:
