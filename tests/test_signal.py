@@ -114,3 +114,21 @@ def test_adjust_score_cap_scale():
 
 def test_risk_cap():
     assert fused_to_risk(10, 0.1, 0.1, cap=5) == 5.0
+
+
+def test_risk_check_small_score():
+    rsg = make_rsg()
+    rsg.risk_adjust_factor = 0.2
+    rsg.risk_adjust_threshold = 0.03
+    rsg.risk_score_limit = 1.30
+    fused = 0.05
+    logic = 0.04
+    env = 1.0
+    risk = fused_to_risk(fused, logic, env, cap=5.0)
+    fused_adj = fused - rsg.risk_adjust_factor * risk
+    cond = (
+        abs(fused_adj) < rsg.risk_adjust_threshold
+        or risk > rsg.risk_score_limit
+        or 1.0 > rsg.crowding_limit
+    )
+    assert not cond
