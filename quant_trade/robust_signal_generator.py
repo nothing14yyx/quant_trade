@@ -367,11 +367,17 @@ class RobustSignalGenerator:
 
         risk_adj_cfg = cfg.get("risk_adjust", {})
         self.risk_adjust_factor = risk_adj_cfg.get("factor", 0.9)
-        self.risk_adjust_threshold = risk_adj_cfg.get("threshold", 0.01)
+        self.risk_adjust_threshold = cfg.get(
+            "risk_adjust_threshold",
+            risk_adj_cfg.get("threshold", 0.01),
+        )
 
         protect_cfg = cfg.get("protection_limits", {})
         self.risk_score_limit = protect_cfg.get("risk_score", 2.00)
-        self.crowding_limit = protect_cfg.get("crowding", 0.95)
+        self.crowding_limit = cfg.get(
+            "crowding_limit",
+            protect_cfg.get("crowding", 1.05),
+        )
 
         self.max_position = cfg.get("max_position", 0.3)
         self.th_down_d1 = self.cfg.get("th_down_d1", 0.74)
@@ -1261,6 +1267,9 @@ class RobustSignalGenerator:
         if low_base is None:
             low_base = params.low_base
         th = base + min(0.10, abs(atr) * 4) + min(0.08, abs(funding) * 8)
+        th += min(0.04, abs(adx) / 100)
+        if atr == 0 and adx == 0 and funding == 0:
+            th = min(th, 0.08)
         rev_boost = params.rev_boost
         return max(th, low_base), rev_boost
 
@@ -1929,13 +1938,14 @@ class RobustSignalGenerator:
             env_score,
             cap=self.risk_score_cap,
         )
+        risk_score = max(1.0, risk_score)
         logger.info(
             "pre-risk-check fused=%.4f risk=%.4f crowding=%.3f",
             fused_score,
             risk_score,
             crowding_factor,
         )
-        raw_score = fused_score
+        raw_score = logic_score * env_score * risk_score
         fused_score = raw_score - self.risk_adjust_factor * risk_score
         if abs(fused_score) < self.risk_adjust_threshold:
             logger.info(
@@ -1951,7 +1961,11 @@ class RobustSignalGenerator:
             risk_score,
             crowding_factor,
         )
-        if risk_score > self.risk_score_limit or crowding_factor > self.crowding_limit:
+        if (
+            risk_score > self.risk_score_limit
+            or crowding_factor < 0
+            or crowding_factor > self.crowding_limit
+        ):
             logger.info(
                 "risk_score=%.4f limit=%.3f crowding=%.4f limit=%.3f",
                 risk_score,
