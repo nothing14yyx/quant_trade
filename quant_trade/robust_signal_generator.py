@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
 # Set module logger to WARNING by default so importing modules can
 # configure their own verbosity without receiving this module's INFO logs.
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 # 默认配置路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
@@ -889,7 +889,7 @@ class RobustSignalGenerator:
         def _sigmoid(x):
             return 1 / (1 + np.exp(-x))
 
-        pos_size = base_size * _sigmoid(confidence_factor) * (1 - risk_score)
+        pos_size = base_size * _sigmoid(confidence_factor) * max(0.0, 1 - risk_score)
         pos_size *= exit_mult
         pos_size = min(pos_size, self.max_position)
         pos_size *= crowding_factor
@@ -1938,7 +1938,7 @@ class RobustSignalGenerator:
             env_score,
             cap=self.risk_score_cap,
         )
-        risk_score = max(1.0, risk_score)
+        risk_score = min(1.0, risk_score)
         logger.info(
             "pre-risk-check fused=%.4f risk=%.4f crowding=%.3f",
             fused_score,
