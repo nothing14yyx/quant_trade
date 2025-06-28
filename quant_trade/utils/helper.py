@@ -7,6 +7,7 @@ import warnings
 import logging
 from sklearn.preprocessing import RobustScaler
 from numba import njit
+from quant_trade.utils.soft_clip import soft_clip
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +93,21 @@ def calc_mfi_np(high, low, close, volume, window=14):
     return ratio, mfi
 
 
-def vwap_np(high, low, close, volume):
-    """Compute VWAP using cumulative sums."""
+def vwap_np(high, low, close, volume, window: int | None = None):
+    """Compute VWAP using cumulative sums or rolling window."""
     tp = (np.asarray(high) + np.asarray(low) + np.asarray(close)) / 3
-    volume_arr = np.asarray(volume)
-    cum_vol = np.cumsum(volume_arr)
-    cum_dollar = np.cumsum(tp * volume_arr)
+    volume_arr = np.asarray(volume, dtype="float64")
+    dollar = tp * volume_arr
+    if window is None:
+        cum_vol = np.cumsum(volume_arr)
+        cum_dollar = np.cumsum(dollar)
+    else:
+        if window <= 0:
+            raise ValueError("window must be positive")
+        vol_series = pd.Series(volume_arr)
+        dollar_series = pd.Series(dollar)
+        cum_vol = vol_series.rolling(window, min_periods=1).sum().to_numpy()
+        cum_dollar = dollar_series.rolling(window, min_periods=1).sum().to_numpy()
     vwap = cum_dollar / np.where(cum_vol == 0, np.nan, cum_vol)
     if isinstance(high, (pd.Series, pd.DataFrame)):
         return pd.Series(vwap, index=getattr(high, "index", None))
@@ -209,6 +219,7 @@ def calc_features_raw(
     *,
     symbol: str | None = None,
     long_window: int = 30,
+    vwap_window: int | None = None,
 ) -> pd.DataFrame | None:
     df.index = pd.to_datetime(df.index, errors="coerce")
     df = df[~df.index.isna()]
@@ -345,6 +356,7 @@ def calc_features_raw(
             feats["low"],
             feats["close"],
             feats["volume"],
+            window=vwap_window,
         ),
     )
     _check_index("stoch")
@@ -515,7 +527,9 @@ def calc_features_raw(
     vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw_s * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
 
-    assign_safe(feats, f"vol_profile_density_{period}", feats["volume"] / range_)
+    range_dens = (feats["high"] - feats["low"]).abs().clip(lower=1e-6)
+    density = feats["volume"] / range_dens
+    assign_safe(feats, f"vol_profile_density_{period}", soft_clip(density))
     assign_safe(
         feats, f"bid_ask_spread_pct_{period}", (feats["high"] - feats["low"]) / feats["close"].replace(0, np.nan)
     )
