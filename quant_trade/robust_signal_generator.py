@@ -22,7 +22,7 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
 
 # 退出信号滞后 bar 数默认值
-EXIT_LAG_BARS_DEFAULT = 1
+EXIT_LAG_BARS_DEFAULT = 0
 
 # AI 投票与仓位参数默认值
 
@@ -41,7 +41,7 @@ DEFAULT_AI_DIR_EPS = _load_default_ai_dir_eps(CONFIG_PATH)
 DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
 DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
 DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
-DEFAULT_LOW_VOL_RATIO = 0.3   # 低量能阈值
+DEFAULT_LOW_VOL_RATIO = 0.2   # 低量能阈值
 
 from dataclasses import dataclass
 
@@ -52,7 +52,7 @@ class SignalThresholdParams:
 
     base_th: float = 0.08
     gamma: float = 0.05
-    min_pos: float = 0.10
+    min_pos: float = 0.05
     quantile: float = 0.80
     low_base: float = DEFAULT_LOW_BASE
     rev_boost: float = 0.30
@@ -286,9 +286,9 @@ class RobustSignalGenerator:
         config_path=CONFIG_PATH,
         core_keys=None,
         delta_params=None,
-        min_weight_ratio=0.3,
-        th_window=150,
-        th_decay=1.0,
+        min_weight_ratio=0.6,
+        th_window=60,
+        th_decay=2.0,
     ):
         # 多线程访问历史数据时的互斥锁
         # 使用 RLock 以便在部分函数中嵌套调用
@@ -366,9 +366,9 @@ class RobustSignalGenerator:
         self.cap_positive_scale = cfg.get("cap_positive_scale", 0.7)
         vg_cfg = cfg.get("volume_guard", {})
         self.volume_guard_params = {
-            "weak": vg_cfg.get("weak_scale", 0.85),
+            "weak": vg_cfg.get("weak_scale", 0.90),
             "over": vg_cfg.get("over_scale", 0.9),
-            "ratio_low": vg_cfg.get("ratio_low", 0.6),
+            "ratio_low": vg_cfg.get("ratio_low", 0.5),
             "ratio_high": vg_cfg.get("ratio_high", 2.0),
             "roc_low": vg_cfg.get("roc_low", -20),
             "roc_high": vg_cfg.get("roc_high", 100),
@@ -382,9 +382,9 @@ class RobustSignalGenerator:
         self.exit_lag_bars = cfg.get("exit_lag_bars", EXIT_LAG_BARS_DEFAULT)
         oi_cfg = cfg.get("oi_protection", {})
         self.oi_scale = oi_cfg.get("scale", 0.8)
-        self.max_same_direction_rate = oi_cfg.get("crowding_threshold", 0.90)
+        self.max_same_direction_rate = oi_cfg.get("crowding_threshold", 0.95)
         self.veto_level = cfg.get("veto_level", 0.7)
-        self.flip_coeff = cfg.get("flip_coeff", 0.5)
+        self.flip_coeff = cfg.get("flip_coeff", 0.3)
         cw_cfg = cfg.get("cycle_weight", {})
         self.cycle_weight = {
             "strong": cw_cfg.get("strong", 1.2),
@@ -445,6 +445,9 @@ class RobustSignalGenerator:
         # 用于存储历史融合得分，方便计算动态阈值（最大长度由 history_window 指定）
         self.history_scores = deque(maxlen=history_window)
 
+        # 全局得分列表用于拥挤度保护
+        self.all_scores_list = deque(maxlen=500)
+
         # 保存近期 OI 变化率，便于自适应过热阈值
         self.oi_change_history = deque(maxlen=history_window)
         # 记录BTC Dominance历史，计算短期与长期差异
@@ -471,7 +474,7 @@ class RobustSignalGenerator:
         self.start_weight_update_thread()
 
     def __getattr__(self, name):
-        if name in {"eth_dom_history", "btc_dom_history", "oi_change_history", "history_scores"}:
+        if name in {"eth_dom_history", "btc_dom_history", "oi_change_history", "history_scores", "all_scores_list"}:
             val = deque(maxlen=3000)
             setattr(self, name, val)
             return val
@@ -516,8 +519,8 @@ class RobustSignalGenerator:
             setattr(self, name, val)
             return val
         if name == "min_weight_ratio":
-            setattr(self, name, 0.3)
-            return 0.3
+            setattr(self, name, 0.6)
+            return 0.6
         if name == "_cooldown":
             setattr(self, name, 0)
             return 0
@@ -552,14 +555,14 @@ class RobustSignalGenerator:
             setattr(self, name, 0.8)
             return 0.8
         if name == "max_same_direction_rate":
-            setattr(self, name, 0.85)
-            return 0.85
+            setattr(self, name, 0.95)
+            return 0.95
         if name == "veto_level":
             setattr(self, name, 0.7)
             return 0.7
         if name == "flip_coeff":
-            setattr(self, name, 0.5)
-            return 0.5
+            setattr(self, name, 0.3)
+            return 0.3
         if name == "cycle_weight":
             val = {"strong": 1.2, "weak": 0.8, "opposite": 0.5}
             setattr(self, name, val)
@@ -575,7 +578,7 @@ class RobustSignalGenerator:
             val = {
                 "base_th": 0.08,
                 "gamma": 0.05,
-                "min_pos": 0.10,
+                "min_pos": 0.05,
                 "low_base": DEFAULT_LOW_BASE,
                 "rev_boost": 0.30,
                 "rev_th_mult": 0.60,
@@ -600,11 +603,11 @@ class RobustSignalGenerator:
             setattr(self, name, DEFAULT_LOW_VOL_RATIO)
             return DEFAULT_LOW_VOL_RATIO
         if name == "th_window":
-            setattr(self, name, 150)
-            return 150
+            setattr(self, name, 60)
+            return 60
         if name == "th_decay":
-            setattr(self, name, 1.0)
-            return 1.0
+            setattr(self, name, 2.0)
+            return 2.0
         raise AttributeError(name)
 
     @property
@@ -1275,9 +1278,10 @@ class RobustSignalGenerator:
                     w = base_w * (1 + ic_val)
                 raw[k] = max(base_w * self.min_weight_ratio, w)
 
-            total = sum(raw.values()) or 1.0
-            self.current_weights = {k: v / total for k, v in raw.items()}
-            return self.current_weights
+        total = sum(raw.values()) or 1.0
+        self.current_weights = {k: v / total for k, v in raw.items()}
+        logger.info("current_weights: %s", self.current_weights)
+        return self.current_weights
 
     def _weight_update_loop(self, interval):
         while True:
@@ -1331,6 +1335,8 @@ class RobustSignalGenerator:
                     qv = float(np.quantile(arr, params.quantile))
                 if not math.isnan(qv):
                     hist_base = max(base, qv)
+        if hist_base > 0.12:
+            hist_base = 0.12
 
         th = hist_base
         atr_eff = abs(atr)
@@ -2059,6 +2065,7 @@ class RobustSignalGenerator:
 
         with self._lock:
             cache["history_scores"].append(fused_score)
+            self.all_scores_list.append(fused_score)
 
         return {
             "fused_score": fused_score,
@@ -2576,9 +2583,40 @@ class RobustSignalGenerator:
         risk_info["consensus_14"] = consensus_14
         risk_info["consensus_4d1"] = consensus_4d1
         risk_info["local_details"] = local_details
-        return self._finalize_position(
-            fused_score, risk_info, ai_scores, fs, scores, std_1h, std_4h, std_d1, std_15m, raw_f1h, raw_f4h, raw_fd1, raw_f15m, vol_preds, rise_preds, drawdown_preds, short_mom, ob_imb, confirm_15m, oversold_reversal, cache, symbol
+        result = self._finalize_position(
+            fused_score,
+            risk_info,
+            ai_scores,
+            fs,
+            scores,
+            std_1h,
+            std_4h,
+            std_d1,
+            std_15m,
+            raw_f1h,
+            raw_f4h,
+            raw_fd1,
+            raw_f15m,
+            vol_preds,
+            rise_preds,
+            drawdown_preds,
+            short_mom,
+            ob_imb,
+            confirm_15m,
+            oversold_reversal,
+            cache,
+            symbol,
         )
+        if all_scores_list is None:
+            all_scores_list = self.all_scores_list
+        logger.debug(
+            "step=%s fused=%.3f th=%.3f pos=%.4f",
+            ts,
+            fused_score,
+            base_th,
+            result.get("position_size", 0.0),
+        )
+        return result
 
 
 if __name__ == "__main__":
