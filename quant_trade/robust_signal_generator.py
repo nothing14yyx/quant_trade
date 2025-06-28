@@ -903,13 +903,20 @@ class RobustSignalGenerator:
         direction: int,
         exit_mult: float,
         consensus_all: bool = False,
-    ) -> tuple[float, int, float]:
-        """Calculate final position size and tier given direction and risk factors."""
+    ) -> tuple[float, int, float, str | None]:
+        """Calculate final position size and tier given direction and risk factors.
+
+        Also return a ``zero_reason`` when ``pos_size`` is reduced to zero so the
+        caller can trace why no position will be taken.
+        """
 
         tier = base_coeff * abs(grad_dir)
         base_size = tier
         def _sigmoid(x):
             return 1 / (1 + np.exp(-x))
+
+        zero_reason: str | None = None
+        low_vol_flag = False
 
         risk_factor = 1.0 / (1.0 + risk_score)
         pos_size = base_size * _sigmoid(confidence_factor) * risk_factor
@@ -918,6 +925,7 @@ class RobustSignalGenerator:
         pos_size *= crowding_factor
         if direction == 0:
             pos_size = 0.0
+            zero_reason = "no_direction"
 
         if (
             regime == "range"
@@ -927,6 +935,7 @@ class RobustSignalGenerator:
             and not consensus_all
         ):
             pos_size *= 0.5
+            low_vol_flag = True
 
 
         if vol_p is not None:
@@ -936,6 +945,10 @@ class RobustSignalGenerator:
         min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
         if pos_size < min_pos:
             direction, pos_size = 0, 0.0
+            if low_vol_flag:
+                zero_reason = "vol_ratio"
+            else:
+                zero_reason = "min_pos"
 
         # 4h 周期 veto 逻辑已停用
         # if direction == 1 and scores.get("4h", 0) < -self.veto_level:
@@ -943,7 +956,7 @@ class RobustSignalGenerator:
         # elif direction == -1 and scores.get("4h", 0) > self.veto_level:
         #     direction, pos_size = 0, 0.0
 
-        return pos_size, direction, tier
+        return pos_size, direction, tier, zero_reason
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
     def get_ai_score(self, features, model_up, model_down, calibrator_up=None, calibrator_down=None):
@@ -2129,7 +2142,7 @@ class RobustSignalGenerator:
         vol_ratio = std_1h.get("vol_ma_ratio_1h")
         tier = None
         fused_score = soft_clip(fused_score, k=1.0)
-        pos_size, direction, tier = self.compute_position_size(
+        pos_size, direction, tier, zero_reason = self.compute_position_size(
             grad_dir=grad_dir,
             base_coeff=base_coeff,
             confidence_factor=confidence_factor,
@@ -2161,6 +2174,7 @@ class RobustSignalGenerator:
         pos_size = min(pos_size, pos_map)
         if conflict_filter_triggered:
             pos_size = 0.0
+            zero_reason = zero_reason or "conflict_filter"
 
         price = (raw_f1h or std_1h).get("close", 0)
         if raw_f4h is not None and "atr_pct_4h" in raw_f4h:
@@ -2248,6 +2262,7 @@ class RobustSignalGenerator:
             "signal": int(direction),
             "score": final_score,
             "position_size": float(round(pos_size, 4)),
+            "zero_reason": zero_reason if pos_size == 0 else None,
             "take_profit": take_profit,
             "stop_loss": stop_loss,
             "details": final_details,
