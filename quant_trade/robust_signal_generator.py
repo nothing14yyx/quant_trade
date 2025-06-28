@@ -83,7 +83,7 @@ def robust_signal_generator(model, *args, **kwargs):
     try:
         return model.generate_signal(*args, **kwargs)
     except (ValueError, KeyError, TypeError) as e:
-        logger.warning("generate_signal failed: %s", e)
+        logger.info("generate_signal failed: %s", e)
         return None
 
 
