@@ -7,6 +7,7 @@ import warnings
 import logging
 from sklearn.preprocessing import RobustScaler
 from numba import njit
+from quant_trade.utils.soft_clip import soft_clip
 
 logger = logging.getLogger(__name__)
 
@@ -515,7 +516,9 @@ def calc_features_raw(
     vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw_s * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
 
-    assign_safe(feats, f"vol_profile_density_{period}", feats["volume"] / range_)
+    range_dens = (feats["high"] - feats["low"]).abs().clip(lower=1e-6)
+    density = feats["volume"] / range_dens
+    assign_safe(feats, f"vol_profile_density_{period}", soft_clip(density))
     assign_safe(
         feats, f"bid_ask_spread_pct_{period}", (feats["high"] - feats["low"]) / feats["close"].replace(0, np.nan)
     )
