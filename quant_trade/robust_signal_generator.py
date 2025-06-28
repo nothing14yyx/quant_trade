@@ -2175,10 +2175,23 @@ class RobustSignalGenerator:
             or local_details.get('strong_confirm_4h', False)
         )
 
-        # --- Final gate (soft) ---------------------------------------
-        weak_signal = abs(fused_score) < 0.08
-        if weak_signal and (not strong_confirm or align_count < 1):
-            return None
+        # ---------- FINAL DIRECTION & SIZE FIX -------------
+        weak = abs(fused_score) < 0.05
+        if weak and (not strong_confirm or align_count < 1):
+            direction = 0
+        else:
+            direction = -1 if fused_score < 0 else 1
+
+        base_size = tier
+
+        def sigmoid(x: float) -> float:
+            return 1 / (1 + math.exp(-x))
+
+        pos_size = (
+            base_size * sigmoid(confidence_factor) * max(0.0, 1 - risk_score)
+        )
+        if direction != 0 and pos_size < self.signal_params.min_pos:
+            pos_size = self.signal_params.min_pos
 
         # ===== 14. 最终返回 =====
         with self._lock:
