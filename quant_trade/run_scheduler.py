@@ -211,7 +211,7 @@ class Scheduler:
             try:
                 feats = prepare_all_features(self.engine, sym, self.scaler_params)
                 if feats is None:
-                    logging.warning("skip %s - insufficient data", sym)
+                    logging.debug("skip %s - insufficient data", sym)
                     continue
                 feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = feats
                 oi = load_latest_open_interest(self.engine, sym)
@@ -230,7 +230,7 @@ class Scheduler:
                     symbol=sym,
                 )
                 if sig is None:
-                    logging.warning("skip %s – signal generator returned None", sym)
+                    logging.debug("skip %s – signal generator returned None", sym)
                     continue
                 raw1h = {k: _to_builtin(v) for k, v in raw1h.items()}
                 raw4h = {k: _to_builtin(v) for k, v in raw4h.items()}
