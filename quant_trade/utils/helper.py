@@ -224,7 +224,7 @@ def calc_features_raw(
         feats[col] = np.full(len(feats), np.nan, dtype="float64")
 
     if symbol is not None and len(feats) < long_window:
-        logger.warning("%s < %s rows -> skip", symbol, long_window)
+        logger.debug("%s < %s rows -> skip", symbol, long_window)
         return None
 
     def _check_index(name: str):
@@ -600,7 +600,7 @@ def calc_features_raw(
     if symbol is not None:
         null_ratio = feats.isnull().all(axis=1).mean()
         if null_ratio > 0.5:
-            logger.warning("%s too many NaN rows -> skip", symbol)
+            logger.debug("%s too many NaN rows -> skip", symbol)
             return None
 
     return feats
