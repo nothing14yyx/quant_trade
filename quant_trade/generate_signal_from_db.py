@@ -27,12 +27,6 @@ from sqlalchemy import text
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
-
-
 
 def load_config(path=CONFIG_PATH):
     with open(path, "r", encoding="utf-8") as f:
@@ -443,6 +437,7 @@ def main(symbol: str = "ETHUSDT"):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     import argparse
 
     parser = argparse.ArgumentParser(description="从数据库获取数据生成交易信号")
