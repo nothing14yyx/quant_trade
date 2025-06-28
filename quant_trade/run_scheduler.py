@@ -11,9 +11,8 @@ import numpy as np
 
 from quant_trade.data_loader import DataLoader
 from quant_trade.feature_engineering import FeatureEngineer
+from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.generate_signal_from_db import (
-    load_config,
-    connect_mysql,
     load_scaler_params_from_json,
     prepare_all_features,
     load_global_metrics,
