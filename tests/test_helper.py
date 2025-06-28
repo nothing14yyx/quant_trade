@@ -84,3 +84,17 @@ def test_calc_features_raw_support_resistance():
         assert col in feats
 
 
+def test_vol_profile_density_small_range():
+    times = pd.date_range('2020-01-01', periods=1, freq='h')
+    df = pd.DataFrame({
+        'open': [1],
+        'high': [1],
+        'low': [1],
+        'close': [1],
+        'volume': [100],
+    }, index=times)
+    feats = helper.calc_features_raw(df, '1h')
+    val = feats['vol_profile_density_1h'].iloc[0]
+    assert val <= 8.0
+
+
