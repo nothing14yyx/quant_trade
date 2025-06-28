@@ -3,6 +3,7 @@ import types
 import pytest
 
 from quant_trade import param_search
+import quant_trade.utils.db as db
 
 
 def dummy_study(*args, **kwargs):
@@ -25,8 +26,10 @@ def dummy_study(*args, **kwargs):
     return DummyStudy()
 
 def test_param_search_grid(monkeypatch):
-    monkeypatch.setattr(param_search, "load_config", lambda: {})
-    monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(db, "load_config", lambda: {})
+    monkeypatch.setattr(db, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(param_search, "load_config", db.load_config)
+    monkeypatch.setattr(param_search, "connect_mysql", db.connect_mysql)
     monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
     monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.0, 0.0, 0))
     monkeypatch.setattr(param_search, "ParameterGrid", lambda pg: [pg])
@@ -51,8 +54,10 @@ def test_param_search_grid(monkeypatch):
 
 
 def test_param_search_optuna(monkeypatch):
-    monkeypatch.setattr(param_search, "load_config", lambda: {})
-    monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(db, "load_config", lambda: {})
+    monkeypatch.setattr(db, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(param_search, "load_config", db.load_config)
+    monkeypatch.setattr(param_search, "connect_mysql", db.connect_mysql)
     monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
     monkeypatch.setattr(param_search, "run_single_backtest", lambda *a, **k: (0.0, 0.0, 0))
     monkeypatch.setattr(param_search.optuna, "create_study", lambda direction="maximize": dummy_study())
@@ -77,8 +82,10 @@ def test_param_search_optuna(monkeypatch):
 
 
 def test_param_search_success(monkeypatch, caplog):
-    monkeypatch.setattr(param_search, "load_config", lambda: {})
-    monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(db, "load_config", lambda: {})
+    monkeypatch.setattr(db, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(param_search, "load_config", db.load_config)
+    monkeypatch.setattr(param_search, "connect_mysql", db.connect_mysql)
     monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
     monkeypatch.setattr(param_search, "ParameterGrid", lambda pg: [pg])
 
@@ -109,8 +116,10 @@ def test_param_search_success(monkeypatch, caplog):
 
 
 def test_param_search_cv(monkeypatch):
-    monkeypatch.setattr(param_search, "load_config", lambda: {})
-    monkeypatch.setattr(param_search, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(db, "load_config", lambda: {})
+    monkeypatch.setattr(db, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(param_search, "load_config", db.load_config)
+    monkeypatch.setattr(param_search, "connect_mysql", db.connect_mysql)
     monkeypatch.setattr(param_search, "ParameterGrid", lambda pg: [pg])
     monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
 

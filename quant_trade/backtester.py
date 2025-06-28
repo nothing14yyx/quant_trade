@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import yaml
-from sqlalchemy import create_engine
+from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
 
@@ -33,17 +33,6 @@ def convert_model_paths(paths: dict) -> dict:
     return nested
 
 # =========== 数据库&配置 ===========
-def load_config(path=CONFIG_PATH):
-    with open(path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
-def connect_mysql(cfg):
-    mysql = cfg['mysql']
-    url = (
-        f"mysql+pymysql://{mysql['user']}:{os.getenv('MYSQL_PASSWORD', mysql['password'])}@{mysql['host']}:{mysql.get('port',3306)}/{mysql['database']}?charset=utf8mb4"
-    )
-    return create_engine(url)
-
-
 def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: float, slippage: float) -> pd.DataFrame:
     """根据信号和K线计算回测交易明细"""
     trades = []
