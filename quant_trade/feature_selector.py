@@ -18,7 +18,6 @@ from sqlalchemy import create_engine
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 # ---------- 0. 读取配置 ----------
@@ -321,6 +320,7 @@ def select_features(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     for t in targets:
         logger.info("\n====== 处理 %s ======", t)
         select_features(t)

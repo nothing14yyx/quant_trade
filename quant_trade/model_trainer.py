@@ -19,10 +19,13 @@ from sklearn.pipeline import Pipeline
 
 import optuna
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 optuna.logging.set_verbosity(optuna.logging.ERROR)
 from lightgbm.callback import CallbackEnv
 from sqlalchemy import create_engine
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 def _sanitize_feature_names(
