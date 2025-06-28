@@ -19,7 +19,7 @@ def make_dummy_rsg():
     }
     rsg.ic_scores = {k: 1 for k in rsg.base_weights}
     rsg.current_weights = rsg.base_weights.copy()
-    rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+    rsg._prev_raw = {p: None for p in ("15m", "1h", "4h", "d1")}
     rsg.vote_params = {'weight_ai': 2.0, 'strong_min': 5, 'conf_min': 1.0}
     rsg.min_weight_ratio = 0.2
     rsg.sentiment_alpha = 0.5
