@@ -162,5 +162,7 @@
   "LEVERUSDT": "lever",
   "CTKUSDT": "certik",
   "BERAUSDT": "berachain-bera",
-  "MELANIAUSDT": "melania-meme"
+  "MELANIAUSDT": "melania-meme",
+  "ARUSDT": "arweave",
+  "ZROUSDT": "layerzero"
 }
