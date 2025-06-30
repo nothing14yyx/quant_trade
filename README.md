@@ -21,7 +21,7 @@
     数量及衰减程度，默认 `th_window=150`、`th_decay=1.0`，
     可根据策略需求适当调小窗口或衰减系数。
 -   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.80`，数值越高代表触发门槛越严格。
--   `dynamic_threshold` 会依据最近 `history_scores` 计算该分位数，并结合 `atr_4h`、`adx_4h`、`atr_d1`、`adx_d1` 与 `pred_vol`、`vix_proxy` 等指标自适应调整门槛，`regime` 与 `reversal` 还能微调阈值和 `rev_boost`。
+-   `compute_dynamic_threshold` 会依据最近 `history_scores` 计算分位数，并结合 `atr_4h`、`adx_4h`、`atr_d1`、`adx_d1` 与 `pred_vol`、`vix_proxy` 等指标自适应调整门槛，`regime` 与 `reversal` 还能微调阈值和 `rev_boost`，参数统一封装在 `DynamicThresholdInput` 中。
 -   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
 -   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
     帮助更准确地衡量趋势和动量强度。

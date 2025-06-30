@@ -104,11 +104,10 @@ def run_single_backtest(
             reversal=False,
             history_scores=None,
         ):
-            return RobustSignalGenerator.dynamic_threshold(
-                self,
-                atr,
-                adx,
-                funding,
+            data = DynamicThresholdInput(
+                atr=atr,
+                adx=adx,
+                funding=funding,
                 atr_4h=atr_4h,
                 adx_4h=adx_4h,
                 atr_d1=atr_d1,
@@ -117,10 +116,14 @@ def run_single_backtest(
                 pred_vol_4h=pred_vol_4h,
                 pred_vol_d1=pred_vol_d1,
                 vix_proxy=vix_proxy,
-                base=th_params.get("base", base),
                 regime=regime,
-                low_base=low_base,
                 reversal=reversal,
+            )
+            return RobustSignalGenerator.compute_dynamic_threshold(
+                self,
+                data,
+                base=th_params.get("base", base),
+                low_base=low_base,
                 history_scores=history_scores,
             )
 
