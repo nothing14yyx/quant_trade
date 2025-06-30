@@ -48,6 +48,7 @@ DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
 DEFAULT_LOW_VOL_RATIO = 0.2   # 低量能阈值
 
 from dataclasses import dataclass
+from quant_trade.utils import get_cfg_value
 
 
 @dataclass
@@ -69,16 +70,16 @@ class SignalThresholdParams:
     def from_cfg(cls, cfg: dict | None):
         cfg = cfg or {}
         return cls(
-            base_th=float(cfg.get("base_th", cls.base_th)),
-            gamma=float(cfg.get("gamma", cls.gamma)),
-            min_pos=float(cfg.get("min_pos", cls.min_pos)),
-            quantile=float(cfg.get("quantile", cls.quantile)),
-            low_base=float(cfg.get("low_base", cls.low_base)),
-            rev_boost=float(cfg.get("rev_boost", cls.rev_boost)),
-            rev_th_mult=float(cfg.get("rev_th_mult", cls.rev_th_mult)),
-            atr_mult=float(cfg.get("atr_mult", cls.atr_mult)),
-            funding_mult=float(cfg.get("funding_mult", cls.funding_mult)),
-            adx_div=float(cfg.get("adx_div", cls.adx_div)),
+            base_th=float(get_cfg_value(cfg, "base_th", cls.base_th)),
+            gamma=float(get_cfg_value(cfg, "gamma", cls.gamma)),
+            min_pos=float(get_cfg_value(cfg, "min_pos", cls.min_pos)),
+            quantile=float(get_cfg_value(cfg, "quantile", cls.quantile)),
+            low_base=float(get_cfg_value(cfg, "low_base", cls.low_base)),
+            rev_boost=float(get_cfg_value(cfg, "rev_boost", cls.rev_boost)),
+            rev_th_mult=float(get_cfg_value(cfg, "rev_th_mult", cls.rev_th_mult)),
+            atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
+            funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
+            adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
         )
 
 
@@ -325,89 +326,90 @@ class RobustSignalGenerator:
         self.config_manager = ConfigManager(config_path)
         cfg = self.config_manager.cfg
         self.cfg = cfg
-        self.signal_threshold_cfg = cfg.get("signal_threshold", {})
+        self.signal_threshold_cfg = get_cfg_value(cfg, "signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
             self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
-        db_cfg = cfg.get("delta_boost", {})
-        self.core_keys = core_keys or db_cfg.get("core_keys", self.DEFAULT_CORE_KEYS)
-        self.delta_params = delta_params or db_cfg.get("params", self.DELTA_PARAMS)
-        vote_cfg = cfg.get("vote_system", {})
+        db_cfg = get_cfg_value(cfg, "delta_boost", {})
+        self.core_keys = core_keys or get_cfg_value(db_cfg, "core_keys", self.DEFAULT_CORE_KEYS)
+        self.delta_params = delta_params or get_cfg_value(db_cfg, "params", self.DELTA_PARAMS)
+        vote_cfg = get_cfg_value(cfg, "vote_system", {})
         self.vote_params = {
             "weight_ai": vote_cfg.get("weight_ai", self.VOTE_PARAMS["weight_ai"]),
             "strong_min": vote_cfg.get("strong_min", self.VOTE_PARAMS["strong_min"]),
             "conf_min": vote_cfg.get("conf_min", self.VOTE_PARAMS["conf_min"]),
         }
-        self.ai_dir_eps = vote_cfg.get("ai_dir_eps", DEFAULT_AI_DIR_EPS)
-        self.vote_weights = cfg.get(
+        self.ai_dir_eps = get_cfg_value(vote_cfg, "ai_dir_eps", DEFAULT_AI_DIR_EPS)
+        self.vote_weights = get_cfg_value(
+            cfg,
             "vote_weights",
             {"ob": 4, "short_mom": 2, "ai": self.vote_params["weight_ai"], "vol_breakout": 1},
         )
 
-        filters_cfg = cfg.get("signal_filters", {})
+        filters_cfg = get_cfg_value(cfg, "signal_filters", {})
         # ↓ 放宽阈值，防止信号被过度过滤
         self.signal_filters = {
-            "min_vote": filters_cfg.get("min_vote", 2),
-            "confidence_vote": filters_cfg.get("confidence_vote", 0.12),
+            "min_vote": get_cfg_value(filters_cfg, "min_vote", 2),
+            "confidence_vote": get_cfg_value(filters_cfg, "confidence_vote", 0.12),
         }
 
-        pc_cfg = cfg.get("position_coeff", {})
-        self.pos_coeff_range = pc_cfg.get("range", DEFAULT_POS_K_RANGE)
-        self.pos_coeff_trend = pc_cfg.get("trend", DEFAULT_POS_K_TREND)
-        self.low_vol_ratio = cfg.get(
-            "low_vol_ratio", pc_cfg.get("low_vol_ratio", DEFAULT_LOW_VOL_RATIO)
+        pc_cfg = get_cfg_value(cfg, "position_coeff", {})
+        self.pos_coeff_range = get_cfg_value(pc_cfg, "range", DEFAULT_POS_K_RANGE)
+        self.pos_coeff_trend = get_cfg_value(pc_cfg, "trend", DEFAULT_POS_K_TREND)
+        self.low_vol_ratio = get_cfg_value(
+            cfg,
+            "low_vol_ratio",
+            get_cfg_value(pc_cfg, "low_vol_ratio", DEFAULT_LOW_VOL_RATIO),
         )
 
-        self.sentiment_alpha = cfg.get("sentiment_alpha", 0.5)
-        self.cap_positive_scale = cfg.get("cap_positive_scale", 0.7)
-        vg_cfg = cfg.get("volume_guard", {})
+        self.sentiment_alpha = get_cfg_value(cfg, "sentiment_alpha", 0.5)
+        self.cap_positive_scale = get_cfg_value(cfg, "cap_positive_scale", 0.7)
+        vg_cfg = get_cfg_value(cfg, "volume_guard", {})
         self.volume_guard_params = {
-            "weak": vg_cfg.get("weak_scale", 0.90),
-            "over": vg_cfg.get("over_scale", 0.9),
-            "ratio_low": vg_cfg.get("ratio_low", 0.5),
-            "ratio_high": vg_cfg.get("ratio_high", 2.0),
-            "roc_low": vg_cfg.get("roc_low", -20),
-            "roc_high": vg_cfg.get("roc_high", 100),
+            "weak": get_cfg_value(vg_cfg, "weak_scale", 0.90),
+            "over": get_cfg_value(vg_cfg, "over_scale", 0.9),
+            "ratio_low": get_cfg_value(vg_cfg, "ratio_low", 0.5),
+            "ratio_high": get_cfg_value(vg_cfg, "ratio_high", 2.0),
+            "roc_low": get_cfg_value(vg_cfg, "roc_low", -20),
+            "roc_high": get_cfg_value(vg_cfg, "roc_high", 100),
         }
-        ob_cfg = cfg.get("ob_threshold", {})
+        ob_cfg = get_cfg_value(cfg, "ob_threshold", {})
         self.ob_th_params = {
-            "min_ob_th": ob_cfg.get("min_ob_th", 0.15),
-            "dynamic_factor": ob_cfg.get("dynamic_factor", 0.08),
+            "min_ob_th": get_cfg_value(ob_cfg, "min_ob_th", 0.15),
+            "dynamic_factor": get_cfg_value(ob_cfg, "dynamic_factor", 0.08),
         }
-        self.risk_score_cap = cfg.get("risk_score_cap", 5.0)
+        self.risk_score_cap = get_cfg_value(cfg, "risk_score_cap", 5.0)
         # 风险管理器
         self.risk_manager = RiskManager(cap=self.risk_score_cap)
-        self.exit_lag_bars = cfg.get("exit_lag_bars", EXIT_LAG_BARS_DEFAULT)
-        oi_cfg = cfg.get("oi_protection", {})
-        self.oi_scale = oi_cfg.get("scale", 0.8)
-        self.max_same_direction_rate = oi_cfg.get("crowding_threshold", 0.95)
-        self.veto_level = cfg.get("veto_level", 0.7)
-        self.flip_coeff = cfg.get("flip_coeff", 0.3)
-        cw_cfg = cfg.get("cycle_weight", {})
+        self.exit_lag_bars = get_cfg_value(cfg, "exit_lag_bars", EXIT_LAG_BARS_DEFAULT)
+        oi_cfg = get_cfg_value(cfg, "oi_protection", {})
+        self.oi_scale = get_cfg_value(oi_cfg, "scale", 0.8)
+        self.max_same_direction_rate = get_cfg_value(oi_cfg, "crowding_threshold", 0.95)
+        self.veto_level = get_cfg_value(cfg, "veto_level", 0.7)
+        self.flip_coeff = get_cfg_value(cfg, "flip_coeff", 0.3)
+        cw_cfg = get_cfg_value(cfg, "cycle_weight", {})
         self.cycle_weight = {
-            "strong": cw_cfg.get("strong", 1.2),
-            "weak": cw_cfg.get("weak", 0.8),
-            "opposite": cw_cfg.get("opposite", 0.5),
+            "strong": get_cfg_value(cw_cfg, "strong", 1.2),
+            "weak": get_cfg_value(cw_cfg, "weak", 0.8),
+            "opposite": get_cfg_value(cw_cfg, "opposite", 0.5),
         }
-        regime_cfg = cfg.get("regime", {})
-        self.regime_adx_trend = regime_cfg.get("adx_trend", 25)
-        self.regime_adx_range = regime_cfg.get("adx_range", 20)
+        regime_cfg = get_cfg_value(cfg, "regime", {})
+        self.regime_adx_trend = get_cfg_value(regime_cfg, "adx_trend", 25)
+        self.regime_adx_range = get_cfg_value(regime_cfg, "adx_range", 20)
 
-        risk_adj_cfg = cfg.get("risk_adjust", {})
-        self.risk_adjust_factor = risk_adj_cfg.get("factor", 0.9)
-        self.risk_adjust_threshold = cfg.get(
-            "risk_adjust_threshold",
-            risk_adj_cfg.get("threshold", 0.01),
+        risk_adj_cfg = get_cfg_value(cfg, "risk_adjust", {})
+        self.risk_adjust_factor = get_cfg_value(risk_adj_cfg, "factor", 0.9)
+        self.risk_adjust_threshold = get_cfg_value(
+            cfg, "risk_adjust_threshold", get_cfg_value(risk_adj_cfg, "threshold", 0.01)
         )
 
-        protect_cfg = cfg.get("protection_limits", {})
-        self.risk_score_limit = protect_cfg.get("risk_score", 2.00)
-        self.crowding_limit = cfg.get(
-            "crowding_limit",
-            protect_cfg.get("crowding", 1.05),
+        protect_cfg = get_cfg_value(cfg, "protection_limits", {})
+        self.risk_score_limit = get_cfg_value(protect_cfg, "risk_score", 2.00)
+        self.crowding_limit = get_cfg_value(
+            cfg, "crowding_limit", get_cfg_value(protect_cfg, "crowding", 1.05)
         )
 
-        self.max_position = cfg.get("max_position", 0.3)
-        self.th_down_d1 = self.cfg.get("th_down_d1", 0.74)
+        self.max_position = get_cfg_value(cfg, "max_position", 0.3)
+        self.th_down_d1 = get_cfg_value(self.cfg, "th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
         self.th_window = th_window
         self.th_decay = th_decay
@@ -457,156 +459,74 @@ class RobustSignalGenerator:
         # 各币种独立缓存
         self.symbol_data = {}
 
+        # 缓存原始特征与内部状态
+        self._raw_history = {
+            "15m": deque(maxlen=4),
+            "1h": deque(maxlen=4),
+            "4h": deque(maxlen=2),
+            "d1": deque(maxlen=2),
+        }
+        self._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+        self._last_signal = 0
+        self._last_score = 0.0
+        self._prev_vote = 0
+        self._exit_lag = 0
+        self._cooldown = 0
+        self._volume_checked = False
+        self._equity_drawdown = 0.0
+
 
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         # 值由配置 oi_protection.crowding_threshold 控制
-
-        # 保存上一次生成的信号，供滞后阈值逻辑使用
-        self._last_signal = 0
-
-        # 缓存上一周期的原始特征，便于计算指标变化量
-        self._prev_raw = {p: None for p in ("1h", "4h", "d1")}
 
         # 定时更新因子权重
         self.start_weight_update_thread()
 
     def __getattr__(self, name):
-        if name in {"eth_dom_history", "btc_dom_history", "oi_change_history", "history_scores", "all_scores_list"}:
-            val = deque(maxlen=3000)
-            setattr(self, name, val)
-            return val
-        if name == "ic_history":
-            val = {k: deque(maxlen=3000) for k in self.base_weights}
-            setattr(self, name, val)
-            return val
-        if name == "_lock":
-            val = threading.RLock()
-            setattr(self, name, val)
-            return val
-        if name == "_equity_drawdown":
-            setattr(self, name, 0.0)
-            return 0.0
-        if name == "_last_score":
-            setattr(self, name, 0.0)
-            return 0.0
-        if name == "_last_signal":
-            setattr(self, name, 0)
-            return 0
-        if name == "_prev_vote":
-            setattr(self, name, 0)
-            return 0
-        if name == "_exit_lag":
-            setattr(self, name, 0)
-            return 0
-        if name == "_prev_raw":
-            val = {p: None for p in ("15m", "1h", "4h", "d1")}
-            setattr(self, name, val)
-            return val
-        if name == "core_keys":
-            setattr(self, name, self.DEFAULT_CORE_KEYS.copy())
-            return getattr(self, name)
-        if name == "delta_params":
-            setattr(self, name, self.DELTA_PARAMS.copy())
-            return getattr(self, name)
-        if name == "vote_params":
-            setattr(self, name, self.VOTE_PARAMS.copy())
-            return getattr(self, name)
-        if name == "vote_weights":
-            val = {"ob": 4, "short_mom": 2, "ai": 3, "vol_breakout": 1}
-            setattr(self, name, val)
-            return val
-        if name == "min_weight_ratio":
-            setattr(self, name, 0.6)
-            return 0.6
-        if name == "_cooldown":
-            setattr(self, name, 0)
-            return 0
-        if name == "_volume_checked":
-            setattr(self, name, False)
-            return False
-        if name == "_raw_history":
-            val = {
+        defaults = {
+            "history_scores": deque(maxlen=3000),
+            "oi_change_history": deque(maxlen=3000),
+            "btc_dom_history": deque(maxlen=3000),
+            "eth_dom_history": deque(maxlen=3000),
+            "ic_history": {k: deque(maxlen=3000) for k in getattr(self, "base_weights", {})},
+            "_lock": threading.RLock(),
+            "_prev_raw": {p: None for p in ("1h", "4h", "d1")},
+            "_raw_history": {
                 "15m": deque(maxlen=4),
                 "1h": deque(maxlen=4),
                 "4h": deque(maxlen=2),
                 "d1": deque(maxlen=2),
-            }
-            setattr(self, name, val)
-            return val
-        if name == "symbol_data":
-            val = {}
-            setattr(self, name, val)
-            return val
-        if name == "calibrators":
-            val = {p: {"up": None, "down": None} for p in ("1h", "4h", "d1")}
-            setattr(self, name, val)
-            return val
-        if name == "ic_scores":
-            val = {k: 1 for k in self.base_weights}
-            setattr(self, name, val)
-            return val
-        if name == "exit_lag_bars":
-            setattr(self, name, EXIT_LAG_BARS_DEFAULT)
-            return EXIT_LAG_BARS_DEFAULT
-        if name == "oi_scale":
-            setattr(self, name, 0.8)
-            return 0.8
-        if name == "max_same_direction_rate":
-            setattr(self, name, 0.95)
-            return 0.95
-        if name == "veto_level":
-            setattr(self, name, 0.7)
-            return 0.7
-        if name == "flip_coeff":
-            setattr(self, name, 0.3)
-            return 0.3
-        if name == "cycle_weight":
-            val = {"strong": 1.2, "weak": 0.8, "opposite": 0.5}
-            setattr(self, name, val)
-            return val
-        if name == "cfg":
-            val = {}
-            setattr(self, name, val)
-            return val
-        if name == "th_down_d1":
-            setattr(self, name, 0.74)
-            return 0.74
-        if name == "signal_threshold_cfg":
-            val = {
-                "base_th": 0.08,
-                "gamma": 0.05,
-                "min_pos": 0.05,
-                "low_base": DEFAULT_LOW_BASE,
-                "rev_boost": 0.30,
-                "rev_th_mult": 0.60,
-                "atr_mult": 4.0,
-                "funding_mult": 8.0,
-                "adx_div": 100.0,
-            }
-            setattr(self, name, val)
-            self.signal_params = SignalThresholdParams.from_cfg(val)
-            return val
-        if name == "ai_dir_eps":
-            val = self.cfg.get("vote_system", {}).get("ai_dir_eps", DEFAULT_AI_DIR_EPS)
-            setattr(self, name, val)
-            return val
-        if name == "pos_coeff_range":
-            setattr(self, name, DEFAULT_POS_K_RANGE)
-            return DEFAULT_POS_K_RANGE
-        if name == "pos_coeff_trend":
-            setattr(self, name, DEFAULT_POS_K_TREND)
-            return DEFAULT_POS_K_TREND
-        if name == "low_vol_ratio":
-            setattr(self, name, DEFAULT_LOW_VOL_RATIO)
-            return DEFAULT_LOW_VOL_RATIO
-        if name == "th_window":
-            setattr(self, name, 60)
-            return 60
-        if name == "th_decay":
-            setattr(self, name, 2.0)
-            return 2.0
-        if name == "risk_manager":
-            val = RiskManager()
+            },
+            "symbol_data": {},
+            "calibrators": {p: {"up": None, "down": None} for p in ("1h", "4h", "d1")},
+            "core_keys": self.DEFAULT_CORE_KEYS.copy(),
+            "delta_params": self.DELTA_PARAMS.copy(),
+            "vote_params": self.VOTE_PARAMS.copy(),
+            "vote_weights": {"ob": 4, "short_mom": 2, "ai": 3, "vol_breakout": 1},
+            "exit_lag_bars": EXIT_LAG_BARS_DEFAULT,
+            "th_window": 60,
+            "th_decay": 2.0,
+            "risk_manager": RiskManager(),
+            "all_scores_list": deque(maxlen=500),
+            "_equity_drawdown": 0.0,
+            "_last_score": 0.0,
+            "_last_signal": 0,
+            "_prev_vote": 0,
+            "_exit_lag": 0,
+            "_cooldown": 0,
+            "_volume_checked": False,
+            "pos_coeff_range": DEFAULT_POS_K_RANGE,
+            "pos_coeff_trend": DEFAULT_POS_K_TREND,
+            "low_vol_ratio": DEFAULT_LOW_VOL_RATIO,
+            "ai_dir_eps": DEFAULT_AI_DIR_EPS,
+            "cycle_weight": {"strong": 1.2, "weak": 0.8, "opposite": 0.5},
+            "flip_coeff": 0.3,
+            "veto_level": 0.7,
+            "ic_scores": {},
+            "th_down_d1": 0.74,
+        }
+        if name in defaults:
+            val = defaults[name]
             setattr(self, name, val)
             return val
         raise AttributeError(name)
