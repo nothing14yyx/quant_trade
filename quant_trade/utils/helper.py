@@ -8,6 +8,7 @@ import logging
 from sklearn.preprocessing import RobustScaler
 from numba import njit
 from quant_trade.utils.soft_clip import soft_clip
+from typing import Mapping, Any
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,14 @@ def assign_safe(feats: pd.DataFrame, name: str, series):
         series = series.iloc[:, 0]
     feats[name] = np.asarray(series, dtype="float64")
     # print(f"{name}: {feats[name].dtype}")
+
+
+def get_cfg_value(cfg: Mapping[str, Any] | None, key: str, default: Any = None) -> Any:
+    """Return ``cfg[key]`` if available and not ``None``, else ``default``."""
+    if cfg is None:
+        return default
+    val = cfg.get(key, default)
+    return default if val is None else val
 
 
 def calc_mfi_np(high, low, close, volume, window=14):
