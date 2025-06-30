@@ -8,7 +8,10 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import optuna
 
-from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import (
+    RobustSignalGenerator,
+    RobustSignalGeneratorConfig,
+)
 from quant_trade.backtester import (
     FEATURE_COLS_1H,
     FEATURE_COLS_4H,
@@ -254,13 +257,9 @@ def run_param_search(
             for tr_idx, val_idx in tscv.split(df)
         ]
 
-    # 预先加载模型并实例化一次信号生成器
-    sg = RobustSignalGenerator(
-        model_paths=convert_model_paths(MODEL_PATHS),
-        feature_cols_1h=FEATURE_COLS_1H,
-        feature_cols_4h=FEATURE_COLS_4H,
-        feature_cols_d1=FEATURE_COLS_D1,
-    )
+    cfg = load_config()
+    rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
+    sg = RobustSignalGenerator(rsg_cfg)
     cached_ics = [precompute_ic_scores(tr, sg) for tr, _ in splits]
     base_delta = sg.delta_params.copy()
     if method == "grid":
@@ -348,13 +347,10 @@ def run_param_search(
             sharpe_vals = []
             trades = 0
             for (tr_df, val_df), ic in zip(splits, cached_ics):
-                sg_iter = RobustSignalGenerator(
-                    model_paths=convert_model_paths(MODEL_PATHS),
-                    feature_cols_1h=FEATURE_COLS_1H,
-                    feature_cols_4h=FEATURE_COLS_4H,
-                    feature_cols_d1=FEATURE_COLS_D1,
-                    delta_params=delta_params,
-                )
+                cfg = load_config()
+                iter_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
+                iter_cfg.delta_params = delta_params
+                sg_iter = RobustSignalGenerator(iter_cfg)
                 tot_ret, sharpe, trade_count = run_single_backtest(
                     val_df,
                     base_weights,
@@ -454,13 +450,10 @@ def run_param_search(
             sharpe_vals = []
             trades = 0
             for (tr_df, val_df), ic in zip(splits, cached_ics):
-                sg_iter = RobustSignalGenerator(
-                    model_paths=convert_model_paths(MODEL_PATHS),
-                    feature_cols_1h=FEATURE_COLS_1H,
-                    feature_cols_4h=FEATURE_COLS_4H,
-                    feature_cols_d1=FEATURE_COLS_D1,
-                    delta_params=delta_params,
-                )
+                cfg = load_config()
+                iter_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
+                iter_cfg.delta_params = delta_params
+                sg_iter = RobustSignalGenerator(iter_cfg)
                 tot_ret, sharpe, trade_count = run_single_backtest(
                     val_df,
                     base_weights,

@@ -7,6 +7,7 @@ import pandas as pd
 from collections import Counter, deque
 from pathlib import Path
 import yaml
+import json
 import threading
 import logging
 import time
@@ -48,7 +49,7 @@ DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
 DEFAULT_LOW_VOL_RATIO = 0.2   # 低量能阈值
 
 from dataclasses import dataclass
-from quant_trade.utils import get_cfg_value
+from quant_trade.utils import get_cfg_value, collect_feature_cols
 
 
 @dataclass
@@ -80,6 +81,54 @@ class SignalThresholdParams:
             atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
             funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
             adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
+        )
+
+
+@dataclass
+class RobustSignalGeneratorConfig:
+    """初始化 ``RobustSignalGenerator`` 所需的参数容器."""
+
+    model_paths: dict
+    feature_cols_1h: list[str]
+    feature_cols_4h: list[str]
+    feature_cols_d1: list[str]
+    history_window: int = 532
+    symbol_categories: dict[str, str] | None = None
+    config_path: str | Path = CONFIG_PATH
+    core_keys: dict | None = None
+    delta_params: dict | None = None
+    min_weight_ratio: float = 0.6
+    th_window: int = 60
+    th_decay: float = 2.0
+
+    @classmethod
+    def from_file(cls, path: str | Path):
+        """从 YAML/JSON 文件加载配置."""
+        with open(path, "r", encoding="utf-8") as f:
+            if str(path).endswith((".yml", ".yaml")):
+                cfg = yaml.safe_load(f) or {}
+            else:
+                cfg = json.load(f)
+        return cls.from_cfg(cfg, path)
+
+    @classmethod
+    def from_cfg(cls, cfg: dict, path: str | Path | None = None):
+        """从字典创建配置对象."""
+        path = path or cfg.get("config_path", CONFIG_PATH)
+        db_cfg = cfg.get("delta_boost", {})
+        return cls(
+            model_paths=cfg.get("models", {}),
+            feature_cols_1h=collect_feature_cols(cfg, "1h"),
+            feature_cols_4h=collect_feature_cols(cfg, "4h"),
+            feature_cols_d1=collect_feature_cols(cfg, "d1"),
+            history_window=cfg.get("history_window", 532),
+            symbol_categories=cfg.get("symbol_categories"),
+            config_path=path,
+            core_keys=db_cfg.get("core_keys"),
+            delta_params=db_cfg.get("params"),
+            min_weight_ratio=cfg.get("min_weight_ratio", 0.6),
+            th_window=cfg.get("th_window", 60),
+            th_decay=cfg.get("th_decay", 2.0),
         )
 
 
@@ -284,22 +333,20 @@ class RobustSignalGenerator:
         "conf_min": 0.30,
     }
 
-    def __init__(
-        self,
-        model_paths,
-        *,
-        feature_cols_1h,
-        feature_cols_4h,
-        feature_cols_d1,
-        history_window=532,
-        symbol_categories=None,
-        config_path=CONFIG_PATH,
-        core_keys=None,
-        delta_params=None,
-        min_weight_ratio=0.6,
-        th_window=60,
-        th_decay=2.0,
-    ):
+    def __init__(self, config: RobustSignalGeneratorConfig):
+        model_paths = config.model_paths
+        feature_cols_1h = config.feature_cols_1h
+        feature_cols_4h = config.feature_cols_4h
+        feature_cols_d1 = config.feature_cols_d1
+        history_window = config.history_window
+        symbol_categories = config.symbol_categories
+        config_path = config.config_path
+        core_keys = config.core_keys
+        delta_params = config.delta_params
+        min_weight_ratio = config.min_weight_ratio
+        th_window = config.th_window
+        th_decay = config.th_decay
+
         # 多线程访问历史数据时的互斥锁
         # 使用 RLock 以便在部分函数中嵌套调用
         self._lock = threading.RLock()
