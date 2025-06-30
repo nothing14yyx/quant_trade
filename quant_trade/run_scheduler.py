@@ -22,9 +22,9 @@ from quant_trade.generate_signal_from_db import (
 )
 from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
+    RobustSignalGeneratorConfig,
     robust_signal_generator,
 )
-from quant_trade.utils.helper import collect_feature_cols
 from sqlalchemy import text
 
 
@@ -83,12 +83,8 @@ class Scheduler:
         self.scaler_params = load_scaler_params_from_json(
             cfg["feature_engineering"]["scaler_path"]
         )
-        self.sg = RobustSignalGenerator(
-            model_paths=cfg["models"],
-            feature_cols_1h=collect_feature_cols(cfg, "1h"),
-            feature_cols_4h=collect_feature_cols(cfg, "4h"),
-            feature_cols_d1=collect_feature_cols(cfg, "d1"),
-        )
+        rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
+        self.sg = RobustSignalGenerator(rsg_cfg)
         categories = load_symbol_categories(self.engine)
         self.sg.set_symbol_categories(categories)
         # 调度器与线程池，用于更精确和并发地执行任务
