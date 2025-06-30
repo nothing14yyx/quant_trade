@@ -1663,7 +1663,7 @@ class RobustSignalGenerator:
 
         return f1h, f4h, fd1, f15m, r1h, r4h, rd1, r15m
 
-    def _compute_ai_scores(self, std_1h, std_4h, std_d1, raw_fd1):
+    def compute_ai_scores(self, std_1h, std_4h, std_d1, raw_fd1):
         """封装 AI 模型推理与校准"""
         ai_scores: dict[str, float] = {}
         vol_preds: dict[str, float | None] = {}
@@ -1712,7 +1712,7 @@ class RobustSignalGenerator:
 
         return ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal
 
-    def _compute_factor_scores(
+    def compute_factor_scores(
         self,
         ai_scores: dict,
         std_1h: dict,
@@ -1903,7 +1903,7 @@ class RobustSignalGenerator:
             "oi_chg": oi_chg,
         }
 
-    def _apply_risk_filters(
+    def apply_risk_filters(
         self,
         fused_score: float,
         logic_score: float,
@@ -2031,7 +2031,7 @@ class RobustSignalGenerator:
             "funding_conflicts": funding_conflicts,
         }
 
-    def _finalize_position(
+    def finalize_position(
         self,
         fused_score: float,
         risk_info: dict,
@@ -2399,11 +2399,11 @@ class RobustSignalGenerator:
             deltas[p] = self._calc_deltas(feats, prev, keys)
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
-        ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal = self._compute_ai_scores(
+        ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal = self.compute_ai_scores(
             std_1h, std_4h, std_d1, raw_fd1
         )
 
-        result = self._compute_factor_scores(
+        result = self.compute_factor_scores(
             ai_scores,
             std_1h,
             std_4h,
@@ -2496,7 +2496,7 @@ class RobustSignalGenerator:
         if std_d1.get('break_support_d1') == 1 and std_d1.get('rsi_d1', 50) < 30:
             regime = 'range'
             rev_dir = 1
-        risk_info = self._apply_risk_filters(
+        risk_info = self.apply_risk_filters(
             fused_score,
             logic_score,
             env_score,
@@ -2537,7 +2537,7 @@ class RobustSignalGenerator:
         risk_info["consensus_14"] = consensus_14
         risk_info["consensus_4d1"] = consensus_4d1
         risk_info["local_details"] = local_details
-        result = self._finalize_position(
+        result = self.finalize_position(
             fused_score,
             risk_info,
             ai_scores,
