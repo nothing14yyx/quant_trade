@@ -94,6 +94,11 @@ def softmax(x):
     return ex / ex.sum()
 
 
+def sigmoid(x):
+    """标准 sigmoid 函数"""
+    return 1 / (1 + np.exp(-x))
+
+
 def weighted_quantile(values, q, sample_weight=None):
     """Return the weighted quantile of *values* at quantile *q*."""
     values = np.asarray(values, dtype=float)
@@ -931,14 +936,12 @@ class RobustSignalGenerator:
 
         tier = base_coeff * abs(grad_dir)
         base_size = tier
-        def _sigmoid(x):
-            return 1 / (1 + np.exp(-x))
 
         zero_reason: str | None = None
         low_vol_flag = False
 
         risk_factor = 1.0 / (1.0 + risk_score)
-        pos_size = base_size * _sigmoid(confidence_factor) * risk_factor
+        pos_size = base_size * sigmoid(confidence_factor) * risk_factor
         pos_size *= exit_mult
         pos_size = min(pos_size, self.max_position)
         pos_size *= crowding_factor
