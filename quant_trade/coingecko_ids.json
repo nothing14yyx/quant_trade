@@ -166,5 +166,8 @@
   "ARUSDT": "arweave",
   "ZROUSDT": "layerzero",
   "LISTAUSDT": "lista",
-  "JELLYJELLYUSDT": "jelly-my-jelly"
+  "JELLYJELLYUSDT": "jelly-my-jelly",
+  "FUSDT": "blackrock-usd-institutional-digital-liquidity-fund",
+  "FISUSDT": "stafi",
+  "XMRUSDT": "monero"
 }

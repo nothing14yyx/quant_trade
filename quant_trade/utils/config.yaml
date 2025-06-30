@@ -358,16 +358,16 @@ delta_boost:
       - macd_hist_d1
       - ema_diff_d1
   params:
-    rsi: [5, 1.0, 0.03364223944244874]
-    macd_hist: [0.002, 100.0, 0.05643057936191342]
-    ema_diff: [0.001, 100.0, 0.028369746025023866]
-    atr_pct: [0.002, 100.0, 0.03792109766590917]
-    vol_ma_ratio: [0.2, 1.0, 0.04795494542241468]
-    funding_rate: [0.0005, 10000, 0.044640933487159626]
+    rsi: [5, 1.0, 0.04526603246086078]
+    macd_hist: [0.002, 100.0, 0.031333887062442826]
+    ema_diff: [0.001, 100.0, 0.040819253250048815]
+    atr_pct: [0.002, 100.0, 0.04493306204524865]
+    vol_ma_ratio: [0.2, 1.0, 0.043786938847022186]
+    funding_rate: [0.0005, 10000, 0.04007440671341417]
 
 
 vote_system:
-  weight_ai: 4
+  weight_ai: 2
   strong_min: 3
   conf_min: 0.25
   ai_dir_eps: 0.02
@@ -413,7 +413,7 @@ position_coeff:
   low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.08      # 原 dynamic_th_final 的初始值
+  base_th: 0.07185261632879107      # 原 dynamic_th_final 的初始值
   gamma: 0.08        # 过渡宽度
   min_pos: 0.10      # pos_size < 0.10 则 direction = 0
   quantile: 0.80
