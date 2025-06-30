@@ -294,6 +294,12 @@ class RobustSignalGenerator:
         # 使用 RLock 以便在部分函数中嵌套调用
         self._lock = threading.RLock()
 
+        # 初始化辅助组件
+        self.feature_processor = FeatureProcessor()
+        self.ai_predictor = AIModelPredictor()
+        self.risk_manager = RiskManager()
+        self.config_manager = ConfigManager(config_path)
+
         # 加载AI模型，同时保留训练时的 features 列名
         self.models = {}
         self.calibrators = {}
@@ -322,13 +328,7 @@ class RobustSignalGenerator:
         # 缓存标准化特征列索引，减少 DataFrame 查找开销
         self._std_index_cache = {p: None for p in ("15m", "1h", "4h", "d1")}
 
-        cfg = {}
-        path = Path(config_path)
-        if not path.is_absolute():
-            path = Path(__file__).resolve().parent / path
-        if path.is_file():
-            with open(path, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
+        cfg = self.config_manager.load()
         self.cfg = cfg
         self.signal_threshold_cfg = cfg.get("signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
@@ -708,42 +708,15 @@ class RobustSignalGenerator:
         drawdown_pred: float | None = None,
     ):
         """计算止盈止损价格，可根据模型预测值微调"""
-        if direction == 0:
-            return None, None
-        if price is None or price <= 0:
-            return None, None  # 价格异常直接放弃
-        if atr is None or atr == 0:
-            atr = 0.005 * price
-
-        # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
-        tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
-        sl_mult = float(np.clip(sl_mult, 0.5, 2.0))
-
-        if rise_pred is not None and drawdown_pred is not None:
-            if direction == 1:
-                take_profit = price * (1 + max(rise_pred, 0))
-                stop_loss = price * (1 + min(drawdown_pred, 0))
-            else:
-                take_profit = price * (1 - max(drawdown_pred, 0))
-                stop_loss = price * (1 - min(rise_pred, 0))
-
-            # 若预测值过小导致 tp/sl 等于入场价，退回 ATR 模式
-            if abs(take_profit - price) < 1e-8 and abs(stop_loss - price) < 1e-8:
-                if direction == 1:
-                    take_profit = price + tp_mult * atr
-                    stop_loss = price - sl_mult * atr
-                else:
-                    take_profit = price - tp_mult * atr
-                    stop_loss = price + sl_mult * atr
-        else:
-            if direction == 1:
-                take_profit = price + tp_mult * atr
-                stop_loss = price - sl_mult * atr
-            else:
-                take_profit = price - tp_mult * atr
-                stop_loss = price + sl_mult * atr
-
-        return float(take_profit), float(stop_loss)
+        return self.risk_manager.compute_tp_sl(
+            price,
+            atr,
+            direction,
+            tp_mult=tp_mult,
+            sl_mult=sl_mult,
+            rise_pred=rise_pred,
+            drawdown_pred=drawdown_pred,
+        )
 
     def _base_key(self, k: str) -> str:
         for key in self.delta_params:
@@ -800,48 +773,12 @@ class RobustSignalGenerator:
             return self.symbol_data[symbol]
 
     def _normalize_features(self, feats, period: str) -> dict:
-        """将 DataFrame/Series 输入转为字典, 并缓存列索引"""
-        if isinstance(feats, dict):
-            return feats
-        if isinstance(feats, pd.Series):
-            cols = tuple(feats.index)
-            cache = self._std_index_cache.get(period)
-            if cache is None or cache[0] != cols:
-                idx_map = {c: i for i, c in enumerate(cols)}
-                self._std_index_cache[period] = (cols, idx_map)
-            else:
-                idx_map = cache[1]
-            return {c: feats.iat[i] for c, i in idx_map.items()}
-        if isinstance(feats, pd.DataFrame) and not feats.empty:
-            row = feats.iloc[-1]
-            cols = tuple(row.index)
-            cache = self._std_index_cache.get(period)
-            if cache is None or cache[0] != cols:
-                idx_map = {c: i for i, c in enumerate(cols)}
-                self._std_index_cache[period] = (cols, idx_map)
-            else:
-                idx_map = cache[1]
-            return {c: row.iat[i] for c, i in idx_map.items()}
-        return {}
+        """将输入特征转换为字典"""
+        return self.feature_processor.normalize_features(feats, period)
 
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> float:
         """根据1h MA5 与 MA20 判断并返回分数乘数"""
-
-        sma5 = features.get('sma_5_1h')
-        sma20 = features.get('sma_20_1h')
-        ma_ratio = features.get('ma_ratio_5_20', 1.0)
-        if sma5 is None or sma20 is None:
-            return 1.0
-
-        slope = 0.0
-        if sma_20_1h_prev not in (None, 0):
-            slope = (sma20 - sma_20_1h_prev) / sma_20_1h_prev
-
-        if (ma_ratio > 1.02 and slope > 0) or (ma_ratio < 0.98 and slope < 0):
-            return 1.15
-        if (ma_ratio > 1.02 and slope < 0) or (ma_ratio < 0.98 and slope > 0):
-            return 0.85
-        return 1.0
+        return self.feature_processor.ma_cross_logic(features, sma_20_1h_prev)
 
     def detect_reversal(
         self,
@@ -853,19 +790,14 @@ class RobustSignalGenerator:
         vol_mult: float = 1.10,
     ) -> int:
         """V 型急反转检测"""
-
-        if len(price_series) < win + 1 or atr is None:
-            return 0
-        pct = np.diff(price_series) / price_series[:-1]
-        slope_now, slope_prev = pct[-1], pct[-win:].mean()
-        amp = max(price_series[-win - 1 :]) - min(price_series[-win - 1 :])
-        price_base = price_series[-2] or price_series[-1]
-        amp_pct = amp / price_base if price_base else 0
-        cond_amp = amp_pct > atr_mult * atr
-        cond_vol = (volume is None) or (volume >= vol_mult)
-        if np.sign(slope_now) != np.sign(slope_prev) and cond_amp and cond_vol:
-            return int(np.sign(slope_now))
-        return 0
+        return self.feature_processor.detect_reversal(
+            price_series,
+            atr,
+            volume,
+            win=win,
+            atr_mult=atr_mult,
+            vol_mult=vol_mult,
+        )
 
 
     def compute_exit_multiplier(self, vote: float, prev_vote: float, last_signal: int) -> float:
@@ -923,139 +855,46 @@ class RobustSignalGenerator:
         exit_mult: float,
         consensus_all: bool = False,
     ) -> tuple[float, int, float, str | None]:
-        """Calculate final position size and tier given direction and risk factors.
+        """Calculate final position size and tier given direction and risk factors."""
 
-        Also return a ``zero_reason`` when ``pos_size`` is reduced to zero so the
-        caller can trace why no position will be taken.
-        """
-
-        tier = base_coeff * abs(grad_dir)
-        base_size = tier
-        def _sigmoid(x):
-            return 1 / (1 + np.exp(-x))
-
-        zero_reason: str | None = None
-        low_vol_flag = False
-
-        risk_factor = 1.0 / (1.0 + risk_score)
-        pos_size = base_size * _sigmoid(confidence_factor) * risk_factor
-        pos_size *= exit_mult
-        pos_size = min(pos_size, self.max_position)
-        pos_size *= crowding_factor
-        if direction == 0:
-            pos_size = 0.0
-            zero_reason = "no_direction"
-
-        if (
-            regime == "range"
-            and vol_ratio is not None
-            and vol_ratio < self.low_vol_ratio
-            and abs(fused_score) < base_th + 0.02
-            and not consensus_all
-        ):
-            pos_size *= 0.5
-            low_vol_flag = True
-
-
-        if vol_p is not None:
-            pos_size *= max(0.4, 1 - min(0.6, vol_p))
-
-        # ↓ 允许极小仓位，交由风险控制模块再裁剪
-        min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
-        if pos_size < min_pos:
-            direction, pos_size = 0, 0.0
-            if low_vol_flag:
-                zero_reason = "vol_ratio"
-            else:
-                zero_reason = "min_pos"
-
-        # 4h 周期 veto 逻辑已停用
-        # if direction == 1 and scores.get("4h", 0) < -self.veto_level:
-        #     direction, pos_size = 0, 0.0
-        # elif direction == -1 and scores.get("4h", 0) > self.veto_level:
-        #     direction, pos_size = 0, 0.0
-
-        return pos_size, direction, tier, zero_reason
+        return self.risk_manager.compute_position_size(
+            grad_dir=grad_dir,
+            base_coeff=base_coeff,
+            confidence_factor=confidence_factor,
+            vol_ratio=vol_ratio,
+            fused_score=fused_score,
+            base_th=base_th,
+            regime=regime,
+            oi_overheat=oi_overheat,
+            vol_p=vol_p,
+            risk_score=risk_score,
+            crowding_factor=crowding_factor,
+            cfg_th_sig=cfg_th_sig,
+            scores=scores,
+            direction=direction,
+            exit_mult=exit_mult,
+            max_position=self.max_position,
+            consensus_all=consensus_all,
+        )
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
     def get_ai_score(self, features, model_up, model_down, calibrator_up=None, calibrator_down=None):
         """根据上下两个方向模型的概率输出计算 AI 得分"""
-
-        def _build_df(model_dict):
-            cols = model_dict["features"]
-            row = {}
-            missing = []
-            for c in cols:
-                val = features.get(c, np.nan)
-                row[c] = [val]
-                if c not in features:
-                    missing.append(c)
-            if missing:
-                logging.debug("get_ai_score missing columns: %s", missing)
-            df = pd.DataFrame(row)
-            df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-            return df, missing
-
-        X_up, missing_up = _build_df(model_up)
-        X_down, missing_down = _build_df(model_down)
-        if len(missing_up) > 3 or len(missing_down) > 3:
-            return 0.0
-        prob_up = model_up["pipeline"].predict_proba(X_up)[:, 1]
-        prob_down = model_down["pipeline"].predict_proba(X_down)[:, 1]
-        if calibrator_up is not None:
-            prob_up = calibrator_up.transform(prob_up.reshape(-1, 1)).ravel()
-        if calibrator_down is not None:
-            prob_down = calibrator_down.transform(prob_down.reshape(-1, 1)).ravel()
-        denom = prob_up + prob_down
-        ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
-        ai_score = soft_clip(ai_score, k=1.0)
-        if ai_score.size == 1:
-            return float(ai_score[0])
-        return ai_score
+        return self.ai_predictor.get_ai_score(
+            features, model_up, model_down, calibrator_up, calibrator_down
+        )
 
     def get_ai_score_cls(self, features, model_dict):
         """从单个 cls 模型计算上涨/下跌概率差值"""
-        cols = model_dict["features"]
-        row = {c: [features.get(c, np.nan)] for c in cols}
-        df = pd.DataFrame(row)
-        df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-
-        probs = model_dict["pipeline"].predict_proba(df)[0]
-        classes = getattr(model_dict["pipeline"], "classes_", np.arange(len(probs)))
-
-        if len(classes) >= 3:
-            idx_down = int(np.argmin(classes))
-            idx_up = int(np.argmax(classes))
-        else:
-            idx_down = 0
-            idx_up = min(1, len(probs) - 1)
-
-        prob_down = probs[idx_down]
-        prob_up = probs[idx_up]
-        denom = prob_up + prob_down
-        if denom == 0:
-            return 0.0
-        ai_score = (prob_up - prob_down) / denom
-        return float(soft_clip(ai_score, k=1.0))
+        return self.ai_predictor.get_ai_score_cls(features, model_dict)
 
     def get_vol_prediction(self, features, model_dict):
         """根据回归模型预测未来波动率"""
-        lgb_model = model_dict["pipeline"]
-        train_cols = model_dict["features"]
-
-        row_data = {col: [features.get(col, 0)] for col in train_cols}
-        X_df = pd.DataFrame(row_data)
-        X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-        return float(lgb_model.predict(X_df)[0])
+        return self.ai_predictor.get_vol_prediction(features, model_dict)
 
     def get_reg_prediction(self, features, model_dict):
         """通用回归模型预测"""
-        model = model_dict["pipeline"]
-        cols = model_dict["features"]
-        row_data = {c: [features.get(c, 0)] for c in cols}
-        df = pd.DataFrame(row_data)
-        df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-        return float(model.predict(df)[0])
+        return self.ai_predictor.get_reg_prediction(features, model_dict)
 
     # robust_signal_generator.py
 
@@ -1318,67 +1157,28 @@ class RobustSignalGenerator:
         """根据多周期波动与历史得分自适应计算动态阈值"""
 
         params = self.signal_params
-        if base is None:
-            base = params.base_th
-        if low_base is None:
-            low_base = params.low_base
-
-        hist_base = base
+        hist = None
         if history_scores:
-            arr = np.asarray(list(history_scores)[-self.th_window:], dtype=float)
-            arr = np.abs(arr)
-            if arr.size > 0:
-                if self.th_decay and self.th_decay != 1.0:
-                    w = np.exp(-self.th_decay * np.arange(arr.size)[::-1])
-                    qv = weighted_quantile(arr, params.quantile, w)
-                else:
-                    qv = float(np.quantile(arr, params.quantile))
-                if not math.isnan(qv):
-                    hist_base = max(base, qv)
-        if hist_base > 0.12:
-            hist_base = 0.12
-
-        th = hist_base
-        atr_eff = abs(atr)
-        if atr_4h is not None:
-            atr_eff += 0.5 * abs(atr_4h)
-        if atr_d1 is not None:
-            atr_eff += 0.25 * abs(atr_d1)
-        th += min(0.10, atr_eff * params.atr_mult)
-
-        fund_eff = abs(funding)
-        if pred_vol is not None:
-            fund_eff += 0.5 * abs(pred_vol)
-        if pred_vol_4h is not None:
-            fund_eff += 0.25 * abs(pred_vol_4h)
-        if pred_vol_d1 is not None:
-            fund_eff += 0.15 * abs(pred_vol_d1)
-        if vix_proxy is not None:
-            fund_eff += 0.25 * abs(vix_proxy)
-        th += min(0.08, fund_eff * params.funding_mult)
-
-        adx_eff = abs(adx)
-        if adx_4h is not None:
-            adx_eff += 0.5 * abs(adx_4h)
-        if adx_d1 is not None:
-            adx_eff += 0.25 * abs(adx_d1)
-        th += min(0.04, adx_eff / params.adx_div)
-
-        if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
-            th = min(th, hist_base)
-
-        if reversal:
-            th *= params.rev_th_mult
-
-        rev_boost = params.rev_boost
-        if regime == "trend":
-            th *= 1.05
-            rev_boost *= 0.8
-        elif regime == "range":
-            th *= 0.95
-            rev_boost *= 1.2
-
-        return max(th, low_base), rev_boost
+            hist = list(history_scores)[-self.th_window:]
+        return self.risk_manager.dynamic_threshold(
+            atr,
+            adx,
+            funding,
+            atr_4h=atr_4h,
+            adx_4h=adx_4h,
+            atr_d1=atr_d1,
+            adx_d1=adx_d1,
+            pred_vol=pred_vol,
+            pred_vol_4h=pred_vol_4h,
+            pred_vol_d1=pred_vol_d1,
+            vix_proxy=vix_proxy,
+            base=base if base is not None else params.base_th,
+            regime=regime,
+            low_base=low_base if low_base is not None else params.low_base,
+            reversal=reversal,
+            history_scores=hist,
+            params=params.__dict__,
+        )
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """按固定顺序加权合并各因子得分"""
@@ -1410,41 +1210,15 @@ class RobustSignalGenerator:
 
     def crowding_protection(self, scores, current_score, base_th=0.2):
         """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
-        if not scores or len(scores) < 30:
-            return 1.0
-
-        arr = np.array(scores, dtype=float)
-        mask = np.abs(arr) >= base_th * 0.8
-        arr = arr[mask]
-        signs = [s for s in np.sign(arr) if s != 0]
-        total = len(signs)
-        if total == 0:
-            return 1.0
-        pos_counts = Counter(signs)
-        dominant_dir, cnt = pos_counts.most_common(1)[0]
-        if np.sign(current_score) != dominant_dir:
-            return 1.0
-
-        ratio = cnt / total
-        rank_pct = pd.Series(np.abs(list(arr) + [current_score])).rank(pct=True).iloc[-1]
-        ratio_intensity = max(0.0, (ratio - self.max_same_direction_rate) / (1 - self.max_same_direction_rate))
-        rank_intensity = max(0.0, rank_pct - 0.8) / 0.2
-        intensity = min(1.0, max(ratio_intensity, rank_intensity))
-
-        factor = 1.0 - 0.2 * intensity
-        dd = getattr(self, "_equity_drawdown", 0.0)
-        factor *= max(0.6, 1 - dd)
-        return factor
+        return self.risk_manager.crowding_protection(
+            scores, current_score, base_th, self.max_same_direction_rate
+        )
 
     def apply_oi_overheat_protection(self, fused_score, oi_chg, th_oi):
         """Adjust score based on open interest change."""
-        if th_oi is None or abs(oi_chg) < th_oi:
-            # Mild change: slightly reward or penalise according to oi_chg
-            return fused_score * (1 + 0.03 * oi_chg), False
-
-        logging.info("OI overheat detected: %.4f", oi_chg)
-        # Only scale down when overheating
-        return fused_score * self.oi_scale, True
+        return self.risk_manager.apply_oi_overheat_protection(
+            fused_score, oi_chg, th_oi
+        )
 
     # ===== 新增辅助函数 =====
     def calc_factor_scores(self, ai_scores: dict, factor_scores: dict, weights: dict) -> dict:
