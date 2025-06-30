@@ -4,7 +4,7 @@ import math
 from quant_trade.utils.soft_clip import soft_clip
 
 import pandas as pd
-from collections import Counter, deque
+from collections import Counter, deque, OrderedDict
 from pathlib import Path
 import yaml
 import json
@@ -522,6 +522,13 @@ class RobustSignalGenerator:
         self._volume_checked = False
         self._equity_drawdown = 0.0
 
+        # 缓存计算结果，避免重复计算
+        self.cache_maxsize = 1000
+        self._ai_score_cache = OrderedDict()
+        self._factor_cache = OrderedDict()
+        self._factor_score_cache = OrderedDict()
+        self._fuse_cache = OrderedDict()
+
 
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         # 值由配置 oi_protection.crowding_threshold 控制
@@ -571,6 +578,11 @@ class RobustSignalGenerator:
             "veto_level": 0.7,
             "ic_scores": {},
             "th_down_d1": 0.74,
+            "_ai_score_cache": OrderedDict(),
+            "_factor_cache": OrderedDict(),
+            "_factor_score_cache": OrderedDict(),
+            "_fuse_cache": OrderedDict(),
+            "cache_maxsize": 1000,
         }
         if name in defaults:
             val = defaults[name]
@@ -970,6 +982,11 @@ class RobustSignalGenerator:
         输出：一个 dict，包含6个子因子得分。
         """
 
+        key = self._make_cache_key(features, period)
+        cached = self._cache_get(self._factor_cache, key)
+        if cached is not None:
+            return cached
+
         # 去除重复字段，避免两次写入同名特征
         dedup_row = {k: v for k, v in features.items()}
 
@@ -1106,6 +1123,7 @@ class RobustSignalGenerator:
             elif pos < 0.1 and v < 0:
                 scores[k] = v * 0.8
 
+        self._cache_set(self._factor_cache, key, scores)
         return scores
 
     def update_ic_scores(self, df, *, window=None, group_by=None, time_col="open_time"):
@@ -1639,6 +1657,30 @@ class RobustSignalGenerator:
         return fused_score, consensus_all, consensus_14, consensus_4d1
 
     # ===== 新增私有方法 =====
+
+    def _to_hashable(self, obj):
+        """将输入对象转换为可哈希的形式，用于缓存键"""
+        if isinstance(obj, dict):
+            return tuple(sorted((k, self._to_hashable(v)) for k, v in obj.items()))
+        if isinstance(obj, (list, tuple)):
+            return tuple(self._to_hashable(v) for v in obj)
+        if isinstance(obj, np.generic):
+            return float(obj)
+        return obj
+
+    def _make_cache_key(self, *objs):
+        return tuple(self._to_hashable(o) if o is not None else None for o in objs)
+
+    def _cache_get(self, cache: OrderedDict, key):
+        with self._lock:
+            return cache.get(key)
+
+    def _cache_set(self, cache: OrderedDict, key, value):
+        with self._lock:
+            cache[key] = value
+            if len(cache) > self.cache_maxsize:
+                cache.popitem(last=False)
+
     def _normalize_inputs(
         self,
         features_1h,
@@ -1665,6 +1707,11 @@ class RobustSignalGenerator:
 
     def compute_ai_scores(self, std_1h, std_4h, std_d1, raw_fd1):
         """封装 AI 模型推理与校准"""
+        key = self._make_cache_key(std_1h, std_4h, std_d1, raw_fd1)
+        cached = self._cache_get(self._ai_score_cache, key)
+        if cached is not None:
+            return cached
+
         ai_scores: dict[str, float] = {}
         vol_preds: dict[str, float | None] = {}
         rise_preds: dict[str, float | None] = {}
@@ -1710,7 +1757,9 @@ class RobustSignalGenerator:
         if ai_scores.get("d1", 0) < 0 and abs(ai_scores["d1"]) < self.th_down_d1:
             ai_scores["d1"] = 0.0
 
-        return ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal
+        result = ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal
+        self._cache_set(self._ai_score_cache, key, result)
+        return result
 
     def compute_factor_scores(
         self,
@@ -1730,6 +1779,25 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """计算多因子得分并输出相关中间结果"""
+        key = self._make_cache_key(
+            ai_scores,
+            std_1h,
+            std_4h,
+            std_d1,
+            std_15m,
+            raw_dict,
+            deltas,
+            rise_preds,
+            drawdown_preds,
+            vol_preds,
+            global_metrics,
+            open_interest,
+            ob_imb,
+            symbol,
+        )
+        cached = self._cache_get(self._factor_score_cache, key)
+        if cached is not None:
+            return cached
         fs = {
             "1h": self.get_factor_scores(std_1h, "1h"),
             "4h": self.get_factor_scores(std_4h, "4h"),
@@ -1884,7 +1952,7 @@ class RobustSignalGenerator:
             elif fused_score < 0 and confirm_15m > 0.1:
                 fused_score *= 0.85
 
-        return {
+        result = {
             "fused_score": fused_score,
             "logic_score": logic_score,
             "env_score": env_score,
@@ -1902,6 +1970,8 @@ class RobustSignalGenerator:
             "th_oi": th_oi,
             "oi_chg": oi_chg,
         }
+        self._cache_set(self._factor_score_cache, key, result)
+        return result
 
     def apply_risk_filters(
         self,
