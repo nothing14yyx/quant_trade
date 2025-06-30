@@ -2536,6 +2536,12 @@ class RobustSignalGenerator:
         th_oi = result["th_oi"]
         oi_chg = result["oi_chg"]
 
+        if mom15 is not None and fused_score != 0:
+            if np.sign(mom15) == np.sign(fused_score):
+                fused_score *= 1.05
+            elif np.sign(mom15) == -np.sign(fused_score):
+                fused_score *= 0.85
+
         # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
             logging.debug("Fused score NaN, returning 0 signal")
