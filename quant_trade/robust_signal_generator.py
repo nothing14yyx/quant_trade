@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import joblib
 import numpy as np
 import math
 from quant_trade.utils.soft_clip import soft_clip
@@ -11,6 +10,11 @@ import yaml
 import threading
 import logging
 import time
+
+from .config_manager import ConfigManager
+from .ai_model_predictor import AIModelPredictor
+from .risk_manager import RiskManager
+from .feature_processor import FeatureProcessor
 
 logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
@@ -185,9 +189,9 @@ def fused_to_risk(
     cap: float = 5.0,
 ) -> float:
     """按安全分母计算并限制 risk score"""
-    denom = max(abs(logic_score), 1e-6)
-    risk = abs(fused_score) / denom
-    return min(risk, cap)
+    return RiskManager(cap).fused_to_risk(fused_score, logic_score, env_score)
+
+
 
 
 def sigmoid_dir(score: float, base_th: float, gamma: float) -> float:
@@ -299,41 +303,27 @@ class RobustSignalGenerator:
         # 使用 RLock 以便在部分函数中嵌套调用
         self._lock = threading.RLock()
 
-        # 加载AI模型，同时保留训练时的 features 列名
-        self.models = {}
-        self.calibrators = {}
-        base_dir = Path(__file__).resolve().parent
-        for period, path_dict in model_paths.items():
-            self.models[period] = {}
-            self.calibrators[period] = {}
-            for direction, path in path_dict.items():
-                p = Path(path)
-                if not p.is_absolute():
-                    p = base_dir / p
-                loaded = joblib.load(p)
-                pipe = loaded["pipeline"]
-                if hasattr(pipe, "set_output"):
-                    pipe.set_output(transform="pandas")
-                self.models[period][direction] = {
-                    "pipeline": loaded["pipeline"],
-                    "features": loaded["features"],
-                }
-                self.calibrators[period][direction] = loaded.get("calibrator")
+        # 使用独立模块加载 AI 模型
+        self.ai_predictor = AIModelPredictor(model_paths)
+        self.models = self.ai_predictor.models
+        self.calibrators = self.ai_predictor.calibrators
 
-        # 保存各时间周期对应的特征列（但后面不再直接用它；实际推理要以 loaded["features"] 为准）
+        # 特征处理器
+        self.feature_processor = FeatureProcessor(
+            feature_cols_1h, feature_cols_4h, feature_cols_d1
+        )
+
+        # 保留原始特征列属性供外部使用
         self.feature_cols_1h = feature_cols_1h
         self.feature_cols_4h = feature_cols_4h
         self.feature_cols_d1 = feature_cols_d1
+
         # 缓存标准化特征列索引，减少 DataFrame 查找开销
         self._std_index_cache = {p: None for p in ("15m", "1h", "4h", "d1")}
 
-        cfg = {}
-        path = Path(config_path)
-        if not path.is_absolute():
-            path = Path(__file__).resolve().parent / path
-        if path.is_file():
-            with open(path, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
+        # 配置管理
+        self.config_manager = ConfigManager(config_path)
+        cfg = self.config_manager.cfg
         self.cfg = cfg
         self.signal_threshold_cfg = cfg.get("signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
@@ -384,6 +374,8 @@ class RobustSignalGenerator:
             "dynamic_factor": ob_cfg.get("dynamic_factor", 0.08),
         }
         self.risk_score_cap = cfg.get("risk_score_cap", 5.0)
+        # 风险管理器
+        self.risk_manager = RiskManager(cap=self.risk_score_cap)
         self.exit_lag_bars = cfg.get("exit_lag_bars", EXIT_LAG_BARS_DEFAULT)
         oi_cfg = cfg.get("oi_protection", {})
         self.oi_scale = oi_cfg.get("scale", 0.8)
@@ -613,6 +605,10 @@ class RobustSignalGenerator:
         if name == "th_decay":
             setattr(self, name, 2.0)
             return 2.0
+        if name == "risk_manager":
+            val = RiskManager()
+            setattr(self, name, val)
+            return val
         raise AttributeError(name)
 
     @property
@@ -982,83 +978,20 @@ class RobustSignalGenerator:
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
     def get_ai_score(self, features, model_up, model_down, calibrator_up=None, calibrator_down=None):
-        """根据上下两个方向模型的概率输出计算 AI 得分"""
-
-        def _build_df(model_dict):
-            cols = model_dict["features"]
-            row = {}
-            missing = []
-            for c in cols:
-                val = features.get(c, np.nan)
-                row[c] = [val]
-                if c not in features:
-                    missing.append(c)
-            if missing:
-                logging.debug("get_ai_score missing columns: %s", missing)
-            df = pd.DataFrame(row)
-            df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-            return df, missing
-
-        X_up, missing_up = _build_df(model_up)
-        X_down, missing_down = _build_df(model_down)
-        if len(missing_up) > 3 or len(missing_down) > 3:
-            return 0.0
-        prob_up = model_up["pipeline"].predict_proba(X_up)[:, 1]
-        prob_down = model_down["pipeline"].predict_proba(X_down)[:, 1]
-        if calibrator_up is not None:
-            prob_up = calibrator_up.transform(prob_up.reshape(-1, 1)).ravel()
-        if calibrator_down is not None:
-            prob_down = calibrator_down.transform(prob_down.reshape(-1, 1)).ravel()
-        denom = prob_up + prob_down
-        ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
-        ai_score = soft_clip(ai_score, k=1.0)
-        if ai_score.size == 1:
-            return float(ai_score[0])
-        return ai_score
+        """根据上下模型概率计算AI得分"""
+        return self.ai_predictor.get_ai_score(features, model_up, model_down, calibrator_up, calibrator_down)
 
     def get_ai_score_cls(self, features, model_dict):
-        """从单个 cls 模型计算上涨/下跌概率差值"""
-        cols = model_dict["features"]
-        row = {c: [features.get(c, np.nan)] for c in cols}
-        df = pd.DataFrame(row)
-        df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-
-        probs = model_dict["pipeline"].predict_proba(df)[0]
-        classes = getattr(model_dict["pipeline"], "classes_", np.arange(len(probs)))
-
-        if len(classes) >= 3:
-            idx_down = int(np.argmin(classes))
-            idx_up = int(np.argmax(classes))
-        else:
-            idx_down = 0
-            idx_up = min(1, len(probs) - 1)
-
-        prob_down = probs[idx_down]
-        prob_up = probs[idx_up]
-        denom = prob_up + prob_down
-        if denom == 0:
-            return 0.0
-        ai_score = (prob_up - prob_down) / denom
-        return float(soft_clip(ai_score, k=1.0))
+        """从单个分类模型计算AI得分"""
+        return self.ai_predictor.get_ai_score_cls(features, model_dict)
 
     def get_vol_prediction(self, features, model_dict):
         """根据回归模型预测未来波动率"""
-        lgb_model = model_dict["pipeline"]
-        train_cols = model_dict["features"]
-
-        row_data = {col: [features.get(col, 0)] for col in train_cols}
-        X_df = pd.DataFrame(row_data)
-        X_df = X_df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-        return float(lgb_model.predict(X_df)[0])
+        return self.ai_predictor.get_vol_prediction(features, model_dict)
 
     def get_reg_prediction(self, features, model_dict):
         """通用回归模型预测"""
-        model = model_dict["pipeline"]
-        cols = model_dict["features"]
-        row_data = {c: [features.get(c, 0)] for c in cols}
-        df = pd.DataFrame(row_data)
-        df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
-        return float(model.predict(df)[0])
+        return self.ai_predictor.get_reg_prediction(features, model_dict)
 
     # robust_signal_generator.py
 
@@ -2098,11 +2031,10 @@ class RobustSignalGenerator:
                 )
                 fused_score *= mult
                 crowding_factor *= mult
-        risk_score = fused_to_risk(
+        risk_score = self.risk_manager.fused_to_risk(
             fused_score,
             logic_score,
             env_score,
-            cap=self.risk_score_cap,
         )
         risk_score = min(1.0, risk_score)
 
