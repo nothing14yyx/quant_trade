@@ -71,8 +71,6 @@ models:
     rise: models/model_d1_rise.pkl
     drawdown: models/model_d1_drawdown.pkl
 
-database:
-  uri: "mysql+pymysql://user:pwd@host:3306/quant_trading"
 
 feature_cols:
   1h:
@@ -261,6 +259,7 @@ train_settings:
   min_samples: 2000
   time_ranges: []
   ts_smote: false
+  ts_smote_group_freq: "1d"
   hold_days: 7
   periods: ["1h", "4h","d1"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
@@ -377,9 +376,6 @@ vote_weights:
   ai: 3
   vol_breakout: 1
 
-oversold_filter:
-  enable: false
-
 # === 调参选项 ===
 sentiment_alpha: 0.5
 cap_positive_scale: 0.85
@@ -399,8 +395,6 @@ exit_lag_bars: 1
 signal_filters:
   confidence_vote: 0
   min_vote: 0
-  ob_th_min: 0.10
-  require_strong_confirm_4h: false
 oi_protection:
   scale: 0.9
   crowding_threshold: 0.98
