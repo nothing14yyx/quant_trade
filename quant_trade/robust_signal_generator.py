@@ -1400,6 +1400,38 @@ class RobustSignalGenerator:
 
         return float(fused_score)
 
+    def combine_score_vectorized(self, ai_scores, factor_scores, weights=None):
+        """向量化计算多个样本的合并得分"""
+        if weights is None:
+            weights = self.base_weights
+
+        weight_arr = np.array(
+            [
+                weights['ai'],
+                weights['trend'],
+                weights['momentum'],
+                weights['volatility'],
+                weights['volume'],
+                weights['sentiment'],
+                weights['funding'],
+            ],
+            dtype=float,
+        )
+
+        fs_matrix = np.vstack(
+            [
+                ai_scores,
+                factor_scores['trend'],
+                factor_scores['momentum'],
+                factor_scores['volatility'],
+                factor_scores['volume'],
+                factor_scores['sentiment'],
+                factor_scores['funding'],
+            ]
+        )
+
+        return (fs_matrix.T * weight_arr).sum(axis=1).astype(float)
+
     def consensus_check(self, s1, s2, s3, min_agree=2):
         # 多周期方向共振（如调研建议），可加全分歧减弱等逻辑
         signs = np.sign([s1, s2, s3])
@@ -1464,6 +1496,26 @@ class RobustSignalGenerator:
         }
         logger.debug("factor scores: %s", scores)
         return scores
+
+    def calc_factor_scores_vectorized(
+        self,
+        ai_scores: dict,
+        factor_scores: dict,
+        weights: dict,
+    ) -> dict:
+        """向量化版本的各周期得分计算"""
+
+        w1 = weights.copy()
+        w4 = weights.copy()
+        for k in ('trend', 'momentum', 'volume'):
+            w1[k] = w1.get(k, 0) * 0.7
+            w4[k] = w4.get(k, 0) * 0.7
+
+        return {
+            '1h': self.combine_score_vectorized(ai_scores['1h'], factor_scores['1h'], w1),
+            '4h': self.combine_score_vectorized(ai_scores['4h'], factor_scores['4h'], w4),
+            'd1': self.combine_score_vectorized(ai_scores['d1'], factor_scores['d1'], weights),
+        }
 
     def apply_local_adjustments(
         self,
