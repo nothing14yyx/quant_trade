@@ -4,7 +4,10 @@ import pandas as pd
 import numpy as np
 import yaml
 from quant_trade.utils.db import load_config, connect_mysql
-from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import (
+    RobustSignalGenerator,
+    RobustSignalGeneratorConfig,
+)
 from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
 
 # 配置文件路径
@@ -160,14 +163,8 @@ def run_backtest(*, recent_days: int | None = None):
 
     # 按币种分组
     all_symbols = df['symbol'].unique().tolist()
-    sg = RobustSignalGenerator(
-
-        model_paths=convert_model_paths(MODEL_PATHS),
-
-        feature_cols_1h=FEATURE_COLS_1H,
-        feature_cols_4h=FEATURE_COLS_4H,
-        feature_cols_d1=FEATURE_COLS_D1,
-    )
+    rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
+    sg = RobustSignalGenerator(rsg_cfg)
 
     # 根据近期历史数据更新因子 IC 分数
     sg.update_ic_scores(df.tail(1000), group_by="symbol")
