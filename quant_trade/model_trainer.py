@@ -225,6 +225,8 @@ time_ranges = train_cfg.get("time_ranges", []) or [
 ]
 use_ts_smote = bool(train_cfg.get("ts_smote", False))
 ts_smote_group_freq = train_cfg.get("ts_smote_group_freq")
+if use_ts_smote and ts_smote_group_freq is None:
+    logging.info("train_settings 缺少 ts_smote_group_freq, 将不按时间分组采样")
 hold_days = int(train_cfg.get("hold_days", 0))
 n_trials_cfg = train_cfg.get("n_trials", 10)
 selected_periods = set(train_cfg.get("periods", [])) or None
