@@ -2320,6 +2320,17 @@ class RobustSignalGenerator:
             consensus_all=risk_info.get("consensus_all", False),
         )
 
+        rsi = raw_fd1.get("rsi_d1")
+        cci = raw_fd1.get("cci_d1")
+        if direction == -1 and ((rsi is not None and rsi < 30) or (cci is not None and cci < -100)):
+            direction = 0
+            pos_size = 0.0
+            zero_reason = zero_reason or "oversold"
+        elif direction == 1 and ((rsi is not None and rsi > 70) or (cci is not None and cci > 100)):
+            direction = 0
+            pos_size = 0.0
+            zero_reason = zero_reason or "overbought"
+
         if risk_info.get("oi_overheat"):
             pos_size *= 0.5
 
