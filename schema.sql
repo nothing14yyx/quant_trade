@@ -700,3 +700,18 @@ WHERE 'interval' = '1h'
   AND (high IS NULL OR low IS NULL OR close IS NULL)
 GROUP BY symbol
 HAVING nan_rows > 0;
+
+
+SHOW VARIABLES WHERE Variable_name IN (
+  'innodb_buffer_pool_size',
+  'innodb_log_buffer_size',
+  'key_buffer_size',
+  'query_cache_size',
+  'tmp_table_size',
+  'max_connections',
+  'thread_stack',
+  'sort_buffer_size',
+  'join_buffer_size',
+  'read_buffer_size',
+  'read_rnd_buffer_size'
+);
