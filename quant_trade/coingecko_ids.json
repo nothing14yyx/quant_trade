@@ -205,5 +205,6 @@
   "QUICKUSDT": "quick",
   "DFUSDT": "dforce-token",
   "SAFEUSDT": "safe",
-  "DOODUSDT": "doodles"
+  "DOODUSDT": "doodles",
+  "FLMUSDT": "flamingo-finance"
 }
