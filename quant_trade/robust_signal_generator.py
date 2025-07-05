@@ -495,6 +495,7 @@ class RobustSignalGenerator:
         )
 
         self.max_position = get_cfg_value(cfg, "max_position", 0.3)
+        self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 1)
         self.th_down_d1 = get_cfg_value(self.cfg, "th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
         self.th_window = th_window
@@ -617,6 +618,7 @@ class RobustSignalGenerator:
             "veto_level": 0.7,
             "ic_scores": {},
             "th_down_d1": 0.74,
+            "min_trend_align": 1,
             "_ai_score_cache": OrderedDict(),
             "_factor_cache": OrderedDict(),
             "_factor_score_cache": OrderedDict(),
@@ -2309,7 +2311,10 @@ class RobustSignalGenerator:
             for p in ("1h", "4h", "d1"):
                 if np.sign(fs[p]["trend"]) == direction:
                     align_count += 1
-            if align_count < 1:
+            min_align = self.min_trend_align if regime == "trend" else max(
+                self.min_trend_align - 1, 0
+            )
+            if align_count < min_align:
                 direction = 0
 
         base_coeff = self.pos_coeff_range if regime == "range" else self.pos_coeff_trend
