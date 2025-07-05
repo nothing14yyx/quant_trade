@@ -384,8 +384,8 @@ volume_guard:
 ob_threshold:
   min_ob_th: 0.10
   dynamic_factor: 0.08
-risk_score_cap: 5.0
-exit_lag_bars: 0
+exit_lag_bars: 1
+
 # quantile: 0.88
 signal_filters:
   min_vote: 2
