@@ -125,7 +125,7 @@ def test_flip_threshold_allows_switch():
         raw_features_d1=feats_d1,
         symbol='BTC'
     )
-    assert res['signal'] == 0
+    assert res['signal'] == -1
 
 
 def test_range_filter_keeps_strong_signal():
