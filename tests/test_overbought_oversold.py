@@ -42,13 +42,20 @@ def base_inputs(direction=1):
         "vol_ratio_1h_4h": 1,
         "supertrend_dir_1h": 0,
         "donchian_perc_1h": 0,
-        "atr_pct_1h": 0,
+        "atr_pct_1h": 0.01,
+        "bb_width_1h": 0.02,
+        "vol_breakout_1h": 1,
     }
     std_1h = std_base.copy()
     std_4h = {"supertrend_dir_4h": 0, "vol_ratio_1h_4h": 1, "atr_pct_4h": 0}
     std_d1 = {"supertrend_dir_d1": 0}
     std_15m = {}
-    raw_f1h = {"close": 100, "atr_pct_1h": 0}
+    raw_f1h = {
+        "close": 100,
+        "atr_pct_1h": 0.01,
+        "bb_width_1h": 0.02,
+        "vol_breakout_1h": 1,
+    }
     raw_f4h = {"atr_pct_4h": 0}
     raw_f15m = {}
     return (

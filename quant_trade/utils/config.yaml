@@ -373,6 +373,7 @@ vote_system:
 vote_weights:
   ob: 3
   short_mom: 3
+  fast_mom: 0.5
   ai: 3
   vol_breakout: 1
 

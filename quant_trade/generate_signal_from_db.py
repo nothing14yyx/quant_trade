@@ -172,7 +172,12 @@ def prepare_all_features(
                 last15 = f15m.iloc[[idx15]].copy()
                 last15["symbol"] = symbol
                 s15 = apply_robust_z_with_params(last15, params).drop(columns=["symbol"]).iloc[0]
-                for c in ["mom_15m_roll1h", "mom_15m_roll1h_std"]:
+                for c in [
+                    "mom_15m_roll1h",
+                    "mom_15m_roll1h_std",
+                    "rsi_fast_15m",
+                    "stoch_fast_15m",
+                ]:
                     scaled1h[c] = s15.get(c)
                     raw1h[c] = last15[c].iloc[0]
 
