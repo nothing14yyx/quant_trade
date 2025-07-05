@@ -1493,6 +1493,47 @@ class RobustSignalGenerator:
         # Only scale down when overheating
         return fused_score * self.oi_scale, True
 
+    def _apply_crowding_protection(
+        self,
+        fused_score: float,
+        *,
+        base_th: float,
+        all_scores_list: list | None,
+        oi_chg: float | None,
+        cache: dict,
+        vol_pred: float | None,
+        oi_overheat: bool,
+        symbol: str | None,
+    ) -> tuple[float, float, float | None]:
+        """Compute crowding factor and adjust ``fused_score`` accordingly."""
+
+        th_oi = cache.get("th_oi")
+        if th_oi is None and oi_chg is not None:
+            th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_pred)
+            cache["th_oi"] = th_oi
+
+        crowding_factor = 1.0
+        if not oi_overheat and all_scores_list is not None:
+            factor = self.crowding_protection(all_scores_list, fused_score, base_th)
+            fused_score *= factor
+            crowding_factor *= factor
+
+        if th_oi is not None and oi_chg is not None:
+            oi_crowd = abs(oi_chg) / max(th_oi, 1e-6)
+            mult = 1 - min(0.5, oi_crowd * 0.5)
+            if mult < 1:
+                logging.debug(
+                    "oi change %.4f threshold %.3f -> crowding mult %.3f for %s",
+                    oi_chg,
+                    th_oi,
+                    mult,
+                    symbol,
+                )
+                fused_score *= mult
+                crowding_factor *= mult
+
+        return fused_score, crowding_factor, th_oi
+
     # ===== 新增辅助函数 =====
     def calc_factor_scores(self, ai_scores: dict, factor_scores: dict, weights: dict) -> dict:
         """计算未调整的各周期得分"""
@@ -2143,25 +2184,16 @@ class RobustSignalGenerator:
         if funding_conflicts >= 2:
             fused_score *= 0.85 ** funding_conflicts
 
-        crowding_factor = 1.0
-        if not cache.get("oi_overheat") and all_scores_list is not None:
-            crowding_factor = self.crowding_protection(all_scores_list, fused_score, base_th)
-            fused_score *= crowding_factor
-        th_oi = cache.get("th_oi")
-        oi_chg = cache.get("oi_chg")
-        if th_oi is not None and oi_chg is not None:
-            oi_crowd = abs(oi_chg) / max(th_oi, 1e-6)
-            mult = 1 - min(0.5, oi_crowd * 0.5)
-            if mult < 1:
-                logging.debug(
-                    "oi change %.4f threshold %.3f -> crowding mult %.3f for %s",
-                    oi_chg,
-                    th_oi,
-                    mult,
-                    symbol,
-                )
-                fused_score *= mult
-                crowding_factor *= mult
+        fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
+            fused_score,
+            base_th=base_th,
+            all_scores_list=all_scores_list,
+            oi_chg=cache.get("oi_chg"),
+            cache=cache,
+            vol_pred=vol_preds.get("1h"),
+            oi_overheat=cache.get("oi_overheat", False),
+            symbol=symbol,
+        )
         risk_score = self.risk_manager.fused_to_risk(
             fused_score,
             logic_score,
@@ -2222,7 +2254,18 @@ class RobustSignalGenerator:
     ):
         """根据阈值与信号方向计算仓位和止盈止损"""
         base_th = risk_info["base_th"]
-        crowding_factor = risk_info["crowding_factor"]
+        fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
+            fused_score,
+            base_th=base_th,
+            all_scores_list=None,
+            oi_chg=risk_info.get("oi_chg"),
+            cache=cache,
+            vol_pred=vol_preds.get("1h"),
+            oi_overheat=risk_info.get("oi_overheat", False),
+            symbol=symbol,
+        )
+        risk_info["crowding_factor"] = crowding_factor
+        risk_info["th_oi"] = th_oi
         risk_score = risk_info["risk_score"]
         regime = risk_info["regime"]
         rev_dir = risk_info["rev_dir"]
