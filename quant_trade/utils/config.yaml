@@ -264,9 +264,9 @@ train_settings:
   periods: ["1h", "4h","d1"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
-    1h: 15
-    4h: 15
-    d1: 20
+    1h: 40
+    4h: 40
+    d1: 50
 
 param_space:
   1h:
@@ -276,7 +276,6 @@ param_space:
     md: [4, 12]
     mcs: [50, 150]
     subsample: [0.8, 1.0]
-    cbt: [0.6, 0.9]
     lambda_l2: [0.0, 0.5]
     scale_pos_weight: [1.1, 1.5]
   4h:
@@ -286,7 +285,6 @@ param_space:
     md:   [4, 10]
     mcs:  [1500, 3000]     # ← 原 50-120，增大叶子样本
     subsample: [0.70, 0.9]
-    cbt:  [0.45, 0.60]     # = feature_fraction，原 0.6-0.9
     lambda_l2: [4.0, 8.0]  # 原 0.5-4.0，正则更强
     scale_pos_weight: [1.1, 1.5]
   d1:
@@ -296,7 +294,6 @@ param_space:
     md: [4, 10]
     mcs: [400, 800]
     subsample: [0.75, 0.9]
-    cbt: [0.50, 0.65]          # feature_fraction
     lambda_l2: [2.0, 6.0]
     scale_pos_weight: [4, 8]   # 让 Optuna 一起调
 
@@ -311,7 +308,6 @@ fixed_params:
     vol: "l1"
     rise: "l1"
     drawdown: "l1"
-  lambda_l2: 2.0
   early_stopping_rounds: 40
   n_jobs: -1
 
@@ -326,7 +322,6 @@ model_params:
     num_boost_round: 140      # ← 原 160
     min_data_in_leaf: 2200    # 不变
     feature_fraction: 0.48    # ← 原 0.50
-    lambda_l2: 7.0            # ← 原 6.0
     bagging_fraction: 0.70
     bagging_freq: 1
   d1:                       # ≈2.2 万行
@@ -335,7 +330,6 @@ model_params:
     feature_fraction: 0.58
     bagging_fraction: 0.80
     bagging_freq: 1
-    lambda_l2: 5.0            # ★ 新增，固定 L2
     scale_pos_weight: 6       # ★ 新增，补偿空头稀缺
 
 # Δ-boost 配置：关键指标与参数
