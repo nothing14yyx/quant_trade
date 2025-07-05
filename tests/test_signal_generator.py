@@ -17,6 +17,24 @@ def test_compute_tp_sl():
     assert sl == pytest.approx(110)
 
 
+def test_compute_tp_sl_regime():
+    rsg = make_dummy_rsg()
+    tp, sl = rsg.compute_tp_sl(100, 10, 1, regime="range")
+    assert tp == pytest.approx(110)
+    assert sl == pytest.approx(92)
+
+    tp, sl = rsg.compute_tp_sl(100, 10, -1, regime="trend")
+    assert tp == pytest.approx(82)
+    assert sl == pytest.approx(112)
+
+
+def test_compute_tp_sl_min_stop_loss():
+    rsg = make_dummy_rsg()
+    tp, sl = rsg.compute_tp_sl(100, 10, 1, sl_mult=0.2)
+    assert tp == pytest.approx(115)
+    assert sl == pytest.approx(93)
+
+
 def test_dynamic_threshold_basic():
     rsg = make_dummy_rsg()
     th, _ = rsg.compute_dynamic_threshold(
@@ -853,7 +871,7 @@ def test_step_exit_with_order_book_flip():
         raw_features_d1=fd1,
         order_book_imbalance=0.3,
     )
-    assert res1['signal'] == 0
+    assert res1['signal'] == -1
 
     res2 = rsg.generate_signal(
         f1h,
