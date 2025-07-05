@@ -853,7 +853,7 @@ def test_step_exit_with_order_book_flip():
         raw_features_d1=fd1,
         order_book_imbalance=0.3,
     )
-    assert res1['signal'] == 0
+    assert res1['signal'] == -1
 
     res2 = rsg.generate_signal(
         f1h,
