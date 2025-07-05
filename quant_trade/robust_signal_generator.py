@@ -1867,6 +1867,105 @@ class RobustSignalGenerator:
             PeriodFeatures(std=f15m, raw=r15m),
         )
 
+    def _prepare_inputs(
+        self,
+        features_1h,
+        features_4h,
+        features_d1,
+        features_15m,
+        raw_features_1h,
+        raw_features_4h,
+        raw_features_d1,
+        raw_features_15m,
+        order_book_imbalance=None,
+        symbol=None,
+    ):
+        """整理并补充原始输入数据"""
+        (
+            pf_1h,
+            pf_4h,
+            pf_d1,
+            pf_15m,
+        ) = self._normalize_inputs(
+            features_1h,
+            features_4h,
+            features_d1,
+            features_15m,
+            raw_features_1h,
+            raw_features_4h,
+            raw_features_d1,
+            raw_features_15m,
+        )
+
+        ob_imb = (
+            order_book_imbalance
+            if order_book_imbalance is not None
+            else pf_1h.std.get("bid_ask_imbalance")
+        )
+
+        std_1h = pf_1h.std or {}
+        std_4h = pf_4h.std or {}
+        std_d1 = pf_d1.std or {}
+        std_15m = pf_15m.std or {}
+        raw_f1h = pf_1h.raw or {}
+        raw_f4h = pf_4h.raw or {}
+        raw_fd1 = pf_d1.raw or {}
+        raw_f15m = pf_15m.raw or {}
+
+        ts = (
+            raw_f1h.get("ts")
+            or raw_f1h.get("timestamp")
+            or raw_f15m.get("ts")
+            or raw_f15m.get("timestamp")
+            or std_1h.get("ts")
+            or std_1h.get("timestamp")
+            or std_15m.get("ts")
+            or std_15m.get("timestamp")
+        )
+
+        cache = self._get_symbol_cache(symbol)
+        with self._lock:
+            hist_1h = cache["_raw_history"].get("1h", deque(maxlen=4))
+        price_hist = [r.get("close") for r in hist_1h]
+        price_hist.append((raw_f1h or std_1h).get("close"))
+        price_hist = [p for p in price_hist if p is not None][-4:]
+
+        rev_dir = self.detect_reversal(
+            np.array(price_hist, dtype=float),
+            (raw_f1h or std_1h).get("atr_pct_1h"),
+            (raw_f1h or std_1h).get("vol_ma_ratio_1h"),
+        )
+
+        deltas = {}
+        for p, feats, keys in [
+            ("15m", std_15m, self.core_keys.get("15m", [])),
+            ("1h", std_1h, self.core_keys["1h"]),
+            ("4h", std_4h, self.core_keys["4h"]),
+            ("d1", std_d1, self.core_keys["d1"]),
+        ]:
+            prev = cache["_prev_raw"].get(p)
+            deltas[p] = self._calc_deltas(feats, prev, keys)
+
+        return {
+            "pf_1h": pf_1h,
+            "pf_4h": pf_4h,
+            "pf_d1": pf_d1,
+            "pf_15m": pf_15m,
+            "ob_imb": ob_imb,
+            "std_1h": std_1h,
+            "std_4h": std_4h,
+            "std_d1": std_d1,
+            "std_15m": std_15m,
+            "raw_f1h": raw_f1h,
+            "raw_f4h": raw_f4h,
+            "raw_fd1": raw_fd1,
+            "raw_f15m": raw_f15m,
+            "ts": ts,
+            "cache": cache,
+            "rev_dir": rev_dir,
+            "deltas": deltas,
+        }
+
     def compute_ai_scores(
         self,
         feats_1h: PeriodFeatures,
@@ -2152,6 +2251,51 @@ class RobustSignalGenerator:
             "oi_chg": oi_chg,
         }
         self._cache_set(self._factor_score_cache, key, result)
+        return result
+
+    def _compute_scores(
+        self,
+        pf_1h: PeriodFeatures,
+        pf_4h: PeriodFeatures,
+        pf_d1: PeriodFeatures,
+        pf_15m: PeriodFeatures,
+        deltas: dict,
+        global_metrics: dict | None,
+        open_interest: dict | None,
+        ob_imb,
+        symbol: str | None,
+    ):
+        """统一计算 AI 分数与多因子得分"""
+        ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal = self.compute_ai_scores(
+            pf_1h,
+            pf_4h,
+            pf_d1,
+        )
+
+        result = self.compute_factor_scores(
+            ai_scores,
+            pf_1h,
+            pf_4h,
+            pf_d1,
+            pf_15m,
+            deltas,
+            rise_preds,
+            drawdown_preds,
+            vol_preds,
+            global_metrics,
+            open_interest,
+            ob_imb,
+            symbol,
+        )
+        result.update(
+            {
+                "ai_scores": ai_scores,
+                "vol_preds": vol_preds,
+                "rise_preds": rise_preds,
+                "drawdown_preds": drawdown_preds,
+                "oversold_reversal": oversold_reversal,
+            }
+        )
         return result
 
     def apply_risk_filters(
@@ -2636,6 +2780,77 @@ class RobustSignalGenerator:
             "details": final_details,
         }
 
+    def _filter_and_finalize(
+        self,
+        prepared: dict,
+        scores: dict,
+        all_scores_list,
+        global_metrics,
+        open_interest,
+        symbol,
+    ):
+        """应用风险过滤并最终确定持仓"""
+        risk_info = self.apply_risk_filters(
+            scores["fused_score"],
+            scores["logic_score"],
+            scores["env_score"],
+            prepared["std_1h"],
+            prepared["std_4h"],
+            prepared["std_d1"],
+            prepared["raw_f1h"],
+            prepared["raw_f4h"],
+            prepared["raw_fd1"],
+            scores["vol_preds"],
+            open_interest,
+            all_scores_list,
+            prepared["rev_dir"],
+            {
+                "oi_overheat": scores["oi_overheat"],
+                "th_oi": scores["th_oi"],
+                "oi_chg": scores["oi_chg"],
+                "history_scores": prepared["cache"]["history_scores"],
+            },
+            global_metrics,
+            prepared["std_1h"],
+            prepared["std_4h"],
+            prepared["std_d1"],
+            symbol,
+        )
+        if risk_info is None:
+            return None, None, None
+        risk_info["logic_score"] = scores["logic_score"]
+        risk_info["env_score"] = scores["env_score"]
+        risk_info["consensus_all"] = scores["consensus_all"]
+        risk_info["consensus_14"] = scores["consensus_14"]
+        risk_info["consensus_4d1"] = scores["consensus_4d1"]
+        risk_info["local_details"] = scores["local_details"]
+
+        result = self.finalize_position(
+            risk_info["fused_score"],
+            risk_info,
+            scores["ai_scores"],
+            scores["fs"],
+            scores["scores"],
+            prepared["std_1h"],
+            prepared["std_4h"],
+            prepared["std_d1"],
+            prepared["std_15m"],
+            prepared["raw_f1h"],
+            prepared["raw_f4h"],
+            prepared["raw_fd1"],
+            prepared["raw_f15m"],
+            scores["vol_preds"],
+            scores["rise_preds"],
+            scores["drawdown_preds"],
+            scores["short_mom"],
+            scores["ob_imb"],
+            scores["confirm_15m"],
+            scores["oversold_reversal"],
+            prepared["cache"],
+            symbol,
+        )
+        return result, risk_info["fused_score"], risk_info["base_th"]
+
     def generate_signal(
         self,
         features_1h,
@@ -2672,13 +2887,7 @@ class RobustSignalGenerator:
         features_* 为主要输入，多因子评分、动态阈值等逻辑均优先使用这些标准化后的特征。
         raw_features_* 仅在计算绝对价格或绝对幅度（例如止盈止损价）时作为补充使用。
         """
-
-        (
-            pf_1h,
-            pf_4h,
-            pf_d1,
-            pf_15m,
-        ) = self._normalize_inputs(
+        prepared = self._prepare_inputs(
             features_1h,
             features_4h,
             features_d1,
@@ -2687,97 +2896,54 @@ class RobustSignalGenerator:
             raw_features_4h,
             raw_features_d1,
             raw_features_15m,
-        )
-
-        ob_imb = (
-            order_book_imbalance
-            if order_book_imbalance is not None
-            else pf_1h.std.get('bid_ask_imbalance')
-        )
-
-        std_1h = pf_1h.std or {}
-        std_4h = pf_4h.std or {}
-        std_d1 = pf_d1.std or {}
-        std_15m = pf_15m.std or {}
-        raw_f1h = pf_1h.raw or {}
-        raw_f4h = pf_4h.raw or {}
-        raw_fd1 = pf_d1.raw or {}
-        raw_f15m = pf_15m.raw or {}
-
-        ts = (
-            raw_f1h.get('ts')
-            or raw_f1h.get('timestamp')
-            or raw_f15m.get('ts')
-            or raw_f15m.get('timestamp')
-            or std_1h.get('ts')
-            or std_1h.get('timestamp')
-            or std_15m.get('ts')
-            or std_15m.get('timestamp')
-        )
-
-        cache = self._get_symbol_cache(symbol)
-        with self._lock:
-            hist_1h = cache["_raw_history"].get('1h', deque(maxlen=4))
-        price_hist = [r.get('close') for r in hist_1h]
-        price_hist.append((raw_f1h or std_1h).get('close'))
-        price_hist = [p for p in price_hist if p is not None][-4:]
-
-        coin = str(symbol).upper() if symbol else ""
-        rev_dir = self.detect_reversal(
-            np.array(price_hist, dtype=float),
-            (raw_f1h or std_1h).get('atr_pct_1h'),
-            (raw_f1h or std_1h).get('vol_ma_ratio_1h'),
-        )
-
-
-        deltas = {}
-        for p, feats, keys in [
-            ("15m", std_15m, self.core_keys.get("15m", [])),
-            ("1h", std_1h, self.core_keys["1h"]),
-            ("4h", std_4h, self.core_keys["4h"]),
-            ("d1", std_d1, self.core_keys["d1"]),
-        ]:
-            prev = cache["_prev_raw"].get(p)
-            deltas[p] = self._calc_deltas(feats, prev, keys)
-
-        # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
-        ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal = self.compute_ai_scores(
-            pf_1h,
-            pf_4h,
-            pf_d1,
-        )
-
-        result = self.compute_factor_scores(
-            ai_scores,
-            pf_1h,
-            pf_4h,
-            pf_d1,
-            pf_15m,
-            deltas,
-            rise_preds,
-            drawdown_preds,
-            vol_preds,
-            global_metrics,
-            open_interest,
-            ob_imb,
+            order_book_imbalance,
             symbol,
         )
-        fused_score = result["fused_score"]
-        logic_score = result["logic_score"]
-        env_score = result["env_score"]
-        risk_score = result["risk_score"]
-        fs = result["fs"]
-        scores = result["scores"]
-        local_details = result["local_details"]
-        consensus_all = result["consensus_all"]
-        consensus_14 = result["consensus_14"]
-        consensus_4d1 = result["consensus_4d1"]
-        short_mom = result["short_mom"]
-        ob_imb = result["ob_imb"]
-        confirm_15m = result["confirm_15m"]
-        oi_overheat = result["oi_overheat"]
-        th_oi = result["th_oi"]
-        oi_chg = result["oi_chg"]
+
+        scores = self._compute_scores(
+            prepared["pf_1h"],
+            prepared["pf_4h"],
+            prepared["pf_d1"],
+            prepared["pf_15m"],
+            prepared["deltas"],
+            global_metrics,
+            open_interest,
+            prepared["ob_imb"],
+            symbol,
+        )
+
+        fused_score = scores["fused_score"]
+        logic_score = scores["logic_score"]
+        env_score = scores["env_score"]
+        risk_score = scores["risk_score"]
+        fs = scores["fs"]
+        scores = scores["scores"]
+        local_details = scores["local_details"]
+        consensus_all = scores["consensus_all"]
+        consensus_14 = scores["consensus_14"]
+        consensus_4d1 = scores["consensus_4d1"]
+        short_mom = scores["short_mom"]
+        confirm_15m = scores["confirm_15m"]
+        oi_overheat = scores["oi_overheat"]
+        th_oi = scores["th_oi"]
+        oi_chg = scores["oi_chg"]
+        ob_imb = scores["ob_imb"]
+        ai_scores = scores["ai_scores"]
+        vol_preds = scores["vol_preds"]
+        rise_preds = scores["rise_preds"]
+        drawdown_preds = scores["drawdown_preds"]
+        oversold_reversal = scores["oversold_reversal"]
+        std_1h = prepared["std_1h"]
+        std_4h = prepared["std_4h"]
+        std_d1 = prepared["std_d1"]
+        std_15m = prepared["std_15m"]
+        raw_f1h = prepared["raw_f1h"]
+        raw_f4h = prepared["raw_f4h"]
+        raw_fd1 = prepared["raw_fd1"]
+        raw_f15m = prepared["raw_f15m"]
+        ts = prepared["ts"]
+        cache = prepared["cache"]
+        rev_dir = prepared["rev_dir"]
 
         # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
         if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
@@ -2820,89 +2986,33 @@ class RobustSignalGenerator:
                 }
             }
 
-# ===== 7b. 计算动态阈值 =====
-        atr_1h = std_1h.get('atr_pct_1h', 0)
-        adx_1h = std_1h.get('adx_1h', 0)
-        funding_1h = std_1h.get('funding_rate_1h', 0) or 0
-
-        atr_4h = std_4h.get('atr_pct_4h', 0) if std_4h else None
-        adx_4h = std_4h.get('adx_4h', 0) if std_4h else None
-        atr_d1 = std_d1.get('atr_pct_d1', 0) if std_d1 else None
-        adx_d1 = std_d1.get('adx_d1', 0) if std_d1 else None
-
-        vix_p = None
-        if global_metrics is not None:
-            vix_p = global_metrics.get('vix_proxy')
-        if vix_p is None and open_interest is not None:
-            vix_p = open_interest.get('vix_proxy')
-
-        regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
-        if std_d1.get('break_support_d1') == 1 and std_d1.get('rsi_d1', 50) < 30:
-            regime = 'range'
-            rev_dir = 1
-        risk_info = self.apply_risk_filters(
-            fused_score,
-            logic_score,
-            env_score,
-            std_1h,
-            std_4h,
-            std_d1,
-            raw_f1h,
-            raw_f4h,
-            raw_fd1,
-            vol_preds,
-            open_interest,
-            all_scores_list,
-            rev_dir,
+        result, fused_score, base_th = self._filter_and_finalize(
+            prepared,
             {
+                "fused_score": fused_score,
+                "logic_score": logic_score,
+                "env_score": env_score,
+                "fs": fs,
+                "scores": scores,
+                "ai_scores": ai_scores,
+                "vol_preds": vol_preds,
+                "rise_preds": rise_preds,
+                "drawdown_preds": drawdown_preds,
+                "short_mom": short_mom,
+                "ob_imb": ob_imb,
+                "confirm_15m": confirm_15m,
                 "oi_overheat": oi_overheat,
                 "th_oi": th_oi,
                 "oi_chg": oi_chg,
-                "history_scores": cache["history_scores"],
+                "consensus_all": consensus_all,
+                "consensus_14": consensus_14,
+                "consensus_4d1": consensus_4d1,
+                "local_details": local_details,
+                "oversold_reversal": oversold_reversal,
             },
+            all_scores_list,
             global_metrics,
-            std_1h,
-            std_4h,
-            std_d1,
-            symbol,
-        )
-        if risk_info is None:
-            return None
-        fused_score = risk_info["fused_score"]
-        risk_score = risk_info["risk_score"]
-        base_th = risk_info["base_th"]
-        crowding_factor = risk_info["crowding_factor"]
-        regime = risk_info["regime"]
-        rev_dir = risk_info["rev_dir"]
-        funding_conflicts = risk_info["funding_conflicts"]
-        risk_info["logic_score"] = logic_score
-        risk_info["env_score"] = env_score
-        risk_info["consensus_all"] = consensus_all
-        risk_info["consensus_14"] = consensus_14
-        risk_info["consensus_4d1"] = consensus_4d1
-        risk_info["local_details"] = local_details
-        result = self.finalize_position(
-            fused_score,
-            risk_info,
-            ai_scores,
-            fs,
-            scores,
-            std_1h,
-            std_4h,
-            std_d1,
-            std_15m,
-            raw_f1h,
-            raw_f4h,
-            raw_fd1,
-            raw_f15m,
-            vol_preds,
-            rise_preds,
-            drawdown_preds,
-            short_mom,
-            ob_imb,
-            confirm_15m,
-            oversold_reversal,
-            cache,
+            open_interest,
             symbol,
         )
         if result is None:
