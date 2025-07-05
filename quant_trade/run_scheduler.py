@@ -361,16 +361,21 @@ class Scheduler:
         self.schedule_next()
 
     def run(self):
-        self.initial_sync()
-        self.schedule_next()
-        while True:
-            self.scheduler.run(blocking=False)
-            if self.scheduler.queue:
-                next_time = self.scheduler.queue[0].time
-                sleep_secs = next_time - time.time()
-                time.sleep(max(sleep_secs, 0))
-            else:
-                time.sleep(1)
+        try:
+            self.initial_sync()
+            self.schedule_next()
+            while True:
+                self.scheduler.run(blocking=False)
+                if self.scheduler.queue:
+                    next_time = self.scheduler.queue[0].time
+                    sleep_secs = next_time - time.time()
+                    time.sleep(max(sleep_secs, 0))
+                else:
+                    time.sleep(1)
+        except KeyboardInterrupt:
+            logging.info("scheduler stopped")
+        finally:
+            self.sg.stop_weight_update_thread()
 
 
 if __name__ == "__main__":

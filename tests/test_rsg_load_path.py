@@ -16,4 +16,5 @@ def test_model_path_resolution(tmp_path, monkeypatch):
     rsg = RobustSignalGenerator(cfg)
     assert "cls" in rsg.models.get("1h", {})
     assert hasattr(rsg.models["1h"]["cls"]["pipeline"], "predict")
+    rsg.stop_weight_update_thread()
 

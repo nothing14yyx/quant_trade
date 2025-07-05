@@ -581,6 +581,8 @@ class RobustSignalGenerator:
         # 值由配置 oi_protection.crowding_threshold 控制
 
         # 定时更新因子权重
+        self._stop_event = threading.Event()
+        self._weight_thread = None
         self.start_weight_update_thread()
 
     def __getattr__(self, name):
@@ -616,6 +618,8 @@ class RobustSignalGenerator:
             "_exit_lag": 0,
             "_cooldown": 0,
             "_volume_checked": False,
+            "_stop_event": threading.Event(),
+            "_weight_thread": None,
             "pos_coeff_range": DEFAULT_POS_K_RANGE,
             "pos_coeff_trend": DEFAULT_POS_K_TREND,
             "low_vol_ratio": DEFAULT_LOW_VOL_RATIO,
@@ -1276,17 +1280,27 @@ class RobustSignalGenerator:
         return self.current_weights
 
     def _weight_update_loop(self, interval):
-        while True:
+        while not self._stop_event.is_set():
             try:
                 self.dynamic_weight_update()
             except Exception as e:
                 logger.warning("weight update failed: %s", e)
-            time.sleep(interval)
+            if self._stop_event.wait(interval):
+                break
 
     def start_weight_update_thread(self, interval=300):
+        if self._weight_thread and self._weight_thread.is_alive():
+            return
+        self._stop_event.clear()
         t = threading.Thread(target=self._weight_update_loop, args=(interval,), daemon=True)
         t.start()
         self._weight_thread = t
+
+    def stop_weight_update_thread(self):
+        if self._weight_thread:
+            self._stop_event.set()
+            self._weight_thread.join()
+            self._weight_thread = None
 
     def compute_dynamic_threshold(
         self,
