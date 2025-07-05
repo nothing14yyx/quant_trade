@@ -471,9 +471,8 @@ class RobustSignalGenerator:
             "min_ob_th": get_cfg_value(ob_cfg, "min_ob_th", 0.15),
             "dynamic_factor": get_cfg_value(ob_cfg, "dynamic_factor", 0.08),
         }
-        self.risk_score_cap = get_cfg_value(cfg, "risk_score_cap", 5.0)
         # 风险管理器
-        self.risk_manager = RiskManager(cap=self.risk_score_cap)
+        self.risk_manager = RiskManager()
         self.exit_lag_bars = get_cfg_value(cfg, "exit_lag_bars", EXIT_LAG_BARS_DEFAULT)
         oi_cfg = get_cfg_value(cfg, "oi_protection", {})
         self.oi_scale = get_cfg_value(oi_cfg, "scale", 0.8)

@@ -42,7 +42,6 @@ def make_rsg():
         'roc_high': 100,
     }
     rsg.ob_th_params = {'min_ob_th': 0.10, 'dynamic_factor': 0.08}
-    rsg.risk_score_cap = 5.0
     rsg.regime_adx_trend = 25
     rsg.regime_adx_range = 20
     rsg.risk_adjust_factor = 0.9
