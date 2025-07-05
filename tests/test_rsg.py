@@ -110,7 +110,15 @@ def test_flip_threshold_allows_switch():
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None}, '4h': {'up': None, 'down': None}, 'd1': {'up': None, 'down': None}}
 
-    feats_1h = {'close': 100, 'atr_pct_1h': 0.05, 'adx_1h': 0, 'funding_rate_1h': 0, 'vol_ma_ratio_1h': 1}
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0.05,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'vol_ma_ratio_1h': 1,
+        'vol_breakout_1h': 1,
+        'bb_width_1h': 0.02,
+    }
     feats_4h = {'atr_pct_4h': 0.05}
     feats_d1 = {}
     rsg._last_signal = 1

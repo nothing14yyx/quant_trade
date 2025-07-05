@@ -71,6 +71,7 @@ def test_detect_reversal():
 
 def test_flip_on_reversal():
     gen = make_rsg()
+    gen.signal_threshold_cfg["min_pos"] = 0.0
     gen.last_signal = -1
     gen.last_score = -0.4
     gen._raw_history['1h'].extend([
@@ -78,8 +79,15 @@ def test_flip_on_reversal():
         {'close': 92},
         {'close': 90},
     ])
-    feats_1h = {'close': 94, 'atr_pct_1h': 0.02, 'adx_1h': 0,
-                'funding_rate_1h': 0, 'vol_ma_ratio_1h': 2.0}
+    feats_1h = {
+        'close': 94,
+        'atr_pct_1h': 0.02,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'vol_ma_ratio_1h': 2.0,
+        'vol_breakout_1h': 1,
+        'bb_width_1h': 0.02,
+    }
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
     res = gen.generate_signal(
