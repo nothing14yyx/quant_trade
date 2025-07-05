@@ -497,7 +497,7 @@ class RobustSignalGenerator:
         )
 
         protect_cfg = get_cfg_value(cfg, "protection_limits", {})
-        self.risk_score_limit = get_cfg_value(protect_cfg, "risk_score", 2.00)
+        self.risk_score_limit = get_cfg_value(protect_cfg, "risk_score", 1.0)
         self.crowding_limit = get_cfg_value(
             cfg, "crowding_limit", get_cfg_value(protect_cfg, "crowding", 1.05)
         )
@@ -2418,7 +2418,10 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
-
+        if funding_conflicts > self.veto_level:
+            direction = 0
+            pos_size = 0.0
+            zero_reason = zero_reason or "funding_conflict"
 
         if risk_info.get("oi_overheat"):
             pos_size *= 0.5

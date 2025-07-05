@@ -87,7 +87,7 @@ risk_adjust:
   factor: 0.7        # 风险惩罚系数，值越低得分扣减越轻
 risk_adjust_threshold: 0.1     # 调整后的得分绝对值必须高于该值才会生成信号
 protection_limits:
-  risk_score: 1.5    # 允许的风险得分上限
+  risk_score: 1.0    # 允许的风险得分上限
 crowding_limit: 1.05     # 允许的拥挤度上限
 ```
 
