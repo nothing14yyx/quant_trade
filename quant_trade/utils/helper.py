@@ -301,6 +301,7 @@ def calc_features_raw(
     )
     _check_index("rsi")
     assign_safe(feats, f"rsi_{period}", _safe_ta(ta.rsi, feats["close"], length=14, index=df.index))
+    assign_safe(feats, f"rsi_fast_{period}", _safe_ta(ta.rsi, feats["close"], length=7, index=df.index))
     feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
     _check_index("atr")
     atr = _safe_ta(ta.atr, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
@@ -383,6 +384,20 @@ def calc_features_raw(
     stoch = stoch.reindex(df.index)
     assign_safe(feats, f"stoch_k_{period}", stoch.get("STOCHk_14_3_3"))
     assign_safe(feats, f"stoch_d_{period}", stoch.get("STOCHd_14_3_3"))
+
+    stoch_fast = _safe_ta(
+        ta.stoch,
+        feats["high"],
+        feats["low"],
+        feats["close"],
+        k=9,
+        d=3,
+        smooth_k=3,
+        index=df.index,
+        cols=["STOCHk_9_3_3", "STOCHd_9_3_3"],
+    )
+    stoch_fast = stoch_fast.reindex(df.index)
+    assign_safe(feats, f"stoch_fast_{period}", stoch_fast.get("STOCHk_9_3_3"))
 
     _check_index("bbands")
     bb = _safe_ta(
@@ -591,10 +606,12 @@ def calc_features_raw(
         feats["high"],
         feats["low"],
         feats["close"],
+        length=10,
+        multiplier=3.0,
         index=df.index,
-        cols=["SUPERT_7_3.0", "SUPERTd_7_3.0", "SUPERTl_7_3.0", "SUPERTs_7_3.0"],
+        cols=["SUPERT_10_3.0", "SUPERTd_10_3.0", "SUPERTl_10_3.0", "SUPERTs_10_3.0"],
     )
-    assign_safe(feats, f"supertrend_dir_{period}", st.get("SUPERTd_7_3.0", pd.Series(index=df.index, data=np.nan)))
+    assign_safe(feats, f"supertrend_dir_{period}", st.get("SUPERTd_10_3.0", pd.Series(index=df.index, data=np.nan)))
 
     # ======== CoinGecko 衍生特征 ========
     if "cg_price" in df:
