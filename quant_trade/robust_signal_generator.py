@@ -2253,6 +2253,30 @@ class RobustSignalGenerator:
             penalty = abs(vote) / strong_min
             fused_score *= 0.5 ** penalty
 
+        rsi = raw_fd1.get("rsi_d1")
+        adx = raw_fd1.get("adx_d1", 0)
+        rebound_flag = False
+        if rsi is not None and rsi < 30:
+            hist = cache.get("_raw_history", {}).get("1h", [])
+            rsi_hist = [r.get("rsi_1h") for r in hist]
+            if raw_f1h.get("rsi_1h") is not None:
+                rsi_hist.append(raw_f1h.get("rsi_1h"))
+            price_seq = [r.get("close") for r in hist]
+            if raw_f1h.get("close") is not None:
+                price_seq.append(raw_f1h.get("close"))
+            if (
+                len(rsi_hist) >= 2
+                and len(price_seq) >= 2
+                and price_seq[-1] < price_seq[-2]
+                and rsi_hist[-1] > rsi_hist[-2]
+            ):
+                rebound_flag = True
+            hammer = raw_f1h.get("long_lower_shadow_1h", 0) > 0.6
+            rebound_flag = rebound_flag or hammer
+            if rebound_flag:
+                fused_score += 0.3
+
+
         cfg_th_sig = self.signal_threshold_cfg
         grad_dir = sigmoid_dir(
             fused_score,
@@ -2320,16 +2344,6 @@ class RobustSignalGenerator:
             consensus_all=risk_info.get("consensus_all", False),
         )
 
-        rsi = raw_fd1.get("rsi_d1")
-        cci = raw_fd1.get("cci_d1")
-        if direction == -1 and ((rsi is not None and rsi < 30) or (cci is not None and cci < -100)):
-            direction = 0
-            pos_size = 0.0
-            zero_reason = zero_reason or "oversold"
-        elif direction == 1 and ((rsi is not None and rsi > 70) or (cci is not None and cci > 100)):
-            direction = 0
-            pos_size = 0.0
-            zero_reason = zero_reason or "overbought"
 
         if risk_info.get("oi_overheat"):
             pos_size *= 0.5
@@ -2359,6 +2373,26 @@ class RobustSignalGenerator:
                 rise_pred=rise_preds.get("1h"),
                 drawdown_pred=drawdown_preds.get("1h"),
             )
+
+        rsi = raw_fd1.get("rsi_d1")
+        adx = raw_fd1.get("adx_d1", 0)
+        if direction == 1 and rsi is not None and rsi > 70:
+            if adx < 25:
+                pos_size *= 0.5
+            else:
+                pos_size *= 0.8
+                if stop_loss is not None:
+                    stop_loss *= 1.2
+        elif direction == -1 and rsi is not None and rsi < 30:
+            if adx < 25:
+                pos_size *= 0.5
+            else:
+                pos_size *= 0.8
+                if stop_loss is not None:
+                    stop_loss *= 1.2
+        if rebound_flag and direction == 1 and pos_size < tier * 0.2:
+            pos_size = tier * 0.2
+            zero_reason = None
 
         logic_score = risk_info.get("logic_score", 0.0)
         env_score = risk_info.get("env_score", 1.0)
