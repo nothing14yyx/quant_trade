@@ -539,7 +539,12 @@ class FeatureEngineer:
             chg15 = f15m["pct_chg1_15m"].shift(1)
             f15m["mom_15m_roll1h"] = chg15.rolling(4, min_periods=1).mean()
             f15m["mom_15m_roll1h_std"] = chg15.rolling(4, min_periods=1).std()
-            f15m = f15m[["mom_15m_roll1h", "mom_15m_roll1h_std"]]
+            f15m = f15m[[
+                "mom_15m_roll1h",
+                "mom_15m_roll1h_std",
+                "rsi_fast_15m",
+                "stoch_fast_15m",
+            ]]
 
         f1h = f1h.rename(columns={"close": "close_1h"})
         f4h = f4h.rename(columns={"close": "close_4h"})

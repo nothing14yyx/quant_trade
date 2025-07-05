@@ -428,7 +428,13 @@ class RobustSignalGenerator:
         self.vote_weights = get_cfg_value(
             cfg,
             "vote_weights",
-            {"ob": 4, "short_mom": 2, "ai": self.vote_params["weight_ai"], "vol_breakout": 1},
+            {
+                "ob": 4,
+                "short_mom": 2,
+                "fast_mom": 0.5,
+                "ai": self.vote_params["weight_ai"],
+                "vol_breakout": 1,
+            },
         )
 
         filters_cfg = get_cfg_value(cfg, "signal_filters", {})
@@ -596,7 +602,7 @@ class RobustSignalGenerator:
             "core_keys": self.DEFAULT_CORE_KEYS.copy(),
             "delta_params": self.DELTA_PARAMS.copy(),
             "vote_params": self.VOTE_PARAMS.copy(),
-            "vote_weights": {"ob": 4, "short_mom": 2, "ai": 3, "vol_breakout": 1},
+            "vote_weights": {"ob": 4, "short_mom": 2, "fast_mom": 0.5, "ai": 3, "vol_breakout": 1},
             "exit_lag_bars": EXIT_LAG_BARS_DEFAULT,
             "th_window": 60,
             "th_decay": 2.0,
@@ -2217,6 +2223,26 @@ class RobustSignalGenerator:
             ob_dir = 0
 
         short_mom_dir = int(np.sign(short_mom)) if short_mom != 0 else 0
+        fast_cross_dir = 0
+        if raw_f15m:
+            hist15 = cache.get("_raw_history", {}).get("15m", [])
+            prev15 = hist15[-1] if hist15 else None
+            rsi_c = raw_f15m.get("rsi_fast_15m")
+            stoch_c = raw_f15m.get("stoch_fast_15m")
+            if prev15 is not None:
+                rsi_p = prev15.get("rsi_fast_15m")
+                stoch_p = prev15.get("stoch_fast_15m")
+                if rsi_p is not None and rsi_c is not None:
+                    if rsi_p < 30 <= rsi_c:
+                        fast_cross_dir += 1
+                    elif rsi_p > 70 and rsi_c <= 70:
+                        fast_cross_dir -= 1
+                if stoch_p is not None and stoch_c is not None:
+                    if stoch_p < 20 <= stoch_c:
+                        fast_cross_dir += 1
+                    elif stoch_p > 80 and stoch_c <= 80:
+                        fast_cross_dir -= 1
+            fast_cross_dir = int(np.sign(fast_cross_dir))
         vol_breakout_val = std_1h.get("vol_breakout_1h")
         vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
 
@@ -2232,6 +2258,7 @@ class RobustSignalGenerator:
         vote = (
             vw.get("ob", 4) * ob_dir
             + vw.get("short_mom", 2) * short_mom_dir
+            + vw.get("fast_mom", 0.5) * fast_cross_dir
             + vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
             + vw.get("vol_breakout", 1) * vol_breakout_dir
         )
@@ -2464,6 +2491,7 @@ class RobustSignalGenerator:
             "pos_size": float(pos_size),
             "short_momentum": short_mom,
             "ob_imbalance": ob_imb,
+            "fast_cross": fast_cross_dir,
             "vol_ratio": vol_ratio,
             "position_tier": tier,
             "confidence_factor": confidence_factor,
