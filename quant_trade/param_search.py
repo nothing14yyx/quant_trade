@@ -130,10 +130,11 @@ def run_single_backtest(
         sg.dynamic_threshold = dyn_th.__get__(sg, RobustSignalGenerator)
 
     sg.ic_scores.update(ic_scores)
-
+    cfg = load_config()
     all_symbols = df["symbol"].unique().tolist()
-    fee_rate = 0.0005
-    slippage = 0.0003
+    costs_cfg = cfg.get("costs", {})
+    fee_rate = float(costs_cfg.get("fee_rate", 0.0005))
+    slippage = float(costs_cfg.get("slippage", 0.0003))
     results = []
     port_rets: list[float] = []
     total_trades = 0
