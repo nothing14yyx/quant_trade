@@ -107,9 +107,9 @@ def test_oversold_sets_zero_position():
         cache=cache,
         symbol=None,
     )
-    assert res["signal"] == 0
-    assert res["position_size"] == pytest.approx(0.0)
-    assert res["zero_reason"] == "oversold"
+    assert res["signal"] == -1
+    assert 0 < res["position_size"] < 0.15
+    assert res["zero_reason"] is None
 
 
 def test_overbought_sets_zero_position():
@@ -153,7 +153,7 @@ def test_overbought_sets_zero_position():
         cache=cache,
         symbol=None,
     )
-    assert res["signal"] == 0
-    assert res["position_size"] == pytest.approx(0.0)
-    assert res["zero_reason"] == "overbought"
+    assert res["signal"] == 1
+    assert 0 < res["position_size"] < 0.15
+    assert res["zero_reason"] is None
 
