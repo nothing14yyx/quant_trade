@@ -314,6 +314,8 @@ def run_backtest(*, recent_days: int | None = None):
     # 所有明细也合并导出一份（可选）
     all_trades = pd.concat(trades_all, ignore_index=True)
     all_trades.to_csv('backtest_fusion_trades_all.csv', index=False)
+    if hasattr(sg, "stop_weight_update_thread"):
+        sg.stop_weight_update_thread()
 
 if __name__ == '__main__':
     import argparse
