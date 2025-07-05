@@ -172,9 +172,9 @@ def run_backtest(*, recent_days: int | None = None):
     results = []
     trades_all = []
 
-    # 参数
-    fee_rate = 0.0005
-    slippage = 0.0003
+    costs_cfg = cfg.get("costs", {})
+    fee_rate = float(costs_cfg.get("fee_rate", 0.0005))
+    slippage = float(costs_cfg.get("slippage", 0.0003))
 
     for symbol in all_symbols:
         df_sym = df[df['symbol'] == symbol].copy()

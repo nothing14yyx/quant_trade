@@ -290,7 +290,7 @@ def sigmoid_dir(score: float, base_th: float, gamma: float) -> float:
 
 
 def sigmoid_confidence(vote: float, strong_min: float, conf_min: float = 1.0) -> float:
-    """根据投票结果计算置信度, 默认下限为1"""
+    """根据投票结果计算置信度, 下限由 ``conf_min`` 控制"""
     conf = 1 / (1 + np.exp(-4 * (abs(vote) - strong_min)))
     return max(conf_min, conf)
 
@@ -442,6 +442,7 @@ class RobustSignalGenerator:
         self.signal_filters = {
             "min_vote": get_cfg_value(filters_cfg, "min_vote", 2),
             "confidence_vote": get_cfg_value(filters_cfg, "confidence_vote", 0.12),
+            "conf_min": get_cfg_value(filters_cfg, "conf_min", 0.25),
         }
 
         pc_cfg = get_cfg_value(cfg, "position_coeff", {})
@@ -455,6 +456,7 @@ class RobustSignalGenerator:
 
         self.sentiment_alpha = get_cfg_value(cfg, "sentiment_alpha", 0.5)
         self.cap_positive_scale = get_cfg_value(cfg, "cap_positive_scale", 0.7)
+        self.tp_sl_cfg = get_cfg_value(cfg, "tp_sl", {})
         vg_cfg = get_cfg_value(cfg, "volume_guard", {})
         self.volume_guard_params = {
             "weak": get_cfg_value(vg_cfg, "weak_scale", 0.90),
@@ -494,7 +496,7 @@ class RobustSignalGenerator:
         )
 
         protect_cfg = get_cfg_value(cfg, "protection_limits", {})
-        self.risk_score_limit = get_cfg_value(protect_cfg, "risk_score", 2.00)
+        self.risk_score_limit = get_cfg_value(protect_cfg, "risk_score", 1.0)
         self.crowding_limit = get_cfg_value(
             cfg, "crowding_limit", get_cfg_value(protect_cfg, "crowding", 1.05)
         )
@@ -744,10 +746,17 @@ class RobustSignalGenerator:
         if atr is None or atr == 0:
             atr = 0.005 * price
 
+        cfg = getattr(self, "tp_sl_cfg", {})
+        range_cfg = get_cfg_value(cfg, "range", {})
+        trend_cfg = get_cfg_value(cfg, "trend", {})
+        sl_min_pct = get_cfg_value(cfg, "sl_min_pct", 0.005)
+
         if regime == "range":
-            tp_mult, sl_mult = 1.0, 0.8
+            tp_mult = get_cfg_value(range_cfg, "tp_mult", 1.0)
+            sl_mult = get_cfg_value(range_cfg, "sl_mult", 0.8)
         elif regime == "trend":
-            tp_mult, sl_mult = 1.8, 1.2
+            tp_mult = get_cfg_value(trend_cfg, "tp_mult", 1.8)
+            sl_mult = get_cfg_value(trend_cfg, "sl_mult", 1.2)
 
         # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
         tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
@@ -777,7 +786,7 @@ class RobustSignalGenerator:
                 take_profit = price - tp_mult * atr
                 stop_loss = price + sl_mult * atr
 
-        min_sl_dist = max(0.005 * price, 0.7 * atr)
+        min_sl_dist = max(sl_min_pct * price, 0.7 * atr)
         if direction == 1:
             if price - stop_loss < min_sl_dist:
                 stop_loss = price - min_sl_dist
@@ -2288,7 +2297,11 @@ class RobustSignalGenerator:
         strong_confirm_vote = abs(vote) >= self.vote_params["strong_min"]
 
         strong_min = self.vote_params["strong_min"]
-        conf_vote = sigmoid_confidence(vote, strong_min, 1)
+        conf_vote = sigmoid_confidence(
+            vote,
+            strong_min,
+            getattr(self, "signal_filters", {}).get("conf_min", 1),
+        )
         if abs(vote) >= strong_min:
             fused_score *= max(1, conf_vote)
 
@@ -2404,7 +2417,10 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
-
+        if funding_conflicts > self.veto_level:
+            direction = 0
+            pos_size = 0.0
+            zero_reason = zero_reason or "funding_conflict"
 
         if risk_info.get("oi_overheat"):
             pos_size *= 0.5
