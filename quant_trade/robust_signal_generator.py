@@ -456,6 +456,7 @@ class RobustSignalGenerator:
 
         self.sentiment_alpha = get_cfg_value(cfg, "sentiment_alpha", 0.5)
         self.cap_positive_scale = get_cfg_value(cfg, "cap_positive_scale", 0.7)
+        self.tp_sl_cfg = get_cfg_value(cfg, "tp_sl", {})
         vg_cfg = get_cfg_value(cfg, "volume_guard", {})
         self.volume_guard_params = {
             "weak": get_cfg_value(vg_cfg, "weak_scale", 0.90),
@@ -746,10 +747,17 @@ class RobustSignalGenerator:
         if atr is None or atr == 0:
             atr = 0.005 * price
 
+        cfg = getattr(self, "tp_sl_cfg", {})
+        range_cfg = get_cfg_value(cfg, "range", {})
+        trend_cfg = get_cfg_value(cfg, "trend", {})
+        sl_min_pct = get_cfg_value(cfg, "sl_min_pct", 0.005)
+
         if regime == "range":
-            tp_mult, sl_mult = 1.0, 0.8
+            tp_mult = get_cfg_value(range_cfg, "tp_mult", 1.0)
+            sl_mult = get_cfg_value(range_cfg, "sl_mult", 0.8)
         elif regime == "trend":
-            tp_mult, sl_mult = 1.8, 1.2
+            tp_mult = get_cfg_value(trend_cfg, "tp_mult", 1.8)
+            sl_mult = get_cfg_value(trend_cfg, "sl_mult", 1.2)
 
         # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
         tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
@@ -779,7 +787,7 @@ class RobustSignalGenerator:
                 take_profit = price - tp_mult * atr
                 stop_loss = price + sl_mult * atr
 
-        min_sl_dist = max(0.005 * price, 0.7 * atr)
+        min_sl_dist = max(sl_min_pct * price, 0.7 * atr)
         if direction == 1:
             if price - stop_loss < min_sl_dist:
                 stop_loss = price - min_sl_dist
