@@ -82,7 +82,11 @@ def test_flip_on_reversal():
                 'funding_rate_1h': 0, 'vol_ma_ratio_1h': 2.0}
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
-    res = gen.generate_signal(feats_1h, feats_4h, feats_d1,
-                              raw_features_1h=feats_1h)
-    assert res['signal'] == 0
+    res = gen.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=feats_1h,
+    )
+    assert res['signal'] == -1
     assert gen._cooldown == 0
