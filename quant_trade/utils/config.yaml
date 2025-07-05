@@ -430,9 +430,9 @@ regime:
   adx_range: 20
 
 risk_adjust:
-  factor: 0.5
+  factor: 0.7
   threshold: 0.01
-risk_adjust_threshold: 0.01
+risk_adjust_threshold: 0.1
 
 protection_limits:
   risk_score: 1.0
