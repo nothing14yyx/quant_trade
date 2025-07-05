@@ -201,5 +201,9 @@
   "UXLINKUSDT": "uxlink",
   "ARKUSDT": "ark",
   "IDOLUSDT": "meet48",
-  "BANKUSDT": "lorenzo-protocol"
+  "BANKUSDT": "lorenzo-protocol",
+  "QUICKUSDT": "quick",
+  "DFUSDT": "dforce-token",
+  "SAFEUSDT": "safe",
+  "DOODUSDT": "doodles"
 }

@@ -338,10 +338,6 @@ mom_15m_roll1h
 mom_15m_roll1h_isnan
 mom_15m_roll1h_std
 mom_15m_roll1h_std_isnan
-rsi_fast_15m
-rsi_fast_15m_isnan
-stoch_fast_15m
-stoch_fast_15m_isnan
 mom_5m_roll1h
 mom_5m_roll1h_isnan
 mom_5m_roll1h_std
@@ -438,6 +434,10 @@ rsi_diff_1h_d1
 rsi_diff_1h_d1_isnan
 rsi_diff_4h_d1
 rsi_diff_4h_d1_isnan
+rsi_fast_15m
+rsi_fast_1h
+rsi_fast_4h
+rsi_fast_d1
 rsi_mul_vol_ma_ratio_1h
 rsi_mul_vol_ma_ratio_1h_isnan
 rsi_mul_vol_ma_ratio_4h
@@ -480,6 +480,10 @@ stoch_d_4h
 stoch_d_4h_isnan
 stoch_d_d1
 stoch_d_d1_isnan
+stoch_fast_15m
+stoch_fast_1h
+stoch_fast_4h
+stoch_fast_d1
 stoch_k_1h
 stoch_k_1h_isnan
 stoch_k_4h
