@@ -1255,7 +1255,7 @@ class RobustSignalGenerator:
         return self.ic_scores
 
     def dynamic_weight_update(self, halflife=20):
-        """根据因子IC的指数加权均值更新权重"""
+        """根据因子IC的指数加权均值更新权重，日志为 DEBUG 级别"""
         with self._lock:
             if not hasattr(self, "ic_history"):
                 self.ic_history = {k: deque(maxlen=3000) for k in self.base_weights}
@@ -1283,11 +1283,12 @@ class RobustSignalGenerator:
 
         total = sum(raw.values()) or 1.0
         self.current_weights = {k: v / total for k, v in raw.items()}
-        logger.info("current_weights: %s", self.current_weights)
+        logger.debug("current_weights: %s", self.current_weights)
         return self.current_weights
 
     def _weight_update_loop(self, interval):
-        while not self._stop_event.is_set():
+        """定时更新权重，日志记录在 DEBUG 级别"""
+        while True:
             try:
                 self.dynamic_weight_update()
             except Exception as e:
