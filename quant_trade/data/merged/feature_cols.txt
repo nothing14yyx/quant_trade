@@ -338,6 +338,10 @@ mom_15m_roll1h
 mom_15m_roll1h_isnan
 mom_15m_roll1h_std
 mom_15m_roll1h_std_isnan
+rsi_fast_15m
+rsi_fast_15m_isnan
+stoch_fast_15m
+stoch_fast_15m_isnan
 mom_5m_roll1h
 mom_5m_roll1h_isnan
 mom_5m_roll1h_std
