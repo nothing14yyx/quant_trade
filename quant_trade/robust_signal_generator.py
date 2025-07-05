@@ -2294,6 +2294,19 @@ class RobustSignalGenerator:
                 return None
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
 
+        if regime == "range":
+            atr_v = (raw_f1h or std_1h).get("atr_pct_1h")
+            bb_w = (raw_f1h or std_1h).get("bb_width_1h")
+            low_vol = False
+            if atr_v is not None and atr_v < 0.005:
+                low_vol = True
+            if bb_w is not None and bb_w < 0.01:
+                low_vol = True
+            if low_vol:
+                direction = 0
+            elif vol_breakout_val != 1 or conf_vote < 0.15:
+                direction = 0
+
         if self._cooldown > 0:
             self._cooldown -= 1
 
