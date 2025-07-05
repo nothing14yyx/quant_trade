@@ -57,11 +57,11 @@ class SignalThresholdParams:
     """Container for all signal threshold related parameters."""
 
     base_th: float = 0.08
-    gamma: float = 0.05
+    gamma: float = 0.9
     min_pos: float = 0.05
     quantile: float = 0.80
     low_base: float = DEFAULT_LOW_BASE
-    rev_boost: float = 0.30
+    rev_boost: float = 0.15
     rev_th_mult: float = 0.60
     atr_mult: float = 4.0
     funding_mult: float = 8.0
@@ -429,11 +429,11 @@ class RobustSignalGenerator:
             cfg,
             "vote_weights",
             {
-                "ob": 4,
-                "short_mom": 2,
-                "fast_mom": 0.5,
                 "ai": self.vote_params["weight_ai"],
+                "mom": 1,
                 "vol_breakout": 1,
+                "trend": 1,
+                "confirm_15m": 1,
             },
         )
 
@@ -642,10 +642,10 @@ class RobustSignalGenerator:
         if not hasattr(self, "_signal_threshold_cfg"):
             self._signal_threshold_cfg = {
                 "base_th": 0.08,
-                "gamma": 0.05,
+                "gamma": 0.9,
                 "min_pos": 0.10,
                 "low_base": DEFAULT_LOW_BASE,
-                "rev_boost": 0.30,
+                "rev_boost": 0.15,
                 "rev_th_mult": 0.60,
                 "atr_mult": 4.0,
                 "funding_mult": 8.0,
@@ -2246,6 +2246,9 @@ class RobustSignalGenerator:
         vol_breakout_val = std_1h.get("vol_breakout_1h")
         vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
 
+        trend_dir = int(np.sign(fs['1h'].get('trend', 0)))
+        confirm_dir = int(np.sign(confirm_15m)) if confirm_15m else 0
+
         th = self.ai_dir_eps
         if ai_scores["1h"] >= th:
             ai_dir = 1
@@ -2256,11 +2259,11 @@ class RobustSignalGenerator:
 
         vw = self.vote_weights
         vote = (
-            vw.get("ob", 4) * ob_dir
-            + vw.get("short_mom", 2) * short_mom_dir
-            + vw.get("fast_mom", 0.5) * fast_cross_dir
-            + vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
+            vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
+            + vw.get("mom", 1) * short_mom_dir
             + vw.get("vol_breakout", 1) * vol_breakout_dir
+            + vw.get("trend", 1) * trend_dir
+            + vw.get("confirm_15m", 1) * confirm_dir
         )
         conflict_filter_triggered = False
         if (
@@ -2310,7 +2313,7 @@ class RobustSignalGenerator:
         grad_dir = sigmoid_dir(
             fused_score,
             base_th,
-            cfg_th_sig.get("gamma", 0.05),
+            cfg_th_sig.get("gamma", 0.9),
         )
         st1 = int(np.sign(std_1h.get("supertrend_dir_1h", 0)))
         st4 = int(np.sign(std_4h.get("supertrend_dir_4h", 0))) if std_4h else 0
