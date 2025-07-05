@@ -290,7 +290,7 @@ def sigmoid_dir(score: float, base_th: float, gamma: float) -> float:
 
 
 def sigmoid_confidence(vote: float, strong_min: float, conf_min: float = 1.0) -> float:
-    """根据投票结果计算置信度, 默认下限为1"""
+    """根据投票结果计算置信度, 下限由 ``conf_min`` 控制"""
     conf = 1 / (1 + np.exp(-4 * (abs(vote) - strong_min)))
     return max(conf_min, conf)
 
@@ -442,6 +442,7 @@ class RobustSignalGenerator:
         self.signal_filters = {
             "min_vote": get_cfg_value(filters_cfg, "min_vote", 2),
             "confidence_vote": get_cfg_value(filters_cfg, "confidence_vote", 0.12),
+            "conf_min": get_cfg_value(filters_cfg, "conf_min", 0.25),
         }
 
         pc_cfg = get_cfg_value(cfg, "position_coeff", {})
@@ -2289,7 +2290,11 @@ class RobustSignalGenerator:
         strong_confirm_vote = abs(vote) >= self.vote_params["strong_min"]
 
         strong_min = self.vote_params["strong_min"]
-        conf_vote = sigmoid_confidence(vote, strong_min, 1)
+        conf_vote = sigmoid_confidence(
+            vote,
+            strong_min,
+            getattr(self, "signal_filters", {}).get("conf_min", 1),
+        )
         if abs(vote) >= strong_min:
             fused_score *= max(1, conf_vote)
 
