@@ -264,9 +264,9 @@ train_settings:
   periods: ["1h", "4h","d1"]       # 例: ["4h", "d1"] 为空则训练全部
   tags: []          # 例: ["up", "down"] 为空则训练全部
   n_trials:
-    1h: 15
-    4h: 15
-    d1: 20
+    1h: 40
+    4h: 40
+    d1: 50
 
 param_space:
   1h:
@@ -276,7 +276,6 @@ param_space:
     md: [4, 12]
     mcs: [50, 150]
     subsample: [0.8, 1.0]
-    cbt: [0.6, 0.9]
     lambda_l2: [0.0, 0.5]
     scale_pos_weight: [1.1, 1.5]
   4h:
@@ -286,7 +285,6 @@ param_space:
     md:   [4, 10]
     mcs:  [1500, 3000]     # ← 原 50-120，增大叶子样本
     subsample: [0.70, 0.9]
-    cbt:  [0.45, 0.60]     # = feature_fraction，原 0.6-0.9
     lambda_l2: [4.0, 8.0]  # 原 0.5-4.0，正则更强
     scale_pos_weight: [1.1, 1.5]
   d1:
@@ -296,7 +294,6 @@ param_space:
     md: [4, 10]
     mcs: [400, 800]
     subsample: [0.75, 0.9]
-    cbt: [0.50, 0.65]          # feature_fraction
     lambda_l2: [2.0, 6.0]
     scale_pos_weight: [4, 8]   # 让 Optuna 一起调
 
@@ -311,7 +308,6 @@ fixed_params:
     vol: "l1"
     rise: "l1"
     drawdown: "l1"
-  lambda_l2: 2.0
   early_stopping_rounds: 40
   n_jobs: -1
 
@@ -326,7 +322,6 @@ model_params:
     num_boost_round: 140      # ← 原 160
     min_data_in_leaf: 2200    # 不变
     feature_fraction: 0.48    # ← 原 0.50
-    lambda_l2: 7.0            # ← 原 6.0
     bagging_fraction: 0.70
     bagging_freq: 1
   d1:                       # ≈2.2 万行
@@ -335,7 +330,6 @@ model_params:
     feature_fraction: 0.58
     bagging_fraction: 0.80
     bagging_freq: 1
-    lambda_l2: 5.0            # ★ 新增，固定 L2
     scale_pos_weight: 6       # ★ 新增，补偿空头稀缺
 
 # Δ-boost 配置：关键指标与参数
@@ -366,12 +360,12 @@ delta_boost:
 
 
 vote_system:
-  weight_ai: 2
+#  weight_ai: 2          # 已由 vote_weights.ai 定义
   strong_min: 3
   conf_min: 0.25
   ai_dir_eps: 0.02
 vote_weights:
-  ai: 3
+  ai: 2
   mom: 1
   vol_breakout: 1
   trend: 1
@@ -390,17 +384,18 @@ volume_guard:
 ob_threshold:
   min_ob_th: 0.10
   dynamic_factor: 0.08
-risk_score_cap: 5.0
 exit_lag_bars: 1
+
 # quantile: 0.88
 signal_filters:
-  confidence_vote: 0
-  min_vote: 0
+  min_vote: 2
+  confidence_vote: 0.12
+  conf_min: 0.25
 oi_protection:
   scale: 0.9
   crowding_threshold: 0.98
 veto_level: 0.9
-flip_coeff: 0.8
+flip_coeff: 0.6
 th_down_d1: 0.74  # d1空头AI模型阈值，后续可灵活调整
 position_coeff:
   range: 0.40
@@ -435,17 +430,33 @@ regime:
   adx_range: 20
 
 risk_adjust:
-  factor: 0.0
-risk_adjust_threshold: 0.00
+  factor: 0.5
+  threshold: 0.01
+risk_adjust_threshold: 0.01
 
 protection_limits:
-  risk_score: 1.5
+  risk_score: 1.0
 
 crowding_limit: 1.05
 
-min_trend_align: 1
+min_trend_align: 2
 
 max_position: 0.3
+
+# 交易成本设置
+costs:
+  fee_rate: 0.0005     # 0.05% 单边
+  slippage: 0.0003     # 0.03%
+
+# ATR 倍数及止盈止损参数
+tp_sl:
+  trend:
+    tp_mult: 1.8
+    sl_mult: 1.2
+  range:
+    tp_mult: 1.0
+    sl_mult: 0.8
+  sl_min_pct: 0.005     # 最小止损百分比
 
 # 调度器设置
 scheduler:
