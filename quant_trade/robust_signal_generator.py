@@ -735,6 +735,7 @@ class RobustSignalGenerator:
         *,
         rise_pred: float | None = None,
         drawdown_pred: float | None = None,
+        regime: str | None = None,
     ):
         """计算止盈止损价格，可根据模型预测值微调"""
         if direction == 0:
@@ -743,6 +744,11 @@ class RobustSignalGenerator:
             return None, None  # 价格异常直接放弃
         if atr is None or atr == 0:
             atr = 0.005 * price
+
+        if regime == "range":
+            tp_mult, sl_mult = 1.0, 0.8
+        elif regime == "trend":
+            tp_mult, sl_mult = 1.8, 1.2
 
         # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
         tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
@@ -771,6 +777,14 @@ class RobustSignalGenerator:
             else:
                 take_profit = price - tp_mult * atr
                 stop_loss = price + sl_mult * atr
+
+        min_sl_dist = max(0.005 * price, 0.7 * atr)
+        if direction == 1:
+            if price - stop_loss < min_sl_dist:
+                stop_loss = price - min_sl_dist
+        else:
+            if stop_loss - price < min_sl_dist:
+                stop_loss = price + min_sl_dist
 
         return float(take_profit), float(stop_loss)
 
@@ -2420,6 +2434,7 @@ class RobustSignalGenerator:
                 direction,
                 rise_pred=rise_preds.get("1h"),
                 drawdown_pred=drawdown_preds.get("1h"),
+                regime=regime,
             )
 
         rsi = raw_fd1.get("rsi_d1")
