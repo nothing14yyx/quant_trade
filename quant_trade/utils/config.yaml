@@ -439,7 +439,7 @@ risk_adjust:
 risk_adjust_threshold: 0.00
 
 protection_limits:
-  risk_score: 1.5
+  risk_score: 1.0
 
 crowding_limit: 1.05
 
