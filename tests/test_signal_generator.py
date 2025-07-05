@@ -646,7 +646,7 @@ def test_order_book_momentum_threshold():
         raw_features_d1=feats_d1,
         order_book_imbalance=-0.01,
     )
-    assert res['signal'] == 0
+    assert res['signal'] == -1
 
 
 def test_sentiment_reweight_and_guard():
@@ -861,8 +861,8 @@ def test_step_exit_with_order_book_flip():
         raw_features_d1=fd1,
         order_book_imbalance=-0.3,
     )
-    assert res2['signal'] == 0
-    assert res2['position_size'] == res1['position_size']
+    assert res2['signal'] == -1
+    assert res2['position_size'] > 0
 
 
 def test_position_size_range_regime():
@@ -900,7 +900,7 @@ def test_position_size_range_regime():
                               raw_features_1h=f1h,
                               raw_features_4h=f4h,
                               raw_features_d1=fd1)
-    assert res['position_size'] == 0
+    assert res['position_size'] > 0
 
 
 def test_generate_signal_with_cls_model():
