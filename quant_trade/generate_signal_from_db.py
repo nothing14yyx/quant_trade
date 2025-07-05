@@ -418,6 +418,8 @@ def main(symbol: str = "ETHUSDT"):
 
     logging.info("最新交易信号:\n%s", latest_signal)
     print(pd.DataFrame(results).to_string(index=False))
+    if hasattr(sg, "stop_weight_update_thread"):
+        sg.stop_weight_update_thread()
 
 
 
