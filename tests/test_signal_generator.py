@@ -633,6 +633,8 @@ def test_order_book_momentum_threshold():
         'atr_pct_1h': 0.05,
         'adx_1h': 0,
         'funding_rate_1h': 0,
+        'vol_breakout_1h': 1,
+        'bb_width_1h': 0.02,
     }
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
@@ -830,12 +832,13 @@ def test_step_exit_with_order_book_flip():
 
     f1h = {
         'close': 100,
-        'atr_pct_1h': 0,
+        'atr_pct_1h': 0.01,
         'adx_1h': 0,
         'funding_rate_1h': 0,
         'mom_5m_roll1h': 0.1,
         'mom_15m_roll1h': 0.1,
         'vol_breakout_1h': 1,
+        'bb_width_1h': 0.02,
         'vol_ratio_1h_4h': 1.0,
     }
     f4h = {'atr_pct_4h': 0, 'adx_4h': 0, 'vol_ratio_1h_4h': 1.0}
@@ -892,6 +895,8 @@ def test_position_size_range_regime():
         'adx_1h': 10,
         'funding_rate_1h': 0,
         'vol_ma_ratio_1h': 1.0,
+        'vol_breakout_1h': 1,
+        'bb_width_1h': 0.02,
     }
     f4h = {'atr_pct_4h': 0.01, 'adx_4h': 15}
     fd1 = {'atr_pct_d1': 0.01, 'adx_d1': 20}
