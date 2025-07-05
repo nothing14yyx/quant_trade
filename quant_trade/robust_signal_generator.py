@@ -188,6 +188,13 @@ class DynamicThresholdInput:
     reversal: bool = False
 
 
+@dataclass
+class PeriodFeatures:
+    """Wrapper of normalized and raw features for one period."""
+
+    std: dict
+    raw: dict
+
 def _calc_history_base(history, base, quantile, window, decay, limit=None):
     """Helper to compute threshold base from history with optional decay."""
     if not history:
@@ -1799,8 +1806,9 @@ class RobustSignalGenerator:
         raw_features_4h=None,
         raw_features_d1=None,
         raw_features_15m=None,
-    ):
+    ) -> tuple[PeriodFeatures, PeriodFeatures, PeriodFeatures, PeriodFeatures]:
         """规范化输入特征与原始特征"""
+
         f1h = self._normalize_features(features_1h, "1h")
         f4h = self._normalize_features(features_4h, "4h")
         fd1 = self._normalize_features(features_d1, "d1")
@@ -1811,11 +1819,21 @@ class RobustSignalGenerator:
         rd1 = self._normalize_features(raw_features_d1 or {}, "d1")
         r15m = self._normalize_features(raw_features_15m or {}, "15m")
 
-        return f1h, f4h, fd1, f15m, r1h, r4h, rd1, r15m
+        return (
+            PeriodFeatures(std=f1h, raw=r1h),
+            PeriodFeatures(std=f4h, raw=r4h),
+            PeriodFeatures(std=fd1, raw=rd1),
+            PeriodFeatures(std=f15m, raw=r15m),
+        )
 
-    def compute_ai_scores(self, std_1h, std_4h, std_d1, raw_fd1):
+    def compute_ai_scores(
+        self,
+        feats_1h: PeriodFeatures,
+        feats_4h: PeriodFeatures,
+        feats_d1: PeriodFeatures,
+    ):
         """封装 AI 模型推理与校准"""
-        key = self._make_cache_key(std_1h, std_4h, std_d1, raw_fd1)
+        key = self._make_cache_key(feats_1h.std, feats_4h.std, feats_d1.std, feats_d1.raw)
         cached = self._cache_get(self._ai_score_cache, key)
         if cached is not None:
             return cached
@@ -1825,7 +1843,11 @@ class RobustSignalGenerator:
         rise_preds: dict[str, float | None] = {}
         drawdown_preds: dict[str, float | None] = {}
 
-        for p, feats in [("1h", std_1h), ("4h", std_4h), ("d1", std_d1)]:
+        for p, feats in [
+            ("1h", feats_1h.std),
+            ("4h", feats_4h.std),
+            ("d1", feats_d1.std),
+        ]:
             models_p = self.models.get(p, {})
             if "cls" in models_p and "up" not in models_p:
                 ai_scores[p] = self.get_ai_score_cls(feats, models_p["cls"])
@@ -1856,8 +1878,8 @@ class RobustSignalGenerator:
                 )
 
         oversold_reversal = False
-        rsi = raw_fd1.get("rsi_d1", 50)
-        cci = raw_fd1.get("cci_d1", 0)
+        rsi = feats_d1.raw.get("rsi_d1", 50)
+        cci = feats_d1.raw.get("cci_d1", 0)
         if rsi < 25 or cci < -100 or rsi > 75 or cci > 100:
             ai_scores["d1"] *= 0.7
             oversold_reversal = True
@@ -1872,11 +1894,10 @@ class RobustSignalGenerator:
     def compute_factor_scores(
         self,
         ai_scores: dict,
-        std_1h: dict,
-        std_4h: dict,
-        std_d1: dict,
-        std_15m: dict,
-        raw_dict: dict,
+        feats_1h: PeriodFeatures,
+        feats_4h: PeriodFeatures,
+        feats_d1: PeriodFeatures,
+        feats_15m: PeriodFeatures,
         deltas: dict,
         rise_preds: dict,
         drawdown_preds: dict,
@@ -1887,12 +1908,18 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """计算多因子得分并输出相关中间结果"""
+        raw_dict = {
+            "1h": feats_1h.raw,
+            "4h": feats_4h.raw,
+            "d1": feats_d1.raw,
+            "15m": feats_15m.raw,
+        }
         key = self._make_cache_key(
             ai_scores,
-            std_1h,
-            std_4h,
-            std_d1,
-            std_15m,
+            feats_1h.std,
+            feats_4h.std,
+            feats_d1.std,
+            feats_15m.std,
             raw_dict,
             deltas,
             rise_preds,
@@ -1906,6 +1933,11 @@ class RobustSignalGenerator:
         cached = self._cache_get(self._factor_score_cache, key)
         if cached is not None:
             return cached
+        std_1h = feats_1h.std
+        std_4h = feats_4h.std
+        std_d1 = feats_d1.std
+        std_15m = feats_15m.std
+
         fs = {
             "1h": self.get_factor_scores(std_1h, "1h"),
             "4h": self.get_factor_scores(std_4h, "4h"),
@@ -2599,14 +2631,10 @@ class RobustSignalGenerator:
         """
 
         (
-            features_1h,
-            features_4h,
-            features_d1,
-            features_15m,
-            raw_features_1h,
-            raw_features_4h,
-            raw_features_d1,
-            raw_features_15m,
+            pf_1h,
+            pf_4h,
+            pf_d1,
+            pf_15m,
         ) = self._normalize_inputs(
             features_1h,
             features_4h,
@@ -2621,42 +2649,41 @@ class RobustSignalGenerator:
         ob_imb = (
             order_book_imbalance
             if order_book_imbalance is not None
-            else features_1h.get('bid_ask_imbalance')
+            else pf_1h.std.get('bid_ask_imbalance')
         )
 
-        std_1h = features_1h or {}
-        std_4h = features_4h or {}
-        std_d1 = features_d1 or {}
-        std_15m = features_15m or {}
-        raw_f1h = raw_features_1h or {}
-        raw_f4h = raw_features_4h or {}
-        raw_fd1 = raw_features_d1 or {}
-        raw_f15m = raw_features_15m or {}
-        raw_dict = {'15m': raw_f15m, '1h': raw_f1h, '4h': raw_f4h, 'd1': raw_fd1}
+        std_1h = pf_1h.std or {}
+        std_4h = pf_4h.std or {}
+        std_d1 = pf_d1.std or {}
+        std_15m = pf_15m.std or {}
+        raw_f1h = pf_1h.raw or {}
+        raw_f4h = pf_4h.raw or {}
+        raw_fd1 = pf_d1.raw or {}
+        raw_f15m = pf_15m.raw or {}
 
         ts = (
-            raw_features_1h.get('ts')
-            or raw_features_1h.get('timestamp')
-            or raw_features_15m.get('ts')
-            or raw_features_15m.get('timestamp')
-            or features_1h.get('ts')
-            or features_1h.get('timestamp')
-            or features_15m.get('ts')
-            or features_15m.get('timestamp')
+            raw_f1h.get('ts')
+            or raw_f1h.get('timestamp')
+            or raw_f15m.get('ts')
+            or raw_f15m.get('timestamp')
+            or std_1h.get('ts')
+            or std_1h.get('timestamp')
+            or std_15m.get('ts')
+            or std_15m.get('timestamp')
         )
 
         cache = self._get_symbol_cache(symbol)
         with self._lock:
             hist_1h = cache["_raw_history"].get('1h', deque(maxlen=4))
         price_hist = [r.get('close') for r in hist_1h]
-        price_hist.append((raw_features_1h or features_1h).get('close'))
+        price_hist.append((raw_f1h or std_1h).get('close'))
         price_hist = [p for p in price_hist if p is not None][-4:]
 
         coin = str(symbol).upper() if symbol else ""
         rev_dir = self.detect_reversal(
             np.array(price_hist, dtype=float),
-            (raw_features_1h or features_1h).get('atr_pct_1h'),
-            (raw_features_1h or features_1h).get('vol_ma_ratio_1h'),
+            (raw_f1h or std_1h).get('atr_pct_1h'),
+            (raw_f1h or std_1h).get('vol_ma_ratio_1h'),
         )
 
 
@@ -2672,19 +2699,21 @@ class RobustSignalGenerator:
 
         # ===== 1. 计算 AI 部分的分数（映射到 [-1, 1]） =====
         ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal = self.compute_ai_scores(
-            std_1h, std_4h, std_d1, raw_fd1
+            pf_1h,
+            pf_4h,
+            pf_d1,
         )
 
         result = self.compute_factor_scores(
             ai_scores,
-            std_1h,
-            std_4h,
-            std_d1,
-            std_15m,
-            raw_dict,
+            pf_1h,
+            pf_4h,
+            pf_d1,
+            pf_15m,
             deltas,
             rise_preds,
-            drawdown_preds, vol_preds,
+            drawdown_preds,
+            vol_preds,
             global_metrics,
             open_interest,
             ob_imb,
@@ -2749,14 +2778,14 @@ class RobustSignalGenerator:
             }
 
 # ===== 7b. 计算动态阈值 =====
-        atr_1h = features_1h.get('atr_pct_1h', 0)
-        adx_1h = features_1h.get('adx_1h', 0)
-        funding_1h = features_1h.get('funding_rate_1h', 0) or 0
+        atr_1h = std_1h.get('atr_pct_1h', 0)
+        adx_1h = std_1h.get('adx_1h', 0)
+        funding_1h = std_1h.get('funding_rate_1h', 0) or 0
 
-        atr_4h = features_4h.get('atr_pct_4h', 0) if features_4h else None
-        adx_4h = features_4h.get('adx_4h', 0) if features_4h else None
-        atr_d1 = features_d1.get('atr_pct_d1', 0) if features_d1 else None
-        adx_d1 = features_d1.get('adx_d1', 0) if features_d1 else None
+        atr_4h = std_4h.get('atr_pct_4h', 0) if std_4h else None
+        adx_4h = std_4h.get('adx_4h', 0) if std_4h else None
+        atr_d1 = std_d1.get('atr_pct_d1', 0) if std_d1 else None
+        adx_d1 = std_d1.get('adx_d1', 0) if std_d1 else None
 
         vix_p = None
         if global_metrics is not None:
@@ -2789,9 +2818,9 @@ class RobustSignalGenerator:
                 "history_scores": cache["history_scores"],
             },
             global_metrics,
-            features_1h,
-            features_4h,
-            features_d1,
+            std_1h,
+            std_4h,
+            std_d1,
             symbol,
         )
         if risk_info is None:
