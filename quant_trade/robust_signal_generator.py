@@ -1,4 +1,13 @@
 # -*- coding: utf-8 -*-
+"""Robust signal generation utilities and classes.
+
+模块分组:
+    1. **core classes & public API** - ``RobustSignalGenerator``,
+       ``SignalThresholdParams``
+    2. **helpers / math utilities** - ``softmax``, ``sigmoid`` 等
+    3. **runtime adapters / threading helpers** - 权重更新线程与缓存相关函数
+"""
+
 import numpy as np
 import math
 from quant_trade.utils.soft_clip import soft_clip
@@ -11,6 +20,7 @@ import json
 import threading
 import logging
 import time
+import warnings
 
 from .config_manager import ConfigManager
 from .ai_model_predictor import AIModelPredictor
@@ -22,10 +32,12 @@ pd.set_option('future.no_silent_downcasting', True)
 # Set module logger to WARNING by default so importing modules can
 # configure their own verbosity without receiving this module's INFO logs.
 logger.setLevel(logging.WARNING)
+
 # 默认配置路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
 
+# ---------- 默认常量 ----------
 # 退出信号滞后 bar 数默认值
 EXIT_LAG_BARS_DEFAULT = 0
 
@@ -47,6 +59,56 @@ DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
 DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
 DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
 DEFAULT_LOW_VOL_RATIO = 0.2   # 低量能阈值
+DEFAULT_CACHE_MAXSIZE = 300   # 缓存默认大小
+
+# 统一导出
+DEFAULTS = {
+    "exit_lag_bars": EXIT_LAG_BARS_DEFAULT,
+    "ai_dir_eps": DEFAULT_AI_DIR_EPS,
+    "pos_k_range": DEFAULT_POS_K_RANGE,
+    "pos_k_trend": DEFAULT_POS_K_TREND,
+    "low_base": DEFAULT_LOW_BASE,
+    "low_vol_ratio": DEFAULT_LOW_VOL_RATIO,
+    "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
+}
+
+SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
+    "history_scores",
+    "oi_change_history",
+    "btc_dom_history",
+    "eth_dom_history",
+    "ic_history",
+    "_lock",
+    "_prev_raw",
+    "_raw_history",
+    "symbol_data",
+    "calibrators",
+    "core_keys",
+    "delta_params",
+    "vote_params",
+    "vote_weights",
+    "risk_manager",
+    "all_scores_list",
+    "_equity_drawdown",
+    "_last_score",
+    "_last_signal",
+    "_prev_vote",
+    "_exit_lag",
+    "_cooldown",
+    "_volume_checked",
+    "_stop_event",
+    "_weight_thread",
+    "cycle_weight",
+    "flip_coeff",
+    "veto_level",
+    "ic_scores",
+    "th_down_d1",
+    "min_trend_align",
+    "_ai_score_cache",
+    "_factor_cache",
+    "_factor_score_cache",
+    "_fuse_cache",
+}
 
 from dataclasses import dataclass
 from quant_trade.utils import get_cfg_value, collect_feature_cols
@@ -133,7 +195,27 @@ class RobustSignalGeneratorConfig:
 
 
 def robust_signal_generator(model, *args, **kwargs):
-    """Safely call ``model.generate_signal`` and catch common errors."""
+    """Deprecated helper for backward compatibility.
+
+    Args:
+        model: ``RobustSignalGenerator`` 实例.
+
+    Returns:
+        调用 ``generate_signal`` 的结果或 ``None``。
+
+    Raises:
+        DeprecationWarning: 使用时会提示弃用。
+    """
+    warnings.warn(
+        "robust_signal_generator() 已弃用，请直接复用 RobustSignalGenerator 实例",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    try:
+        return model.generate_signal(*args, **kwargs)
+    except (ValueError, KeyError, TypeError) as e:
+        logger.info("generate_signal failed: %s", e)
+        return None
     try:
         return model.generate_signal(*args, **kwargs)
     except (ValueError, KeyError, TypeError) as e:
@@ -379,7 +461,13 @@ class RobustSignalGenerator:
         "conf_min": 0.30,
     }
 
-    def __init__(self, config: RobustSignalGeneratorConfig):
+    def __init__(self, config: RobustSignalGeneratorConfig, *, cache_maxsize: int = DEFAULT_CACHE_MAXSIZE):
+        """初始化 ``RobustSignalGenerator``。
+
+        Args:
+            config: 配置对象 :class:`RobustSignalGeneratorConfig`。
+            cache_maxsize: 缓存的最大条目数量。
+        """
         model_paths = config.model_paths
         feature_cols_1h = config.feature_cols_1h
         feature_cols_4h = config.feature_cols_4h
@@ -577,7 +665,7 @@ class RobustSignalGenerator:
         self._equity_drawdown = 0.0
 
         # 缓存计算结果，避免重复计算
-        self.cache_maxsize = 1000
+        self.cache_maxsize = cache_maxsize
         self._ai_score_cache = OrderedDict()
         self._factor_cache = OrderedDict()
         self._factor_score_cache = OrderedDict()
@@ -641,12 +729,15 @@ class RobustSignalGenerator:
             "_factor_cache": OrderedDict(),
             "_factor_score_cache": OrderedDict(),
             "_fuse_cache": OrderedDict(),
-            "cache_maxsize": 1000,
+            "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
         }
         if name in defaults:
             val = defaults[name]
             setattr(self, name, val)
             return val
+        if name in SAFE_FALLBACKS:
+            setattr(self, name, None)
+            return None
         raise AttributeError(name)
 
     @property
@@ -1418,9 +1509,19 @@ class RobustSignalGenerator:
         )
 
     def combine_score(self, ai_score, factor_scores, weights=None):
-        """按固定顺序加权合并各因子得分"""
+        """合并 AI 分数与因子得分。
+
+        Args:
+            ai_score: AI 模型分数。
+            factor_scores: 因子得分字典。
+            weights: 可选权重映射。
+
+        Returns:
+            融合后的浮点得分。
+        """
         if weights is None:
-            weights = self.base_weights
+            with self._lock:
+                weights = self.current_weights
 
         fused_score = (
             ai_score * weights['ai']
@@ -1435,9 +1536,19 @@ class RobustSignalGenerator:
         return float(fused_score)
 
     def combine_score_vectorized(self, ai_scores, factor_scores, weights=None):
-        """向量化计算多个样本的合并得分"""
+        """向量化计算多个样本的合并得分。
+
+        Args:
+            ai_scores: 一维数组形式的 AI 分数。
+            factor_scores: 包含各因子数组的字典。
+            weights: 可选权重映射。
+
+        Returns:
+            ``numpy.ndarray`` 类型的融合得分数组。
+        """
         if weights is None:
-            weights = self.base_weights
+            with self._lock:
+                weights = self.current_weights
 
         weight_arr = np.array(
             [
@@ -1495,7 +1606,8 @@ class RobustSignalGenerator:
             return 1.0
 
         ratio = cnt / total
-        rank_pct = pd.Series(np.abs(list(arr) + [current_score])).rank(pct=True).iloc[-1]
+        abs_arr = np.abs(arr)
+        rank_pct = float((abs_arr <= abs(current_score)).mean())
         ratio_intensity = max(0.0, (ratio - self.max_same_direction_rate) / (1 - self.max_same_direction_rate))
         rank_intensity = max(0.0, rank_pct - 0.8) / 0.2
         intensity = min(1.0, max(ratio_intensity, rank_intensity))
@@ -1816,17 +1928,21 @@ class RobustSignalGenerator:
     # ===== 新增私有方法 =====
 
     def _to_hashable(self, obj):
-        """将输入对象转换为可哈希的形式，用于缓存键"""
+        """将输入对象转换为可哈希的形式, 用于缓存键"""
         if isinstance(obj, dict):
-            return tuple(sorted((k, self._to_hashable(v)) for k, v in obj.items()))
+            return frozenset(sorted((k, self._to_hashable(v)) for k, v in obj.items()))
         if isinstance(obj, (list, tuple)):
             return tuple(self._to_hashable(v) for v in obj)
         if isinstance(obj, np.generic):
-            return float(obj)
+            return obj.item()
         return obj
 
     def _make_cache_key(self, *objs):
-        return tuple(self._to_hashable(o) if o is not None else None for o in objs)
+        """生成缓存键, 若长度超过1KB则使用哈希值压缩."""
+        key = tuple(self._to_hashable(o) if o is not None else None for o in objs)
+        if len(repr(key)) > 1024:
+            key = (hash(key),)
+        return key
 
     def _cache_get(self, cache: OrderedDict, key):
         with self._lock:
@@ -2441,6 +2557,8 @@ class RobustSignalGenerator:
         self,
         fused_score: float,
         risk_info: dict,
+        logic_score: float,
+        env_score: float,
         ai_scores: dict,
         fs: dict,
         scores: dict,
@@ -2462,7 +2580,37 @@ class RobustSignalGenerator:
         cache: dict,
         symbol: str | None,
     ):
-        """根据阈值与信号方向计算仓位和止盈止损"""
+        """根据阈值与信号方向计算仓位和止盈止损。
+
+        Args:
+            fused_score: 合并后的最终得分。
+            risk_info: 风险评估信息字典。
+            logic_score: 逻辑得分。
+            env_score: 环境得分。
+            ai_scores: 各周期 AI 分数。
+            fs: 各周期因子分数。
+            scores: 汇总得分明细。
+            std_1h: 1h 标准化特征。
+            std_4h: 4h 标准化特征。
+            std_d1: d1 标准化特征。
+            std_15m: 15m 标准化特征。
+            raw_f1h: 1h 原始特征。
+            raw_f4h: 4h 原始特征。
+            raw_fd1: d1 原始特征。
+            raw_f15m: 15m 原始特征。
+            vol_preds: 预测波动率。
+            rise_preds: 预测涨幅。
+            drawdown_preds: 预测回撤。
+            short_mom: 短期动量值。
+            ob_imb: 委托簿不平衡值。
+            confirm_15m: 15m 周期辅助确认值。
+            oversold_reversal: 超跌反转标记。
+            cache: 币种缓存。
+            symbol: 币种符号。
+
+        Returns:
+            包含 ``signal``、``score`` 等字段的结果字典。
+        """
         base_th = risk_info["base_th"]
         fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
             fused_score,
@@ -2679,7 +2827,7 @@ class RobustSignalGenerator:
             pos_size *= 0.5
 
         pos_map = base_th * 2.0
-        if risk_score > 1 or risk_info.get("logic_score", 0) < -0.3:
+        if risk_score > 1 or logic_score < -0.3:
             pos_map = min(pos_map, 0.5)
         pos_size = min(pos_size, pos_map)
         if conflict_filter_triggered:
@@ -2725,8 +2873,7 @@ class RobustSignalGenerator:
             pos_size = tier * 0.2
             zero_reason = None
 
-        logic_score = risk_info.get("logic_score", 0.0)
-        env_score = risk_info.get("env_score", 1.0)
+        # 使用传入的逻辑与环境得分计算最终得分
         score_raw = logic_score * env_score * risk_score
         score_raw *= 1 - self.risk_adjust_factor * risk_score
         if vote_sign != 0 and np.sign(score_raw) != vote_sign:
@@ -2764,8 +2911,8 @@ class RobustSignalGenerator:
                 "funding_conflicts": funding_conflicts,
             },
             "env": {
-                "logic_score": risk_info.get("logic_score", logic_score),
-                "env_score": risk_info.get("env_score", env_score),
+                "logic_score": logic_score,
+                "env_score": env_score,
                 "risk_score": risk_score,
             },
             "exit": {
@@ -2848,6 +2995,8 @@ class RobustSignalGenerator:
         result = self.finalize_position(
             risk_info["fused_score"],
             risk_info,
+            scores["logic_score"],
+            scores["env_score"],
             scores["ai_scores"],
             scores["fs"],
             scores["scores"],
@@ -2869,7 +3018,7 @@ class RobustSignalGenerator:
             prepared["cache"],
             symbol,
         )
-        return result, risk_info["fused_score"], risk_info["base_th"]
+        return result, risk_info["fused_score"], risk_info["base_th"], risk_info
 
     def generate_signal(
         self,
@@ -2888,24 +3037,25 @@ class RobustSignalGenerator:
         order_book_imbalance=None,
         symbol=None,
     ):
-        """
-        输入：
-            - features_1h: dict，当前 1h 周期特征（Robust Z 标准化）
-            - features_4h: dict，当前 4h 周期特征（Robust Z 标准化）
-            - features_d1: dict，当前 d1 周期特征（Robust Z 标准化）
-            - features_15m: dict，可选，15分钟周期特征，用于确认方向
-            - all_scores_list: list，可选，当前所有币种的 fused_score 列表，用于极端行情保护
-            - raw_features_1h: dict，可选，未标准化的 1h 原始特征
-            - raw_features_4h: dict，可选，未标准化的 4h 原始特征
-            - raw_features_d1: dict，可选，未标准化的 d1 原始特征
-            - raw_features_15m: dict，可选，未标准化的 15m 原始特征
-            - order_book_imbalance: float，可选，L2 Order Book 的买卖盘差值比
-            - symbol: str，可选，当前币种，如 'BTCUSDT'
-        输出：
-            一个 dict，包含 'signal'、'score'、'position_size'、'take_profit'、'stop_loss' 和 'details'
+        """生成单个交易信号。
 
-        features_* 为主要输入，多因子评分、动态阈值等逻辑均优先使用这些标准化后的特征。
-        raw_features_* 仅在计算绝对价格或绝对幅度（例如止盈止损价）时作为补充使用。
+        Args:
+            features_1h: 1h 周期标准化特征字典。
+            features_4h: 4h 周期标准化特征字典。
+            features_d1: d1 周期标准化特征字典。
+            features_15m: 可选的 15m 周期特征。
+            all_scores_list: 所有币种得分列表。
+            raw_features_1h: 1h 原始特征。
+            raw_features_4h: 4h 原始特征。
+            raw_features_d1: d1 原始特征。
+            raw_features_15m: 15m 原始特征。
+            global_metrics: 全局市场指标。
+            open_interest: OI 数据。
+            order_book_imbalance: L2 买卖盘差值比。
+            symbol: 币种符号。
+
+        Returns:
+            包含 ``signal``、``score``、``position_size`` 等字段的字典。
         """
         prepared = self._prepare_inputs(
             features_1h,
@@ -3006,7 +3156,7 @@ class RobustSignalGenerator:
                 }
             }
 
-        result, fused_score, base_th = self._filter_and_finalize(
+        result, fused_score, base_th, risk_info = self._filter_and_finalize(
             prepared,
             {
                 "fused_score": fused_score,
@@ -3052,7 +3202,75 @@ class RobustSignalGenerator:
             base_th,
             result.get("position_size", 0.0),
         )
+        self._diagnostic = {
+            "fused_score": fused_score,
+            "base_th": base_th,
+            "scores": scores,
+            "risk_info": risk_info,
+        }
         return result
+
+    def _diagnose(self):
+        """Return diagnostics of the last ``generate_signal`` call."""
+        return getattr(self, "_diagnostic", {}).copy()
+
+    def generate_signal_batch(
+        self,
+        feats_1h_list,
+        feats_4h_list,
+        feats_d1_list,
+        feats_15m_list=None,
+        *,
+        global_metrics=None,
+        open_interest=None,
+        order_book_imbalance=None,
+        symbols=None,
+    ):
+        """Batch version of :meth:`generate_signal`.
+
+        Args:
+            feats_1h_list: Sequence of 1h feature dicts.
+            feats_4h_list: Sequence of 4h feature dicts.
+            feats_d1_list: Sequence of d1 feature dicts.
+            feats_15m_list: Optional sequence of 15m feature dicts.
+            global_metrics: Optional list or single metrics dict.
+            open_interest: Optional list or single OI dict.
+            order_book_imbalance: Optional list or single OB imbalance.
+            symbols: Optional sequence of symbols.
+
+        Returns:
+            List of signal result dicts in the same order as input.
+        """
+        results = []
+        for i, f1 in enumerate(feats_1h_list):
+            gm = global_metrics[i] if isinstance(global_metrics, list) else global_metrics
+            oi = open_interest[i] if isinstance(open_interest, list) else open_interest
+            ob = (
+                order_book_imbalance[i]
+                if isinstance(order_book_imbalance, list)
+                else order_book_imbalance
+            )
+            sym = symbols[i] if symbols else None
+            f4 = feats_4h_list[i]
+            fd = feats_d1_list[i]
+            f15 = feats_15m_list[i] if feats_15m_list else None
+            results.append(
+                self.generate_signal(
+                    f1,
+                    f4,
+                    fd,
+                    f15,
+                    None,
+                    None,
+                    None,
+                    None,
+                    global_metrics=gm,
+                    open_interest=oi,
+                    order_book_imbalance=ob,
+                    symbol=sym,
+                )
+            )
+        return results
 
 
 if __name__ == "__main__":
