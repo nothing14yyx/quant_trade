@@ -91,6 +91,8 @@ protection_limits:
 crowding_limit: 1.05     # 允许的拥挤度上限
 ```
 
+自 v2.6 起，`risk_score` 仅在計算倉位時生效，不再在得分階段二次扣減。
+
 修改后重启调度器即可生效。
 
 ### 动态阈值调节
