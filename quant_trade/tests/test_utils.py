@@ -40,6 +40,7 @@ def make_dummy_rsg():
     rsg.risk_score_limit = 2.0
     rsg.crowding_limit = 1.1
     rsg.max_position = 0.3
+    rsg.risk_scale = 1.0
     rsg.cycle_weight = {'strong': 1.0, 'weak': 1.0, 'opposite': 1.0}
     rsg.cfg = {
         'signal_threshold': {

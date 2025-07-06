@@ -1,4 +1,5 @@
 import pytest
+import math
 from quant_trade.tests.test_utils import make_dummy_rsg
 
 
@@ -16,6 +17,7 @@ def test_apply_oi_overheat_protection():
 
 def test_detect_reversal_adjusts_threshold():
     rsg = make_dummy_rsg()
+    rsg.risk_score_limit = 5.0
     rsg.detect_reversal = lambda *a, **k: 1
 
     def dyn_th(atr, adx, funding=0, **kwargs):
@@ -56,7 +58,7 @@ def test_crowding_factor_reduces_position():
         regime='trend',
         oi_overheat=False,
         vol_p=None,
-        risk_score=0.0,
+        risk_score=0.3,
         cfg_th_sig=cfg,
         scores={},
         direction=1,
@@ -65,4 +67,8 @@ def test_crowding_factor_reduces_position():
     )
     full, _, _, _ = rsg.compute_position_size(crowding_factor=1.0, **params)
     reduced, _, _, _ = rsg.compute_position_size(crowding_factor=0.5, **params)
+    params_no_risk = params.copy()
+    params_no_risk["risk_score"] = 0.0
+    base_full, _, _, _ = rsg.compute_position_size(crowding_factor=1.0, **params_no_risk)
     assert reduced == pytest.approx(full * 0.5)
+    assert full == pytest.approx(base_full * math.exp(-rsg.risk_scale * 0.3))
