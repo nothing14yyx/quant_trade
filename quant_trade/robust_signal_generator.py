@@ -2852,6 +2852,7 @@ class RobustSignalGenerator:
         pos_size = min(pos_size, pos_map)
         if conflict_filter_triggered:
             pos_size = 0.0
+            direction = 0
             zero_reason = zero_reason or "conflict_filter"
 
         price = (raw_f1h or std_1h).get("close", 0)
