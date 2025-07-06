@@ -93,6 +93,8 @@ def test_oversold_sets_zero_position():
     res = rsg.finalize_position(
         -0.6,
         risk_info,
+        risk_info["logic_score"],
+        risk_info["env_score"],
         ai_scores,
         fs,
         scores,
@@ -139,6 +141,8 @@ def test_overbought_sets_zero_position():
     res = rsg.finalize_position(
         0.6,
         risk_info,
+        risk_info["logic_score"],
+        risk_info["env_score"],
         ai_scores,
         fs,
         scores,
