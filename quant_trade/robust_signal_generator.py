@@ -2492,7 +2492,7 @@ class RobustSignalGenerator:
             vix_p = open_interest.get("vix_proxy")
 
         regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
-        if std_d1.get("break_support_d1") == 1 and std_d1.get("rsi_d1", 50) < 30:
+        if std_d1.get("break_support_d1", 0) > 0 and std_d1.get("rsi_d1", 50) < 30:
             regime = "range"
             rev_dir = 1
         cfg_th = self.signal_threshold_cfg
@@ -2690,7 +2690,11 @@ class RobustSignalGenerator:
                     elif stoch_p > 80 and stoch_c <= 80:
                         fast_cross_dir -= 1
             fast_cross_dir = int(np.sign(fast_cross_dir))
-        vol_breakout_val = std_1h.get("vol_breakout_1h")
+        vol_breakout_val = (
+            raw_f1h.get("vol_breakout_1h")
+            if raw_f1h and "vol_breakout_1h" in raw_f1h
+            else std_1h.get("vol_breakout_1h")
+        )
         vol_breakout_dir = 1 if vol_breakout_val and vol_breakout_val > 0 else 0
 
         trend_dir = int(np.sign(fs['1h'].get('trend', 0)))
@@ -2786,7 +2790,7 @@ class RobustSignalGenerator:
                 low_vol = True
             if low_vol:
                 direction = 0
-            elif vol_breakout_val != 1 or conf_vote < 0.15:
+            elif vol_breakout_val is None or vol_breakout_val <= 0 or conf_vote < 0.15:
                 direction = 0
 
         if self._cooldown > 0:
