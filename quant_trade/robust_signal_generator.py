@@ -859,9 +859,13 @@ class RobustSignalGenerator:
         """计算止盈止损价格，可根据模型预测值微调"""
         if direction == 0:
             return None, None
-        if price is None or price <= 0:
-            return None, None  # 价格异常直接放弃
-        if atr is None or atr == 0:
+        if price is None or not np.isfinite(price):
+            return None, None
+        if price <= 0:
+            return None, None
+        if atr is None or not np.isfinite(atr):
+            return None, None
+        if atr == 0:
             atr = 0.005 * price
 
         cfg = getattr(self, "tp_sl_cfg", {})
