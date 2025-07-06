@@ -2470,20 +2470,17 @@ class RobustSignalGenerator:
         rev_dir: int,
         cache: dict,
         global_metrics: dict | None,
-        features_1h: dict,
-        features_4h: dict,
-        features_d1: dict,
         symbol: str | None,
     ):
         """执行风险限制与拥挤度检查"""
-        atr_1h = features_1h.get("atr_pct_1h", 0)
-        adx_1h = features_1h.get("adx_1h", 0)
-        funding_1h = features_1h.get("funding_rate_1h", 0) or 0
+        atr_1h = raw_f1h.get("atr_pct_1h", 0) if raw_f1h else 0
+        adx_1h = raw_f1h.get("adx_1h", 0) if raw_f1h else 0
+        funding_1h = raw_f1h.get("funding_rate_1h", 0) if raw_f1h else 0
 
-        atr_4h = features_4h.get("atr_pct_4h", 0) if features_4h else None
-        adx_4h = features_4h.get("adx_4h", 0) if features_4h else None
-        atr_d1 = features_d1.get("atr_pct_d1", 0) if features_d1 else None
-        adx_d1 = features_d1.get("adx_d1", 0) if features_d1 else None
+        atr_4h = raw_f4h.get("atr_pct_4h") if raw_f4h else None
+        adx_4h = raw_f4h.get("adx_4h") if raw_f4h else None
+        atr_d1 = raw_fd1.get("atr_pct_d1") if raw_fd1 else None
+        adx_d1 = raw_fd1.get("adx_d1") if raw_fd1 else None
 
         vix_p = None
         if global_metrics is not None:
@@ -3008,9 +3005,6 @@ class RobustSignalGenerator:
                 "history_scores": prepared["cache"]["history_scores"],
             },
             global_metrics,
-            prepared["std_1h"],
-            prepared["std_4h"],
-            prepared["std_d1"],
             symbol,
         )
         if risk_info is None:
