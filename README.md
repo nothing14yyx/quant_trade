@@ -96,6 +96,7 @@ risk_adjust_threshold: 0.1     # 调整后的得分绝对值必须高于该值�
 protection_limits:
   risk_score: 1.0    # 允许的风险得分上限
 crowding_limit: 1.05     # 允许的拥挤度上限
+risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
 ```
 
 自 v2.6 起，`risk_score` 仅在計算倉位時生效，不再在得分階段二次扣減。
