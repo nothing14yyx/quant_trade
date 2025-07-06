@@ -2711,6 +2711,7 @@ class RobustSignalGenerator:
             + vw.get("vol_breakout", 1) * vol_breakout_dir
             + vw.get("trend", 1) * trend_dir
             + vw.get("confirm_15m", 1) * confirm_dir
+            + vw.get("ob", 0) * ob_dir
         )
         conflict_filter_triggered = False
         if (
