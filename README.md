@@ -99,6 +99,9 @@ crowding_limit: 1.05     # 允许的拥挤度上限
 ```
 
 自 v2.6 起，`risk_score` 仅在計算倉位時生效，不再在得分階段二次扣減。
+自 v2.7 起，引入 `RiskManager.calc_risk`，根据环境得分、预测波动率与 OI 变化率
+综合计算风险值，`apply_risk_filters` 会直接调用该方法并受 `protection_limits.risk_score`
+约束。
 
 修改后重启调度器即可生效。
 
