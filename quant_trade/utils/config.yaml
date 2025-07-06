@@ -441,6 +441,7 @@ crowding_limit: 1.10
 min_trend_align: 2
 
 max_position: 0.3
+risk_scale: 1.0
 
 # 交易成本设置
 costs:
