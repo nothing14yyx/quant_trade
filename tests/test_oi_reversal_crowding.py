@@ -16,6 +16,7 @@ def test_apply_oi_overheat_protection():
 
 def test_detect_reversal_adjusts_threshold():
     rsg = make_dummy_rsg()
+    rsg.risk_score_limit = 5.0
     rsg.detect_reversal = lambda *a, **k: 1
 
     def dyn_th(atr, adx, funding=0, **kwargs):
