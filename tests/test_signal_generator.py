@@ -212,6 +212,64 @@ def test_generate_signal_raw_atr():
     assert res2['stop_loss'] is None
 
 
+def test_dynamic_threshold_use_raw_features():
+    """动态阈值应使用原始特征数据"""
+    rsg = make_dummy_rsg()
+
+    captured = {}
+
+    def fake_dyn_th(atr, adx, funding, **kwargs):
+        captured['atr'] = atr
+        captured['adx'] = adx
+        captured['funding'] = funding
+        captured['atr_4h'] = kwargs.get('atr_4h')
+        captured['adx_4h'] = kwargs.get('adx_4h')
+        return 0.1, 0.0
+
+    rsg.dynamic_threshold = fake_dyn_th
+    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.get_factor_scores = lambda f, p: {
+        'trend': 0,
+        'momentum': 0,
+        'volatility': 0,
+        'volume': 0,
+        'sentiment': 0,
+        'funding': 0,
+    }
+    rsg.combine_score = lambda ai, fs, weights=None: 0
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.compute_tp_sl = lambda *a, **k: (None, None)
+    rsg.models = {
+        '1h': {'up': None, 'down': None},
+        '4h': {'up': None, 'down': None},
+        'd1': {'up': None, 'down': None},
+    }
+
+    feats_1h = {'atr_pct_1h': 0.1, 'adx_1h': 10, 'funding_rate_1h': 0.02}
+    feats_4h = {'atr_pct_4h': 0.1, 'adx_4h': 20}
+    feats_d1 = {'atr_pct_d1': 0.1, 'adx_d1': 30}
+
+    raw_1h = {'atr_pct_1h': 0.4, 'adx_1h': 40, 'funding_rate_1h': 0.03}
+    raw_4h = {'atr_pct_4h': 0.5, 'adx_4h': 50}
+    raw_d1 = {'atr_pct_d1': 0.6, 'adx_d1': 60}
+
+    rsg.generate_signal(
+        feats_1h,
+        feats_4h,
+        feats_d1,
+        raw_features_1h=raw_1h,
+        raw_features_4h=raw_4h,
+        raw_features_d1=raw_d1,
+        symbol="BTCUSDT",
+    )
+
+    assert captured['atr'] == raw_1h['atr_pct_1h']
+    assert captured['adx'] == raw_1h['adx_1h']
+    assert captured['funding'] == raw_1h['funding_rate_1h']
+    assert captured['atr_4h'] == raw_4h['atr_pct_4h']
+    assert captured['adx_4h'] == raw_4h['adx_4h']
+
+
 def test_factor_scores_use_normalized_features():
     """确保多因子评分始终使用标准化后的特征"""
     rsg = make_dummy_rsg()
