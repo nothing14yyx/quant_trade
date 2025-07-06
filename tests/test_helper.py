@@ -123,6 +123,47 @@ def test_calc_features_raw_vwap_window():
     assert feats_win2['vwap_1h'].iloc[-1] == pytest.approx(expected_win2[-1])
 
 
+def test_calc_rsi_divergence():
+    times = pd.date_range('2020-01-01', periods=15, freq='h')
+    close = pd.Series(range(1, 16), index=times)
+    rsi = pd.Series(
+        [40, 45, 50, 55, 60, 65, 70, 75, 80, 78, 77, 76, 75, 74, 70],
+        index=times,
+    )
+    div = helper.calc_rsi_divergence(close, rsi)
+    assert div['bear'].iloc[-1] == 1.0
+    assert div['bull'].sum() == 0
+
+    times2 = pd.date_range('2020-01-01', periods=16, freq='h')
+    close2 = pd.Series(
+        [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.5], index=times2
+    )
+    rsi2 = pd.Series(
+        [60, 58, 56, 54, 52, 50, 48, 46, 44, 42, 40, 38, 36, 34, 20, 30],
+        index=times2,
+    )
+    div2 = helper.calc_rsi_divergence(close2, rsi2)
+    assert div2['bull'].iloc[-1] == 1.0
+    assert div2['bear'].sum() == 0
+
+
+def test_calc_features_raw_rsi_divergence():
+    times = pd.date_range('2020-01-01', periods=15, freq='h')
+    close = pd.Series(range(1, 16), index=times)
+    df = pd.DataFrame(
+        {
+            'open': close,
+            'high': close,
+            'low': close,
+            'close': close,
+            'volume': [1] * len(close),
+        },
+        index=times,
+    )
+    feats = helper.calc_features_raw(df, '1h')
+    assert 'rsi_bull_div_1h' in feats
+    assert 'rsi_bear_div_1h' in feats
+
 def test_bb_squeeze_flag():
     times = pd.date_range('2020-01-01', periods=25, freq='h')
     df = pd.DataFrame({
@@ -149,6 +190,7 @@ def test_calc_td_sequential_td9():
     assert res_down['td_buy_count'].iloc[-1] == 9
     assert res_down['td_sell_count'].iloc[-1] == 0
     assert res_up['td_sell_count'].iloc[-1] == 9
+
 
 
 

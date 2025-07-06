@@ -261,6 +261,39 @@ def calc_support_resistance(
     return df
 
 
+def calc_rsi_divergence(close: pd.Series, rsi: pd.Series) -> pd.DataFrame:
+    """计算 RSI 背离
+
+    当价格创新高而 RSI 未创新高时，视为空头背离；
+    当价格创新低而 RSI 未创新低时，视为多头背离。
+
+    Parameters
+    ----------
+    close : pd.Series
+        收盘价序列。
+    rsi : pd.Series
+        RSI 指标序列。
+
+    Returns
+    -------
+    pd.DataFrame
+        包含 ``bull`` 与 ``bear`` 两列，分别代表多头/空头背离标记。
+    """
+
+    window = 14
+    prev_high = close.shift(1).rolling(window, min_periods=1).max()
+    prev_low = close.shift(1).rolling(window, min_periods=1).min()
+    prev_rsi_high = rsi.shift(1).rolling(window, min_periods=1).max()
+    prev_rsi_low = rsi.shift(1).rolling(window, min_periods=1).min()
+
+    bear = (close > prev_high) & (rsi <= prev_rsi_high)
+    bull = (close < prev_low) & (rsi >= prev_rsi_low)
+
+    df = pd.DataFrame({"bull": bull.astype(float), "bear": bear.astype(float)})
+    df.index = close.index
+    return df
+
+
 def calc_features_raw(
     df: pd.DataFrame,
     period: str,
@@ -342,6 +375,10 @@ def calc_features_raw(
     assign_safe(feats, f"rsi_{period}", _safe_ta(ta.rsi, feats["close"], length=14, index=df.index))
     assign_safe(feats, f"rsi_fast_{period}", _safe_ta(ta.rsi, feats["close"], length=7, index=df.index))
     feats[f"rsi_slope_{period}"] = feats[f"rsi_{period}"].diff()
+
+    div = calc_rsi_divergence(feats["close"], feats[f"rsi_{period}"])
+    assign_safe(feats, f"rsi_bull_div_{period}", div["bull"])
+    assign_safe(feats, f"rsi_bear_div_{period}", div["bear"])
     _check_index("atr")
     atr = _safe_ta(ta.atr, feats["high"], feats["low"], feats["close"], length=14, index=df.index)
     atr_s = atr.iloc[:, 0]

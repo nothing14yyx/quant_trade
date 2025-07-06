@@ -1229,6 +1229,8 @@ class RobustSignalGenerator:
             + 0.5 * np.tanh(safe('rsi_diff_1h_4h', 0) / 10)
             + 0.5 * np.tanh(safe('rsi_diff_1h_d1', 0) / 10)
             + 0.5 * np.tanh(safe('rsi_diff_4h_d1', 0) / 10)
+            + 0.5 * safe(f'rsi_bull_div_{period}', 0)
+            - 0.5 * safe(f'rsi_bear_div_{period}', 0)
             + 0.5 * np.tanh((safe(f'stoch_k_{period}', 50) - 50) / 50)
             + 0.5 * np.tanh((safe(f'stoch_d_{period}', 50) - 50) / 50)
             + 0.5 * np.tanh(safe(f'macd_signal_{period}', 0) * 5)
