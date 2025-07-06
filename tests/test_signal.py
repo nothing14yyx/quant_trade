@@ -45,6 +45,7 @@ def make_rsg():
     rsg.risk_score_limit = 2.0
     rsg.crowding_limit = 1.1
     rsg.max_position = 0.3
+    rsg.risk_scale = 1.0
     return rsg
 
 
@@ -124,6 +125,7 @@ def test_risk_check_small_score():
     logic = 0.04
     env = 1.0
     risk = fused_to_risk(fused, logic, env, cap=5.0)
+    assert risk == pytest.approx(1.25)
     fused_adj = fused * (1 - rsg.risk_adjust_factor * risk)
     cond = (
         abs(fused_adj) < rsg.risk_adjust_threshold
