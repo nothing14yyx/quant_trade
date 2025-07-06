@@ -23,6 +23,13 @@
 -   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.80`，数值越高代表触发门槛越严格。
 -   `compute_dynamic_threshold` 会依据最近 `history_scores` 计算分位数，并结合 `atr_4h`、`adx_4h`、`atr_d1`、`adx_d1` 与 `pred_vol`、`vix_proxy` 等指标自适应调整门槛，`regime` 与 `reversal` 还能微调阈值和 `rev_boost`，参数统一封装在 `DynamicThresholdInput` 中。
 -   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
+-   新增 `risk_budget_threshold` 函数，可依据历史波动率或换手率分布计算风险阈值：
+
+```python
+from quant_trade.robust_signal_generator import risk_budget_threshold
+vol_hist = [0.01, 0.02, 0.05, 0.03]
+th = risk_budget_threshold(vol_hist, quantile=0.9)
+```
 -   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
     帮助更准确地衡量趋势和动量强度。
     其中 `rsi_1h_mul_vol_ma_ratio_4h` 仅归入 `volume` 因子，不再在 `momentum` 中重复计分。
