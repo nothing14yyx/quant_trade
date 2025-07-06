@@ -2297,6 +2297,25 @@ class RobustSignalGenerator:
                 "oversold_reversal": oversold_reversal,
             }
         )
+        result["scores"].update(
+            {
+                "local_details": result["local_details"],
+                "consensus_all": result["consensus_all"],
+                "consensus_14": result["consensus_14"],
+                "consensus_4d1": result["consensus_4d1"],
+                "short_mom": result["short_mom"],
+                "ob_imb": result["ob_imb"],
+                "confirm_15m": result["confirm_15m"],
+                "oi_overheat": result["oi_overheat"],
+                "th_oi": result["th_oi"],
+                "oi_chg": result["oi_chg"],
+                "ai_scores": ai_scores,
+                "vol_preds": vol_preds,
+                "rise_preds": rise_preds,
+                "drawdown_preds": drawdown_preds,
+                "oversold_reversal": oversold_reversal,
+            }
+        )
         return result
 
     def apply_risk_filters(
@@ -2393,7 +2412,7 @@ class RobustSignalGenerator:
         risk_score = min(1.0, risk_score)
 
         raw_score = logic_score * env_score * risk_score
-        fused_score = raw_score - self.risk_adjust_factor * risk_score
+        fused_score = raw_score * (1 - self.risk_adjust_factor * risk_score)
         if abs(fused_score) < self.risk_adjust_threshold:
             return None
 
@@ -2709,7 +2728,7 @@ class RobustSignalGenerator:
         logic_score = risk_info.get("logic_score", 0.0)
         env_score = risk_info.get("env_score", 1.0)
         score_raw = logic_score * env_score * risk_score
-        score_raw -= self.risk_adjust_factor * risk_score
+        score_raw *= 1 - self.risk_adjust_factor * risk_score
         if vote_sign != 0 and np.sign(score_raw) != vote_sign:
             strong_min = max(self.vote_params.get("strong_min", 1), 1)
             penalty = abs(vote) / strong_min
