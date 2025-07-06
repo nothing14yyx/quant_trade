@@ -2537,10 +2537,10 @@ class RobustSignalGenerator:
             oi_overheat=cache.get("oi_overheat", False),
             symbol=symbol,
         )
-        risk_score = self.risk_manager.fused_to_risk(
-            fused_score,
-            logic_score,
+        risk_score = self.risk_manager.calc_risk(
             env_score,
+            pred_vol=vol_preds.get("1h"),
+            oi_change=open_interest.get("oi_chg") if open_interest else None,
         )
 
         raw_score = logic_score * env_score

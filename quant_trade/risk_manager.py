@@ -15,3 +15,22 @@ class RiskManager:
         denom = max(abs(logic_score), 1e-6)
         risk = abs(fused_score) / denom
         return float(min(risk, self.cap))
+
+    def calc_risk(
+        self,
+        env_score: float,
+        pred_vol: float | None = None,
+        oi_change: float | None = None,
+        *,
+        quantile: float = 0.75,
+    ) -> float:
+        """综合环境得分、预测波动率和 OI 变化计算风险值"""
+
+        values = [abs(env_score)]
+        if pred_vol is not None:
+            values.append(abs(pred_vol))
+        if oi_change is not None:
+            values.append(abs(oi_change))
+
+        risk = float(np.quantile(values, quantile))
+        return min(risk, self.cap)
