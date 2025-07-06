@@ -2150,17 +2150,19 @@ class RobustSignalGenerator:
                     feats, models_p["drawdown"]
                 )
 
-        oversold_reversal = False
+        extreme_reversal = False
         rsi = feats_d1.raw.get("rsi_d1", 50)
         cci = feats_d1.raw.get("cci_d1", 0)
-        if rsi < 25 or cci < -100 or rsi > 75 or cci > 100:
+        oversold = rsi < 25 or cci < -100
+        overbought = rsi > 75 or cci > 100
+        if oversold or overbought:
             ai_scores["d1"] *= 0.7
-            oversold_reversal = True
+            extreme_reversal = True
 
         if ai_scores.get("d1", 0) < 0 and abs(ai_scores["d1"]) < self.th_down_d1:
             ai_scores["d1"] = 0.0
 
-        result = ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal
+        result = ai_scores, vol_preds, rise_preds, drawdown_preds, extreme_reversal
         self._cache_set(self._ai_score_cache, key, result)
         return result
 
@@ -2399,7 +2401,7 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """统一计算 AI 分数与多因子得分"""
-        ai_scores, vol_preds, rise_preds, drawdown_preds, oversold_reversal = self.compute_ai_scores(
+        ai_scores, vol_preds, rise_preds, drawdown_preds, extreme_reversal = self.compute_ai_scores(
             pf_1h,
             pf_4h,
             pf_d1,
@@ -2426,7 +2428,7 @@ class RobustSignalGenerator:
                 "vol_preds": vol_preds,
                 "rise_preds": rise_preds,
                 "drawdown_preds": drawdown_preds,
-                "oversold_reversal": oversold_reversal,
+                "extreme_reversal": extreme_reversal,
             }
         )
         result["scores"].update(
@@ -2445,7 +2447,7 @@ class RobustSignalGenerator:
                 "vol_preds": vol_preds,
                 "rise_preds": rise_preds,
                 "drawdown_preds": drawdown_preds,
-                "oversold_reversal": oversold_reversal,
+                "extreme_reversal": extreme_reversal,
             }
         )
         return result
@@ -2592,7 +2594,7 @@ class RobustSignalGenerator:
         short_mom: float,
         ob_imb: float,
         confirm_15m: float,
-        oversold_reversal: bool,
+        extreme_reversal: bool,
         cache: dict,
         symbol: str | None,
     ):
@@ -2620,7 +2622,7 @@ class RobustSignalGenerator:
             short_mom: 短期动量值。
             ob_imb: 委托簿不平衡值。
             confirm_15m: 15m 周期辅助确认值。
-            oversold_reversal: 超跌反转标记。
+            extreme_reversal: 超买或超卖反转标记。
             cache: 币种缓存。
             symbol: 币种符号。
 
@@ -2947,7 +2949,7 @@ class RobustSignalGenerator:
             "consensus_all": risk_info.get("consensus_all"),
             "consensus_14": risk_info.get("consensus_14"),
             "consensus_4d1": risk_info.get("consensus_4d1"),
-            "oversold_reversal": oversold_reversal,
+            "extreme_reversal": extreme_reversal,
             "conflict_filter_triggered": conflict_filter_triggered,
             "confirm_15m": confirm_15m,
         }
@@ -3030,7 +3032,7 @@ class RobustSignalGenerator:
             scores["short_mom"],
             scores["ob_imb"],
             scores["confirm_15m"],
-            scores["oversold_reversal"],
+            scores["extreme_reversal"],
             prepared["cache"],
             symbol,
         )
@@ -3118,7 +3120,7 @@ class RobustSignalGenerator:
         vol_preds = scores["vol_preds"]
         rise_preds = scores["rise_preds"]
         drawdown_preds = scores["drawdown_preds"]
-        oversold_reversal = scores["oversold_reversal"]
+        extreme_reversal = scores["extreme_reversal"]
         std_1h = prepared["std_1h"]
         std_4h = prepared["std_4h"]
         std_d1 = prepared["std_d1"]
@@ -3194,7 +3196,7 @@ class RobustSignalGenerator:
                 "consensus_14": consensus_14,
                 "consensus_4d1": consensus_4d1,
                 "local_details": local_details,
-                "oversold_reversal": oversold_reversal,
+                "extreme_reversal": extreme_reversal,
             },
             all_scores_list,
             global_metrics,
