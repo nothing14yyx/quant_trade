@@ -2542,7 +2542,6 @@ class RobustSignalGenerator:
             logic_score,
             env_score,
         )
-        risk_score = min(1.0, risk_score)
 
         raw_score = logic_score * env_score
         fused_score = raw_score * (1 - self.risk_adjust_factor)
