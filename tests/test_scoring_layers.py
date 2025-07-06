@@ -47,6 +47,6 @@ def test_layer_scores_product():
     feats={'close':100,'atr_pct_1h':0,'adx_1h':0,'funding_rate_1h':0}
     res = rsg.generate_signal(feats, {'atr_pct_4h':0}, {}, symbol='BTC')
     env = res['details']['env']
-    raw = env['logic_score'] * env['env_score'] * env['risk_score']
-    expected = np.tanh(raw * (1 - 0.9 * env['risk_score']))
+    raw = env['logic_score'] * env['env_score']
+    expected = np.tanh(raw * (1 - 0.9))
     assert res['score'] == pytest.approx(expected)

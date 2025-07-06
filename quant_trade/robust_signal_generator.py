@@ -2527,8 +2527,8 @@ class RobustSignalGenerator:
         )
         risk_score = min(1.0, risk_score)
 
-        raw_score = logic_score * env_score * risk_score
-        fused_score = raw_score * (1 - self.risk_adjust_factor * risk_score)
+        raw_score = logic_score * env_score
+        fused_score = raw_score * (1 - self.risk_adjust_factor)
         if abs(fused_score) < self.risk_adjust_threshold:
             return None
 
@@ -2874,8 +2874,8 @@ class RobustSignalGenerator:
             zero_reason = None
 
         # 使用传入的逻辑与环境得分计算最终得分
-        score_raw = logic_score * env_score * risk_score
-        score_raw *= 1 - self.risk_adjust_factor * risk_score
+        score_raw = logic_score * env_score
+        score_raw *= 1 - self.risk_adjust_factor
         if vote_sign != 0 and np.sign(score_raw) != vote_sign:
             strong_min = max(self.vote_params.get("strong_min", 1), 1)
             penalty = abs(vote) / strong_min
