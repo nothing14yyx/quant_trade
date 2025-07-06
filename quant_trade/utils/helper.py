@@ -548,11 +548,14 @@ def calc_features_raw(
     _check_index("sma_bbw")
     sma_bbw = _safe_ta(ta.sma, feats[f"bb_width_{period}"], length=20, index=df.index)
     sma_bbw_s = sma_bbw.iloc[:, 0]
-    # 放宽突破判断，避免长时间无有效信号
+    # 布林带宽度明显高于均值时视为放量突破
     vol_breakout = (
         feats[f"bb_width_{period}"] > sma_bbw_s * 1.2
     ) & (feats[f"vol_ma_ratio_{period}"] > 1.2)
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
+    # 布林带宽度低于均值 70% 视为收敛
+    bb_squeeze = feats[f"bb_width_{period}"] < sma_bbw_s * 0.7
+    assign_safe(feats, f"bb_squeeze_{period}", bb_squeeze.astype(float))
 
     range_dens = (feats["high"] - feats["low"]).abs().clip(lower=1e-6)
     density = feats["volume"] / range_dens

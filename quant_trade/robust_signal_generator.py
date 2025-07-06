@@ -1252,6 +1252,7 @@ class RobustSignalGenerator:
             + 0.5 * np.tanh((safe(f'kurtosis_{period}', 3) - 3))
             + 0.5 * np.tanh(safe(f'atr_chg_{period}', 0) * 50)
             + 0.5 * np.tanh(safe(f'bb_width_chg_{period}', 0) * 20)
+            - 0.5 * safe(f'bb_squeeze_{period}', 0)
             + 0.3 * np.tanh(safe('mom_5m_roll1h_std', 0) * 5)
             + 0.3 * np.tanh(safe('mom_15m_roll1h_std', 0) * 5)
         )
