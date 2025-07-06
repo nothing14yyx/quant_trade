@@ -2984,7 +2984,7 @@ class RobustSignalGenerator:
             symbol,
         )
         if risk_info is None:
-            return None, None, None
+            return None, None, None, None
         risk_info["logic_score"] = scores["logic_score"]
         risk_info["env_score"] = scores["env_score"]
         risk_info["consensus_all"] = scores["consensus_all"]
