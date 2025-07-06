@@ -831,8 +831,8 @@ def test_crowding_factor_and_dynamic_threshold():
     )
     assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.1)
     env = res['details']['env']
-    raw = env['logic_score'] * env['env_score'] * env['risk_score']
-    expected = np.tanh(raw * (1 - 0.9 * env['risk_score']))
+    raw = env['logic_score'] * env['env_score']
+    expected = np.tanh(raw * (1 - 0.9))
     assert res['score'] == pytest.approx(expected)
 
 
@@ -1038,8 +1038,8 @@ def test_extreme_indicator_scales_down():
 
     assert res['details']['oversold_reversal'] is True
     env = res['details']['env']
-    raw = env['logic_score'] * env['env_score'] * env['risk_score']
-    expected = np.tanh(raw * (1 - 0.9 * env['risk_score']))
+    raw = env['logic_score'] * env['env_score']
+    expected = np.tanh(raw * (1 - 0.9))
     assert res['score'] == pytest.approx(expected)
 
 
