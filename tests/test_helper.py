@@ -123,4 +123,18 @@ def test_calc_features_raw_vwap_window():
     assert feats_win2['vwap_1h'].iloc[-1] == pytest.approx(expected_win2[-1])
 
 
+def test_calc_td_sequential_td9():
+    idx = pd.date_range('2020-01-01', periods=13, freq='h')
+    down = pd.Series(range(13, 0, -1), index=idx, dtype=float)
+    up = pd.Series(range(1, 14), index=idx, dtype=float)
+
+    res_down = helper.calc_td_sequential(down)
+    res_up = helper.calc_td_sequential(up)
+
+    assert res_down['td_buy_count'].iloc[-1] == 9
+    assert res_down['td_sell_count'].iloc[-1] == 0
+    assert res_up['td_sell_count'].iloc[-1] == 9
+    assert res_up['td_buy_count'].iloc[-1] == 0
+
+
 
