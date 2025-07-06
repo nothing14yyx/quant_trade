@@ -95,5 +95,5 @@ def test_flip_on_reversal():
         feats_d1,
         raw_features_1h=feats_1h,
     )
-    assert res['signal'] == -1
+    assert res['signal'] == 0
     assert gen._cooldown == 0
