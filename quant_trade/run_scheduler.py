@@ -212,8 +212,7 @@ class Scheduler:
                 feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = feats
                 oi = load_latest_open_interest(self.engine, sym)
                 order_imb = load_order_book_imbalance(self.engine, sym)
-                sig = robust_signal_generator(
-                    self.sg,
+                sig = self.sg.generate_signal(
                     feats1h,
                     feats4h,
                     featsd1,
