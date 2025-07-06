@@ -2565,6 +2565,7 @@ class RobustSignalGenerator:
             "fused_score": fused_score,
             "risk_score": risk_score,
             "crowding_factor": crowding_factor,
+            "crowding_adjusted": True,
             "base_th": base_th,
             "regime": regime,
             "rev_dir": rev_dir,
@@ -2630,18 +2631,23 @@ class RobustSignalGenerator:
             包含 ``signal``、``score`` 等字段的结果字典。
         """
         base_th = risk_info["base_th"]
-        fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
-            fused_score,
-            base_th=base_th,
-            all_scores_list=None,
-            oi_chg=risk_info.get("oi_chg"),
-            cache=cache,
-            vol_pred=vol_preds.get("1h"),
-            oi_overheat=risk_info.get("oi_overheat", False),
-            symbol=symbol,
-        )
-        risk_info["crowding_factor"] = crowding_factor
-        risk_info["th_oi"] = th_oi
+        if not risk_info.get("crowding_adjusted"):
+            fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
+                fused_score,
+                base_th=base_th,
+                all_scores_list=None,
+                oi_chg=risk_info.get("oi_chg"),
+                cache=cache,
+                vol_pred=vol_preds.get("1h"),
+                oi_overheat=risk_info.get("oi_overheat", False),
+                symbol=symbol,
+            )
+            risk_info["crowding_factor"] = crowding_factor
+            risk_info["th_oi"] = th_oi
+            risk_info["crowding_adjusted"] = True
+        else:
+            crowding_factor = risk_info.get("crowding_factor", 1.0)
+            th_oi = risk_info.get("th_oi")
         risk_score = risk_info["risk_score"]
         regime = risk_info["regime"]
         rev_dir = risk_info["rev_dir"]
