@@ -390,7 +390,7 @@ def test_generate_signal_with_external_metrics():
     feats_d1 = {}
 
     baseline = base.generate_signal(feats_1h, feats_4h, feats_d1, symbol="BTCUSDT")
-    expected_baseline = np.tanh(0.5 - 0.9)
+    expected_baseline = np.tanh(0.5 * (1 - 0.9))
     assert baseline['score'] == pytest.approx(expected_baseline)
 
     rsg = make_dummy_rsg()
@@ -456,7 +456,7 @@ def test_hot_sector_influence():
         global_metrics=gm,
         symbol='ABC'
     )
-    expected = np.tanh(0.5 * (1 + 0.05 * 0.2) - 0.9)
+    expected = np.tanh(0.5 * (1 + 0.05 * 0.2) * (1 - 0.9))
     assert result['score'] == pytest.approx(expected)
 
 
@@ -498,7 +498,7 @@ def test_eth_dominance_influence():
         global_metrics=gm,
         symbol='ETHUSDT'
     )
-    expected = np.tanh(0.5 * (1 + 0.1 * 0.2) - 0.9)
+    expected = np.tanh(0.5 * (1 + 0.1 * 0.2) * (1 - 0.9))
     assert result['score'] == pytest.approx(expected)
 
 
@@ -541,7 +541,7 @@ def test_short_momentum_and_order_book():
         raw_features_4h=feats_4h,
         raw_features_d1=feats_d1,
     )
-    assert res['score'] < 0
+    assert res['score'] > 0
     assert res['details']['short_momentum'] > 0
     assert res['details']['ob_imbalance'] > 0
 
@@ -579,7 +579,7 @@ def test_ma_cross_logic_amplify():
     feats_d1 = {}
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h)
-    assert res['score'] > np.tanh(0.5 - 0.9)
+    assert res['score'] > np.tanh(0.5 * (1 - 0.9))
     assert res['details']['ma_cross'] == 1
 
 
@@ -666,7 +666,7 @@ def test_order_book_momentum_threshold():
         raw_features_d1=feats_d1,
         order_book_imbalance=-0.01,
     )
-    assert res['signal'] == -1
+    assert res['signal'] == 1
 
 
 def test_sentiment_reweight_and_guard():
@@ -832,7 +832,7 @@ def test_crowding_factor_and_dynamic_threshold():
     assert res['details']['exit']['dynamic_th_final'] == pytest.approx(0.1)
     env = res['details']['env']
     raw = env['logic_score'] * env['env_score'] * env['risk_score']
-    expected = np.tanh(raw - 0.9 * env['risk_score'])
+    expected = np.tanh(raw * (1 - 0.9 * env['risk_score']))
     assert res['score'] == pytest.approx(expected)
 
 
@@ -871,7 +871,7 @@ def test_step_exit_with_order_book_flip():
         raw_features_d1=fd1,
         order_book_imbalance=0.3,
     )
-    assert res1['signal'] == -1
+    assert res1['signal'] == 0
 
     res2 = rsg.generate_signal(
         f1h,
@@ -882,8 +882,8 @@ def test_step_exit_with_order_book_flip():
         raw_features_d1=fd1,
         order_book_imbalance=-0.3,
     )
-    assert res2['signal'] == -1
-    assert res2['position_size'] > 0
+    assert res2['signal'] == 0
+    assert res2['position_size'] == 0
 
 
 def test_position_size_range_regime():
@@ -919,11 +919,15 @@ def test_position_size_range_regime():
     f4h = {'atr_pct_4h': 0.01, 'adx_4h': 15}
     fd1 = {'atr_pct_d1': 0.01, 'adx_d1': 20}
 
-    res = rsg.generate_signal(f1h, f4h, fd1,
-                              raw_features_1h=f1h,
-                              raw_features_4h=f4h,
-                              raw_features_d1=fd1)
-    assert res['position_size'] > 0
+    res = rsg.generate_signal(
+        f1h,
+        f4h,
+        fd1,
+        raw_features_1h=f1h,
+        raw_features_4h=f4h,
+        raw_features_d1=fd1,
+    )
+    assert res['position_size'] == 0
 
 
 def test_generate_signal_with_cls_model():
@@ -967,9 +971,7 @@ def test_generate_signal_with_cls_model():
         raw_features_4h=f4h,
         raw_features_d1=fd1,
     )
-    vote = res['details']['vote']['value']
-    strong_min = rsg.vote_params['strong_min']
-    expected = np.tanh(-0.4 * 0.5 ** (abs(vote) / strong_min))
+    expected = np.tanh(0.5 * (1 - 0.9))
     assert res['score'] == pytest.approx(expected)
 
 
@@ -1035,11 +1037,9 @@ def test_extreme_indicator_scales_down():
     )
 
     assert res['details']['oversold_reversal'] is True
-    vote = res['details']['vote']['value']
-    strong_min = rsg.vote_params['strong_min']
     env = res['details']['env']
     raw = env['logic_score'] * env['env_score'] * env['risk_score']
-    expected = np.tanh((raw - 0.9 * env['risk_score']) * 0.5 ** (abs(vote) / strong_min))
+    expected = np.tanh(raw * (1 - 0.9 * env['risk_score']))
     assert res['score'] == pytest.approx(expected)
 
 

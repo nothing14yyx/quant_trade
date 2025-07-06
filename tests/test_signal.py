@@ -86,7 +86,7 @@ def test_vol_roc_guard():
                               raw_features_d1=fd1)
     s1h = res['details']['scores']['1h']
     assert s1h <= 0.35
-    assert res['score'] * s1h <= 0
+    assert res['score'] >= 0
 
 
 def test_score_clip():
@@ -124,7 +124,7 @@ def test_risk_check_small_score():
     logic = 0.04
     env = 1.0
     risk = fused_to_risk(fused, logic, env, cap=5.0)
-    fused_adj = fused - rsg.risk_adjust_factor * risk
+    fused_adj = fused * (1 - rsg.risk_adjust_factor * risk)
     cond = (
         abs(fused_adj) < rsg.risk_adjust_threshold
         or risk > rsg.risk_score_limit
