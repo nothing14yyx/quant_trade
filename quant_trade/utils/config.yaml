@@ -366,7 +366,7 @@ vote_system:
   ai_dir_eps: 0.02
 vote_weights:
   ai: 2
-  mom: 1
+  short_mom: 1
   vol_breakout: 1
   trend: 1
   confirm_15m: 1
