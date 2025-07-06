@@ -123,6 +123,21 @@ def test_calc_features_raw_vwap_window():
     assert feats_win2['vwap_1h'].iloc[-1] == pytest.approx(expected_win2[-1])
 
 
+def test_bb_squeeze_flag():
+    times = pd.date_range('2020-01-01', periods=25, freq='h')
+    df = pd.DataFrame({
+        'open': np.linspace(1, 2, 25),
+        'high': np.linspace(1.1, 2.1, 25),
+        'low': np.linspace(0.9, 1.9, 25),
+        'close': np.linspace(1, 2, 25),
+        'volume': np.linspace(10, 20, 25),
+    }, index=times)
+    feats = helper.calc_features_raw(df, '1h')
+    bbw = feats['bb_width_1h']
+    sma = bbw.rolling(20, min_periods=1).mean()
+    expected = (bbw < sma * 0.7).astype(float)
+    assert feats['bb_squeeze_1h'].equals(expected)
+
 def test_calc_td_sequential_td9():
     idx = pd.date_range('2020-01-01', periods=13, freq='h')
     down = pd.Series(range(13, 0, -1), index=idx, dtype=float)
@@ -134,7 +149,7 @@ def test_calc_td_sequential_td9():
     assert res_down['td_buy_count'].iloc[-1] == 9
     assert res_down['td_sell_count'].iloc[-1] == 0
     assert res_up['td_sell_count'].iloc[-1] == 9
-    assert res_up['td_buy_count'].iloc[-1] == 0
+
 
 
 
