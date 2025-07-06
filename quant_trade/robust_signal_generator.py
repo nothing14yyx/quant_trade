@@ -297,6 +297,22 @@ def _calc_history_base(history, base, quantile, window, decay, limit=None):
     return base
 
 
+def risk_budget_threshold(values, *, quantile=0.95, decay=None):
+    """根据历史风险指标计算风险预算阈值"""
+
+    if not values:
+        return float("nan")
+    arr = np.asarray(values, dtype=float)
+    arr = arr[~np.isnan(arr)]
+    if arr.size == 0:
+        return float("nan")
+    arr = np.abs(arr)
+    if decay:
+        w = np.exp(-decay * np.arange(arr.size)[::-1])
+        return weighted_quantile(arr, quantile, w)
+    return float(np.quantile(arr, quantile))
+
+
 def adjust_score(
     score: float,
     sentiment: float,
@@ -2527,8 +2543,8 @@ class RobustSignalGenerator:
         )
         risk_score = min(1.0, risk_score)
 
-        raw_score = logic_score * env_score * risk_score
-        fused_score = raw_score * (1 - self.risk_adjust_factor * risk_score)
+        raw_score = logic_score * env_score
+        fused_score = raw_score * (1 - self.risk_adjust_factor)
         if abs(fused_score) < self.risk_adjust_threshold:
             return None
 
@@ -2874,8 +2890,8 @@ class RobustSignalGenerator:
             zero_reason = None
 
         # 使用传入的逻辑与环境得分计算最终得分
-        score_raw = logic_score * env_score * risk_score
-        score_raw *= 1 - self.risk_adjust_factor * risk_score
+        score_raw = logic_score * env_score
+        score_raw *= 1 - self.risk_adjust_factor
         if vote_sign != 0 and np.sign(score_raw) != vote_sign:
             strong_min = max(self.vote_params.get("strong_min", 1), 1)
             penalty = abs(vote) / strong_min
