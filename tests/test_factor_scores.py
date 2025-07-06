@@ -201,4 +201,21 @@ def test_bb_squeeze_reduces_volatility():
     assert squeeze_score < base_score
 
 
+def test_td_score_changes_trend():
+    rsg = make_rsg()
+    base_feats = {
+        'td_buy_count_1h': 0,
+        'td_sell_count_1h': 0,
+    }
+    base_score = rsg.get_factor_scores(base_feats, '1h')['trend']
+
+    sell_more = base_feats.copy()
+    sell_more['td_sell_count_1h'] = 9
+    assert rsg.get_factor_scores(sell_more, '1h')['trend'] > base_score
+
+    buy_more = base_feats.copy()
+    buy_more['td_buy_count_1h'] = 9
+    assert rsg.get_factor_scores(buy_more, '1h')['trend'] < base_score
+
+
 
