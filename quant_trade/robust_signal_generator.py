@@ -1189,6 +1189,11 @@ class RobustSignalGenerator:
                 return default
             return v
 
+        td_score = math.tanh(
+            (safe(f"td_sell_count_{period}", 0) - safe(f"td_buy_count_{period}", 0))
+            / 9
+        )
+
         trend_raw = (
             np.tanh(safe(f'ema_diff_{period}', 0) * 5)
             + 2 * (safe(f'boll_perc_{period}', 0.5) - 0.5)
@@ -1218,6 +1223,7 @@ class RobustSignalGenerator:
             + 0.3 * np.tanh(safe('close_spread_1h_4h', 0) * 5)
             + 0.3 * np.tanh(safe('close_spread_1h_d1', 0) * 5)
             + np.tanh(safe(f"close_vs_pivot_{period}", 0) * 8)
+            + 0.3 * td_score
         )
 
         momentum_raw = (
