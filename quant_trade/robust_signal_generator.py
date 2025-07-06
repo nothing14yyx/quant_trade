@@ -536,7 +536,7 @@ class RobustSignalGenerator:
             "vote_weights",
             {
                 "ai": self.vote_params["weight_ai"],
-                "mom": 1,
+                "short_mom": 1,
                 "vol_breakout": 1,
                 "trend": 1,
                 "confirm_15m": 1,
@@ -711,7 +711,7 @@ class RobustSignalGenerator:
             "core_keys": self.DEFAULT_CORE_KEYS.copy(),
             "delta_params": self.DELTA_PARAMS.copy(),
             "vote_params": self.VOTE_PARAMS.copy(),
-            "vote_weights": {"ob": 4, "short_mom": 2, "fast_mom": 0.5, "ai": 3, "vol_breakout": 1},
+            "vote_weights": {"ob": 4, "short_mom": 2, "ai": 3, "vol_breakout": 1},
             "exit_lag_bars": EXIT_LAG_BARS_DEFAULT,
             "th_window": 60,
             "th_decay": 2.0,
@@ -2706,7 +2706,7 @@ class RobustSignalGenerator:
         vw = self.vote_weights
         vote = (
             vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
-            + vw.get("mom", 1) * short_mom_dir
+            + vw.get("short_mom", 1) * short_mom_dir
             + vw.get("vol_breakout", 1) * vol_breakout_dir
             + vw.get("trend", 1) * trend_dir
             + vw.get("confirm_15m", 1) * confirm_dir
