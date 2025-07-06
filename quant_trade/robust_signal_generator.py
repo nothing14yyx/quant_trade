@@ -608,6 +608,7 @@ class RobustSignalGenerator:
         )
 
         self.max_position = get_cfg_value(cfg, "max_position", 0.3)
+        self.risk_scale = get_cfg_value(cfg, "risk_scale", 1.0)
         self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 1)
         self.th_down_d1 = get_cfg_value(self.cfg, "th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
@@ -1103,7 +1104,7 @@ class RobustSignalGenerator:
         zero_reason: str | None = None
         low_vol_flag = False
 
-        risk_factor = 1.0 / (1.0 + risk_score)
+        risk_factor = math.exp(-self.risk_scale * risk_score)
         pos_size = base_size * sigmoid(confidence_factor) * risk_factor
         pos_size *= exit_mult
         pos_size = min(pos_size, self.max_position)
@@ -1128,7 +1129,8 @@ class RobustSignalGenerator:
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
         min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
-        if pos_size < min_pos:
+        dynamic_min = min_pos * math.exp(-self.risk_scale * risk_score)
+        if pos_size < dynamic_min:
             direction, pos_size = 0, 0.0
             if low_vol_flag:
                 zero_reason = "vol_ratio"
