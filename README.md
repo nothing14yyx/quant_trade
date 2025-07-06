@@ -93,6 +93,24 @@ crowding_limit: 1.05     # 允许的拥挤度上限
 
 修改后重启调度器即可生效。
 
+### 动态阈值调节
+`compute_dynamic_threshold` 会根据近期得分历史计算出门槛基准。其中
+`th_window` 决定统计多少条 `history_scores`，窗口越短反应越灵敏；
+`th_decay` 为衰减系数，设定后越新的分数权重越高；
+`signal_threshold.quantile` 指定所取的分位数，数值越低则门槛越低，
+更易触发信号。
+
+示例，若在高频或小仓位策略中需要更积极的入场，可在 `utils/config.yaml`
+中调整：
+
+```yaml
+th_window: 80
+th_decay: 0.5
+signal_threshold:
+  quantile: 0.65
+```
+这会使阈值更快反应最新波动，从而在行情活跃时给出更多交易机会。
+
 ## 数据库初始化
 
 执行 `mysql < scripts/init_db.sql` 即可创建所需表格。
