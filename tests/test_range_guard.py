@@ -39,6 +39,7 @@ def make_rsg():
     r.risk_score_limit = 2.0
     r.crowding_limit = 1.1
     r.max_position = 0.3
+    r.risk_scale = 1.0
     return r
 
 
