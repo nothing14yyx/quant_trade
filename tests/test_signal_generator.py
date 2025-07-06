@@ -1036,7 +1036,7 @@ def test_extreme_indicator_scales_down():
         raw_features_d1=feats_d1,
     )
 
-    assert res['details']['oversold_reversal'] is True
+    assert res['details']['extreme_reversal'] is True
     env = res['details']['env']
     raw = env['logic_score'] * env['env_score']
     expected = np.tanh(raw * (1 - 0.9))

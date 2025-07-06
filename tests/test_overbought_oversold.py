@@ -112,7 +112,7 @@ def test_oversold_sets_zero_position():
         short_mom=0,
         ob_imb=0,
         confirm_15m=0,
-        oversold_reversal=False,
+        extreme_reversal=False,
         cache=cache,
         symbol=None,
     )
@@ -160,7 +160,7 @@ def test_overbought_sets_zero_position():
         short_mom=0,
         ob_imb=0,
         confirm_15m=0,
-        oversold_reversal=False,
+        extreme_reversal=False,
         cache=cache,
         symbol=None,
     )
