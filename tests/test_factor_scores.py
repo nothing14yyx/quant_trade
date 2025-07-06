@@ -186,4 +186,19 @@ def test_new_features_affect_scores():
     assert scores['momentum'] == base['momentum']
 
 
+def test_bb_squeeze_reduces_volatility():
+    rsg = make_rsg()
+    base_feats = {
+        'atr_pct_1h': 0.01,
+        'bb_width_1h': 0.02,
+        'bb_width_chg_1h': 0,
+        'bb_squeeze_1h': 0,
+    }
+    base_score = rsg.get_factor_scores(base_feats, '1h')['volatility']
+    squeezed = base_feats.copy()
+    squeezed['bb_squeeze_1h'] = 1
+    squeeze_score = rsg.get_factor_scores(squeezed, '1h')['volatility']
+    assert squeeze_score < base_score
+
+
 

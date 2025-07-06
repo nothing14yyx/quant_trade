@@ -381,6 +381,12 @@ CREATE TABLE `features` (
     `rsi_diff_4h_d1` DOUBLE,
     `vol_ratio_1h_4h` DOUBLE,
     `vol_ratio_4h_d1` DOUBLE,
+    `td_buy_count_1h` DOUBLE,
+    `td_buy_count_4h` DOUBLE,
+    `td_buy_count_d1` DOUBLE,
+    `td_sell_count_1h` DOUBLE,
+    `td_sell_count_4h` DOUBLE,
+    `td_sell_count_d1` DOUBLE,
     `adx_1h_isnan` TINYINT,
     `adx_4h_isnan` TINYINT,
     `adx_d1_isnan` TINYINT,
@@ -646,6 +652,12 @@ CREATE TABLE `features` (
     `rsi_diff_4h_d1_isnan` TINYINT,
     `vol_ratio_1h_4h_isnan` TINYINT,
     `vol_ratio_4h_d1_isnan` TINYINT,
+    `td_buy_count_1h_isnan` TINYINT,
+    `td_buy_count_4h_isnan` TINYINT,
+    `td_buy_count_d1_isnan` TINYINT,
+    `td_sell_count_1h_isnan` TINYINT,
+    `td_sell_count_4h_isnan` TINYINT,
+    `td_sell_count_d1_isnan` TINYINT,
     PRIMARY KEY (`symbol`, `open_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
