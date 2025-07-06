@@ -548,7 +548,10 @@ def calc_features_raw(
     _check_index("sma_bbw")
     sma_bbw = _safe_ta(ta.sma, feats[f"bb_width_{period}"], length=20, index=df.index)
     sma_bbw_s = sma_bbw.iloc[:, 0]
-    vol_breakout = (feats[f"bb_width_{period}"] > sma_bbw_s * 1.5) & (feats[f"vol_ma_ratio_{period}"] > 1.5)
+    # 放宽突破判断，避免长时间无有效信号
+    vol_breakout = (
+        feats[f"bb_width_{period}"] > sma_bbw_s * 1.2
+    ) & (feats[f"vol_ma_ratio_{period}"] > 1.2)
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
 
     range_dens = (feats["high"] - feats["low"]).abs().clip(lower=1e-6)
