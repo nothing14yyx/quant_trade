@@ -297,6 +297,22 @@ def _calc_history_base(history, base, quantile, window, decay, limit=None):
     return base
 
 
+def risk_budget_threshold(values, *, quantile=0.95, decay=None):
+    """根据历史风险指标计算风险预算阈值"""
+
+    if not values:
+        return float("nan")
+    arr = np.asarray(values, dtype=float)
+    arr = arr[~np.isnan(arr)]
+    if arr.size == 0:
+        return float("nan")
+    arr = np.abs(arr)
+    if decay:
+        w = np.exp(-decay * np.arange(arr.size)[::-1])
+        return weighted_quantile(arr, quantile, w)
+    return float(np.quantile(arr, quantile))
+
+
 def adjust_score(
     score: float,
     sentiment: float,
