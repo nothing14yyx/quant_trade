@@ -151,6 +151,45 @@ def _vpoc_numba(close: np.ndarray, volume: np.ndarray, window: int = 200, bins: 
     return out
 
 
+def calc_td_sequential(close: pd.Series, lookback: int = 4) -> pd.DataFrame:
+    """计算 TD Sequential 买入/卖出计数。
+
+    Parameters
+    ----------
+    close : pd.Series
+        收盘价序列。
+    lookback : int, default 4
+        与多少根前的收盘价比较，默认与前 4 根比较。
+
+    Returns
+    -------
+    pd.DataFrame
+        包含 ``td_buy_count`` 与 ``td_sell_count`` 两列。
+    """
+
+    close = pd.to_numeric(close, errors="coerce")
+    arr = close.to_numpy(dtype="float64")
+    buy = np.zeros_like(arr, dtype="float64")
+    sell = np.zeros_like(arr, dtype="float64")
+    for i in range(arr.size):
+        if i >= lookback and not np.isnan(arr[i]) and not np.isnan(arr[i - lookback]):
+            if arr[i] < arr[i - lookback]:
+                buy[i] = buy[i - 1] + 1
+            else:
+                buy[i] = 0
+
+            if arr[i] > arr[i - lookback]:
+                sell[i] = sell[i - 1] + 1
+            else:
+                sell[i] = 0
+        else:
+            if i > 0:
+                buy[i] = 0
+                sell[i] = 0
+    df = pd.DataFrame({"td_buy_count": buy, "td_sell_count": sell}, index=close.index)
+    return df
+
+
 def calc_price_channel(high: pd.Series, low: pd.Series, close: pd.Series, *, window: int = 20) -> pd.DataFrame:
     """计算价格通道及位置
 
@@ -585,11 +624,14 @@ def calc_features_raw(
     _check_index("sma_bbw")
     sma_bbw = _safe_ta(ta.sma, feats[f"bb_width_{period}"], length=20, index=df.index)
     sma_bbw_s = sma_bbw.iloc[:, 0]
-    # 放宽突破判断，避免长时间无有效信号
+    # 布林带宽度明显高于均值时视为放量突破
     vol_breakout = (
         feats[f"bb_width_{period}"] > sma_bbw_s * 1.2
     ) & (feats[f"vol_ma_ratio_{period}"] > 1.2)
     assign_safe(feats, f"vol_breakout_{period}", vol_breakout.astype(float))
+    # 布林带宽度低于均值 70% 视为收敛
+    bb_squeeze = feats[f"bb_width_{period}"] < sma_bbw_s * 0.7
+    assign_safe(feats, f"bb_squeeze_{period}", bb_squeeze.astype(float))
 
     range_dens = (feats["high"] - feats["low"]).abs().clip(lower=1e-6)
     density = feats["volume"] / range_dens
@@ -616,6 +658,10 @@ def calc_features_raw(
         .groupby(feats["close"].ge(feats["open"]).astype(int).cumsum())
         .cumsum()
     )
+
+    td = calc_td_sequential(feats["close"])
+    assign_safe(feats, f"td_buy_count_{period}", td["td_buy_count"])
+    assign_safe(feats, f"td_sell_count_{period}", td["td_sell_count"])
 
     assign_safe(feats, f"rsi_mul_vol_ma_ratio_{period}", feats[f"rsi_{period}"] * feats[f"vol_ma_ratio_{period}"])
     _check_index("willr")
