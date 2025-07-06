@@ -216,11 +216,6 @@ def robust_signal_generator(model, *args, **kwargs):
     except (ValueError, KeyError, TypeError) as e:
         logger.info("generate_signal failed: %s", e)
         return None
-    try:
-        return model.generate_signal(*args, **kwargs)
-    except (ValueError, KeyError, TypeError) as e:
-        logger.info("generate_signal failed: %s", e)
-        return None
 
 
 def softmax(x):
