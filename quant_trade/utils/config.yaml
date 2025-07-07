@@ -361,7 +361,7 @@ delta_boost:
 
 vote_system:
 #  weight_ai: 2          # 已由 vote_weights.ai 定义
-  strong_min: 3
+  strong_min: 2
   conf_min: 0.25
   ai_dir_eps: 0.02
 vote_weights:
@@ -388,7 +388,7 @@ exit_lag_bars: 1
 
 # quantile: 0.88
 signal_filters:
-  min_vote: 2
+  min_vote: 1
   confidence_vote: 0.12
   conf_min: 0.25
 oi_protection:
@@ -403,10 +403,10 @@ position_coeff:
   low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.07185261632879107      # 原 dynamic_th_final 的初始值
+  base_th: 0.05      # 原 dynamic_th_final 的初始值
   gamma: 0.9        # 过渡宽度
-  min_pos: 0.10      # pos_size < 0.10 则 direction = 0
-  quantile: 0.80
+  min_pos: 0.05      # pos_size < 0.10 则 direction = 0
+  quantile: 0.70
   low_base: 0.06
   # base_th / low_base 单位为 fused_score
   rev_boost: 0.15      # detect_reversal 命中时加分
@@ -430,9 +430,9 @@ regime:
   adx_range: 20
 
 risk_adjust:
-  factor: 0.5
+  factor: 0.3
   threshold: 0.01
-risk_adjust_threshold: 0.05
+risk_adjust_threshold: 0.03
 
 protection_limits:
   risk_score: 1.0
