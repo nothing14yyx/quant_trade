@@ -160,14 +160,24 @@ def run_single_backtest(
             f4 = {c: df_sym.at[i, c] for c in FEATURE_COLS_4H}
             fd = {c: df_sym.at[i, c] for c in FEATURE_COLS_D1}
             res = sg.generate_signal(f1, f4, fd)
-            signals.append({
-                "open_time": df_sym.at[i, "open_time"],
-                "signal": res["signal"],
-                "score": res["score"],
-                "position_size": res.get("position_size", 1.0),
-                "take_profit": res.get("take_profit"),
-                "stop_loss": res.get("stop_loss"),
-            })
+            if res is None:
+                signals.append({
+                    "open_time": df_sym.at[i, "open_time"],
+                    "signal": 0,
+                    "score": float("nan"),
+                    "position_size": 0.0,
+                    "take_profit": None,
+                    "stop_loss": None,
+                })
+            else:
+                signals.append({
+                    "open_time": df_sym.at[i, "open_time"],
+                    "signal": res["signal"],
+                    "score": res["score"],
+                    "position_size": res.get("position_size", 1.0),
+                    "take_profit": res.get("take_profit"),
+                    "stop_loss": res.get("stop_loss"),
+                })
         sig_df = pd.DataFrame(signals)
         trades_df = simulate_trades(
             df_sym, sig_df, fee_rate=fee_rate, slippage=slippage
