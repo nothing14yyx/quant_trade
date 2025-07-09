@@ -1,5 +1,6 @@
 import pandas as pd
 import types
+import numpy as np
 import pytest
 
 from quant_trade import param_search
@@ -150,3 +151,36 @@ def test_param_search_cv(monkeypatch):
     param_search.run_param_search(method="grid", tune_delta=False, n_splits=2)
 
     assert len(calls) == 2
+
+
+def test_param_search_nan_metric(monkeypatch):
+    monkeypatch.setattr(db, "load_config", lambda: {})
+    monkeypatch.setattr(db, "connect_mysql", lambda cfg: None)
+    monkeypatch.setattr(param_search, "load_config", db.load_config)
+    monkeypatch.setattr(param_search, "connect_mysql", db.connect_mysql)
+    monkeypatch.setattr(param_search, "ParameterGrid", lambda pg: [pg])
+    monkeypatch.setattr(param_search, "precompute_ic_scores", lambda df, sg: {})
+
+    class DummyRSG:
+        def __init__(self, *a, **k):
+            self.delta_params = {"rsi": (1, 1, 0.03)}
+
+    monkeypatch.setattr(param_search, "RobustSignalGenerator", DummyRSG)
+
+    times = pd.date_range("2020-01-01", periods=2, freq="h")
+    df = pd.DataFrame({
+        "symbol": ["BTC", "BTC"],
+        "open_time": times,
+        "close_time": times + pd.Timedelta(hours=1),
+    })
+    monkeypatch.setattr(param_search.pd, "read_sql", lambda *a, **k: df)
+
+    monkeypatch.setattr(
+        param_search,
+        "run_single_backtest",
+        lambda *a, **k: (np.nan, np.nan, 0),
+    )
+
+    with pytest.warns(None):
+        res = param_search.run_param_search(method="grid", tune_delta=False)
+    assert res == -100.0
