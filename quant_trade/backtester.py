@@ -248,6 +248,15 @@ def run_backtest(*, recent_days: int | None = None):
                 raw_features_4h=raw4h,
                 raw_features_d1=rawd1,
             )
+            if result is None:
+                result = {
+                    'signal': 0,
+                    'score': float('nan'),
+                    'position_size': 0.0,
+                    'take_profit': None,
+                    'stop_loss': None,
+                    'details': None,
+                }
             signals.append({
                 'open_time': df_sym.at[i, 'open_time'],
                 'signal': result['signal'],
@@ -255,7 +264,7 @@ def run_backtest(*, recent_days: int | None = None):
                 'position_size': result['position_size'],
                 'take_profit': result['take_profit'],
                 'stop_loss': result['stop_loss'],
-                'details': result['details'],
+                'details': result.get('details'),
             })
         sig_df = pd.DataFrame(signals)
         sig_df['symbol'] = symbol
