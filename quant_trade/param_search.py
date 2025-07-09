@@ -11,6 +11,8 @@ import optuna
 from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
+    DynamicThresholdInput,
+
 )
 from quant_trade.backtester import (
     FEATURE_COLS_1H,
