@@ -378,8 +378,16 @@ def run_param_search(
                 ret_vals.append(tot_ret)
                 sharpe_vals.append(sharpe)
                 trades += trade_count
-            mean_ret = float(np.nanmean(ret_vals)) if ret_vals else np.nan
-            mean_sharpe = float(np.nanmean(sharpe_vals)) if sharpe_vals else np.nan
+            ret_arr = np.asarray(ret_vals, dtype=float)
+            sharpe_arr = np.asarray(sharpe_vals, dtype=float)
+            if ret_arr.size == 0 or np.isnan(ret_arr).all():
+                mean_ret = np.nan
+            else:
+                mean_ret = float(np.nanmean(ret_arr))
+            if sharpe_arr.size == 0 or np.isnan(sharpe_arr).all():
+                mean_sharpe = np.nan
+            else:
+                mean_sharpe = float(np.nanmean(sharpe_arr))
             metric = mean_sharpe if not np.isnan(mean_sharpe) else -100.0
             return metric, params, mean_ret, mean_sharpe, trades
 
@@ -404,6 +412,7 @@ def run_param_search(
         logger.info("best params: %s best_sharpe: %.6f", best, best_metric)
         if hasattr(sg, "stop_weight_update_thread"):
             sg.stop_weight_update_thread()
+        return best_metric
     else:
         def objective(trial: optuna.Trial) -> float:
             keys = [
@@ -485,8 +494,16 @@ def run_param_search(
                 ret_vals.append(tot_ret)
                 sharpe_vals.append(sharpe)
                 trades += trade_count
-            mean_ret = float(np.nanmean(ret_vals)) if ret_vals else np.nan
-            mean_sharpe = float(np.nanmean(sharpe_vals)) if sharpe_vals else np.nan
+            ret_arr = np.asarray(ret_vals, dtype=float)
+            sharpe_arr = np.asarray(sharpe_vals, dtype=float)
+            if ret_arr.size == 0 or np.isnan(ret_arr).all():
+                mean_ret = np.nan
+            else:
+                mean_ret = float(np.nanmean(ret_arr))
+            if sharpe_arr.size == 0 or np.isnan(sharpe_arr).all():
+                mean_sharpe = np.nan
+            else:
+                mean_sharpe = float(np.nanmean(sharpe_arr))
             logger.debug(
                 "optuna params=%s -> trades=%d total_ret=%.4f, sharpe=%.6f",
                 {
@@ -527,6 +544,7 @@ def run_param_search(
         )
         if hasattr(sg, "stop_weight_update_thread"):
             sg.stop_weight_update_thread()
+        return study.best_value
 
 
 def main() -> None:
