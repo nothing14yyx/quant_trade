@@ -61,3 +61,50 @@ def test_run_single_backtest_basic():
     assert np.isnan(avg_sharpe)
     assert trade_count == 1
 
+
+class DummyNoneSG:
+    def __init__(self):
+        self.ic_scores = {}
+        self.history_scores = deque(maxlen=10)
+        self.base_weights = {}
+
+    def generate_signal(self, f1, f4, fd):
+        return None
+
+
+def test_run_single_backtest_none_signal():
+    times = pd.date_range("2020-01-01", periods=3, freq="h")
+    df = pd.DataFrame(
+        {
+            "symbol": ["BTC"] * 3,
+            "open_time": times,
+            "close_time": times + pd.Timedelta(hours=1),
+            "open": [100, 100, 100],
+            "high": [101, 101, 101],
+            "low": [99, 99, 99],
+            "close": [100, 100, 100],
+        }
+    )
+
+    for col in FEATURE_COLS_1H:
+        df[col] = 0.0
+    for col in FEATURE_COLS_4H:
+        df[col] = 0.0
+    for col in FEATURE_COLS_D1:
+        df[col] = 0.0
+
+    sg = DummyNoneSG()
+
+    avg_ret, avg_sharpe, trade_count = run_single_backtest(
+        df=df,
+        base_weights={},
+        history_window=10,
+        th_params={},
+        ic_scores={},
+        sg=sg,
+    )
+
+    assert np.isnan(avg_ret)
+    assert np.isnan(avg_sharpe)
+    assert trade_count == 0
+
