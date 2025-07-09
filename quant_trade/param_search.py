@@ -196,7 +196,7 @@ def run_single_backtest(
             continue
         total_trades += trade_count
         # === Debug & 清洗 NaN END ===
-        series = trades_df["ret"]
+        series = trades_df["ret"] * trades_df["position_size"]
         if trade_count < 2:
             logger.debug("%s -> trades=%d < 2, sharpe may be NaN", symbol, trade_count)
         std = series.std()
