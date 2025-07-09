@@ -206,5 +206,22 @@
   "DFUSDT": "dforce-token",
   "SAFEUSDT": "safe",
   "DOODUSDT": "doodles",
-  "FLMUSDT": "flamingo-finance"
+  "FLMUSDT": "flamingo-finance",
+  "1INCHUSDT": "1inch",
+  "NOTUSDT": "notcoin",
+  "ALCHUSDT": "alchemist-ai",
+  "VICUSDT": "tomochain",
+  "MEMEUSDT": "memecoin-2",
+  "BAKEUSDT": "bakerytoken",
+  "ALPINEUSDT": "alpine-f1-team-fan-token",
+  "MUSDT": "ethereum",
+  "MBOXUSDT": "mobox",
+  "CELOUSDT": "celo",
+  "REIUSDT": "unit-00-rei",
+  "DUSKUSDT": "dusk-network",
+  "PORT3USDT": "port3-network",
+  "SYNUSDT": "synapse-2",
+  "COWUSDT": "cow-protocol",
+  "CKBUSDT": "nervos-network",
+  "1MBABYDOGEUSDT": "1mbabydoge"
 }
