@@ -160,6 +160,14 @@ def run_single_backtest(
             f4 = {c: df_sym.at[i, c] for c in FEATURE_COLS_4H}
             fd = {c: df_sym.at[i, c] for c in FEATURE_COLS_D1}
             res = sg.generate_signal(f1, f4, fd)
+            if res is None:
+                res = {
+                    "signal": 0,
+                    "score": float("nan"),
+                    "position_size": 0.0,
+                    "take_profit": None,
+                    "stop_loss": None,
+                }
             signals.append({
                 "open_time": df_sym.at[i, "open_time"],
                 "signal": res["signal"],
