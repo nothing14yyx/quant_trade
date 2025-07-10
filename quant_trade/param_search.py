@@ -19,7 +19,6 @@ from quant_trade.backtester import (
     FEATURE_COLS_4H,
     FEATURE_COLS_D1,
     MODEL_PATHS,
-    convert_model_paths,
     simulate_trades,
 )
 from quant_trade.utils.db import load_config, connect_mysql
@@ -549,7 +548,7 @@ def run_param_search(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rows", type=int, default=20000, help="只取最近 N 行数据")
+    parser.add_argument("--rows", type=int, default=50000, help="只取最近 N 行数据")
     parser.add_argument(
         "--method",
         choices=["grid", "optuna"],
