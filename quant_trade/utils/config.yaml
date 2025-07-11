@@ -329,6 +329,8 @@ model_params:
     bagging_freq: 1
     scale_pos_weight: 6       # ★ 新增，补偿空头稀缺
 
+history_window: 796
+
 # Δ-boost 配置：关键指标与参数
 delta_boost:
   core_keys:
@@ -348,12 +350,12 @@ delta_boost:
       - macd_hist_d1
       - ema_diff_d1
   params:
-    rsi: [5, 1.0, 0.04526603246086078]
-    macd_hist: [0.002, 100.0, 0.031333887062442826]
-    ema_diff: [0.001, 100.0, 0.040819253250048815]
-    atr_pct: [0.002, 100.0, 0.04493306204524865]
-    vol_ma_ratio: [0.2, 1.0, 0.043786938847022186]
-    funding_rate: [0.0005, 10000, 0.04007440671341417]
+    rsi: [5, 1.0, 0.05043114777623858]
+    macd_hist: [0.002, 100.0, 0.03942385730558927]
+    ema_diff: [0.001, 100.0, 0.04904598427292712]
+    atr_pct: [0.002, 100.0, 0.037479009379465925]
+    vol_ma_ratio: [0.2, 1.0, 0.04618080097085434]
+    funding_rate: [0.0005, 10000, 0.026829286180939764]
 
 
 vote_system:
@@ -400,7 +402,7 @@ position_coeff:
   low_vol_ratio: 0.3
 signal_threshold:
   # mode: sigmoid      # 可选：sigmoid / double
-  base_th: 0.05      # 原 dynamic_th_final 的初始值
+  base_th: 0.08303818065024213      # 原 dynamic_th_final 的初始值
   gamma: 0.9        # 过渡宽度
   min_pos: 0.05      # pos_size < 0.10 则 direction = 0
   quantile: 0.70
