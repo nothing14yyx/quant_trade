@@ -213,6 +213,8 @@ def run_single_backtest(
         results.append({"symbol": symbol, "ret": total_ret, "sharpe": symbol_sharpe})
 
     port_rets = np.asarray(port_rets, dtype=float)
+    if port_rets.size == 0:
+        logger.warning("no trades generated for current parameters")
     if len(port_rets) >= 2 and port_rets.std() != 0:
         sharpe = port_rets.mean() / port_rets.std() * np.sqrt(len(port_rets))
     else:
@@ -395,6 +397,9 @@ def run_param_search(
             delayed(eval_params)(p) for p in tqdm(grid, desc="Grid Search")
         )
 
+        if all(r[4] == 0 for r in results):
+            raise ValueError("no trades found during parameter search")
+
         best = None
         best_metric = -np.inf
         for metric, params, tot_ret, sharpe, trade_count in results:
@@ -533,11 +538,15 @@ def run_param_search(
                 mean_ret,
                 mean_sharpe,
             )
+            trial.set_user_attr("trades", trades)
             if np.isnan(mean_sharpe):
                 return -100.0  # 给可比较的负分，避免 -inf
             return mean_sharpe
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=trials, show_progress_bar=True)
+
+        if all(t.user_attrs.get("trades", 0) == 0 for t in study.trials):
+            raise ValueError("no trades found during parameter search")
 
         logger.info(
             "best params: %s best_sharpe: %.6f", study.best_params, study.best_value
