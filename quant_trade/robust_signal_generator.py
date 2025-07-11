@@ -154,7 +154,7 @@ class RobustSignalGeneratorConfig:
     feature_cols_1h: list[str]
     feature_cols_4h: list[str]
     feature_cols_d1: list[str]
-    history_window: int = 532
+    history_window: int = 679
     symbol_categories: dict[str, str] | None = None
     config_path: str | Path = CONFIG_PATH
     core_keys: dict | None = None
@@ -183,7 +183,7 @@ class RobustSignalGeneratorConfig:
             feature_cols_1h=collect_feature_cols(cfg, "1h"),
             feature_cols_4h=collect_feature_cols(cfg, "4h"),
             feature_cols_d1=collect_feature_cols(cfg, "d1"),
-            history_window=cfg.get("history_window", 532),
+            history_window=cfg.get("history_window", 679),
             symbol_categories=cfg.get("symbol_categories"),
             config_path=path,
             core_keys=db_cfg.get("core_keys"),
@@ -456,12 +456,12 @@ class RobustSignalGenerator:
     }
 
     DELTA_PARAMS = {
-        "rsi": (5, 1.0, 0.031292080513122614),
-        "macd_hist": (0.002, 100.0, 0.037462440413983014),
-        "ema_diff": (0.001, 100.0, 0.027960397906668728),
-        "atr_pct": (0.002, 100.0, 0.0422716372634234),
-        "vol_ma_ratio": (0.2, 1.0, 0.03065136210447766),
-        "funding_rate": (0.0005, 10000, 0.041294804739983745),
+        "rsi": (5, 1.0, 0.041240513465936865),
+        "macd_hist": (0.002, 100.0, 0.04692765796003099),
+        "ema_diff": (0.001, 100.0, 0.027575018892921296),
+        "atr_pct": (0.002, 100.0, 0.043846952847679616),
+        "vol_ma_ratio": (0.2, 1.0, 0.040166055587889486),
+        "funding_rate": (0.0005, 10000, 0.04853152284745718),
         "close_vs_pivot": (0.01, 20, 0.04),
         "close_vs_vpoc": (0.01, 20, 0.04),
     }
@@ -617,13 +617,13 @@ class RobustSignalGenerator:
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         _base_weights = {
-            "ai": 0.20850752812469947,
-            "trend": 0.12570196290133762,
-            "momentum": 0.14104267102249138,
-            "volatility": 0.22055038059448526,
-            "volume": 0.1268748814995512,
-            "sentiment": 0.15211704732422088,
-            "funding": 0.08411198443256487,
+            "ai": 0.16845787222555247,
+            "trend": 0.10379786570269561,
+            "momentum": 0.14680674356612294,
+            "volatility": 0.23651731361188078,
+            "volume": 0.13898561995072503,
+            "sentiment": 0.050855019988969595,
+            "funding": 0.15615537150904193,
         }
         total_w = sum(_base_weights.values())
         if total_w <= 0:
