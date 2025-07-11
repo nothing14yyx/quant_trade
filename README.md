@@ -138,6 +138,9 @@ signal_threshold:
 python param_search.py --method optuna --trials 50
 ```
 
+若脚本抛出 `ValueError("no trades found during parameter search")`，请检查
+`features` 表是否含有数据，并确认 `generate_signal` 是否能正常返回信号。
+
 回测脚本 `backtester.py` 支持 `--recent-days N` 参数，可只回测最近 N 天的数据，例如：
 
 ```bash
