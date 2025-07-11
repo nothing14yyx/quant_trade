@@ -111,9 +111,8 @@ def test_param_search_success(monkeypatch, caplog):
     monkeypatch.setattr(backtester, "simulate_trades", lambda *a, **k: pd.DataFrame())
 
     with caplog.at_level("INFO"):
-        param_search.run_param_search(method="grid", trials=1, tune_delta=False)
-
-    assert any("best params:" in record.getMessage() for record in caplog.records)
+        with pytest.raises(ValueError, match="no trades found during parameter search"):
+            param_search.run_param_search(method="grid", trials=1, tune_delta=False)
 
 
 def test_param_search_cv(monkeypatch):
@@ -148,7 +147,8 @@ def test_param_search_cv(monkeypatch):
 
     monkeypatch.setattr(param_search, "run_single_backtest", fake_backtest)
 
-    param_search.run_param_search(method="grid", tune_delta=False, n_splits=2)
+    with pytest.raises(ValueError, match="no trades found during parameter search"):
+        param_search.run_param_search(method="grid", tune_delta=False, n_splits=2)
 
     assert len(calls) == 2
 
@@ -181,6 +181,5 @@ def test_param_search_nan_metric(monkeypatch):
         lambda *a, **k: (np.nan, np.nan, 0),
     )
 
-    with pytest.warns(None):
-        res = param_search.run_param_search(method="grid", tune_delta=False)
-    assert res == -100.0
+    with pytest.raises(ValueError, match="no trades found during parameter search"):
+        param_search.run_param_search(method="grid", tune_delta=False)
