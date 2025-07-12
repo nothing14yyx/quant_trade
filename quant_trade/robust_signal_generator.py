@@ -625,10 +625,11 @@ class RobustSignalGenerator:
             "sentiment": 0.050855019988969595,
             "funding": 0.15615537150904193,
         }
-        total_w = sum(_base_weights.values())
+        cfg_bw = get_cfg_value(cfg, "base_weights", _base_weights)
+        total_w = sum(cfg_bw.values())
         if total_w <= 0:
             total_w = 1.0
-        self.base_weights = {k: v / total_w for k, v in _base_weights.items()}
+        self.base_weights = {k: float(cfg_bw.get(k, _base_weights.get(k, 0.0))) / total_w for k in _base_weights.keys()}
 
         # 当前权重，初始与 base_weights 相同
         self.current_weights = self.base_weights.copy()
