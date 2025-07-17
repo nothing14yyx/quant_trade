@@ -2552,8 +2552,7 @@ class RobustSignalGenerator:
             oi_change=open_interest.get("oi_chg") if open_interest else None,
         )
 
-        raw_score = logic_score * env_score
-        fused_score = raw_score * (1 - self.risk_adjust_factor)
+        fused_score *= 1 - self.risk_adjust_factor
         if abs(fused_score) < self.risk_adjust_threshold:
             return None
 
