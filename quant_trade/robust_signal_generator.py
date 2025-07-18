@@ -1130,7 +1130,8 @@ class RobustSignalGenerator:
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
         min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
-        dynamic_min = min_pos * math.exp(-self.risk_scale * risk_score)
+        # 当风险评分升高时提升仓位下限，确保高风险环境下更谨慎
+        dynamic_min = min_pos * math.exp(self.risk_scale * risk_score)
         if pos_size < dynamic_min:
             direction, pos_size = 0, 0.0
             if low_vol_flag:
@@ -1148,8 +1149,28 @@ class RobustSignalGenerator:
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
     def get_ai_score(self, features, model_up, model_down, calibrator_up=None, calibrator_down=None):
-        """根据上下模型概率计算AI得分"""
-        return self.ai_predictor.get_ai_score(features, model_up, model_down, calibrator_up, calibrator_down)
+        """根据上涨/下跌模型概率差值计算 AI 得分。
+
+        ``features`` 可以是字典、Series 或单行 DataFrame。若未包含模型
+        训练时的所有列, 本方法会自动从 ``model_up``、``model_down`` 中
+        的 ``"features"`` 列表取值构建输入。
+        """
+
+        if isinstance(features, pd.DataFrame):
+            if not len(features.index):
+                features = {}
+            else:
+                features = features.iloc[0].to_dict()
+        elif isinstance(features, pd.Series):
+            features = features.to_dict()
+
+        return self.ai_predictor.get_ai_score(
+            features,
+            model_up,
+            model_down,
+            calibrator_up,
+            calibrator_down,
+        )
 
     def get_ai_score_cls(self, features, model_dict):
         """从单个分类模型计算AI得分"""
