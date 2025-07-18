@@ -1130,7 +1130,8 @@ class RobustSignalGenerator:
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
         min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
-        dynamic_min = min_pos * math.exp(-self.risk_scale * risk_score)
+        # 当风险评分升高时提升仓位下限，确保高风险环境下更谨慎
+        dynamic_min = min_pos * math.exp(self.risk_scale * risk_score)
         if pos_size < dynamic_min:
             direction, pos_size = 0, 0.0
             if low_vol_flag:
