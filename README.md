@@ -114,7 +114,7 @@ risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
 更易触发信号。
 
 示例，若在高频或小仓位策略中需要更积极的入场，可在 `utils/config.yaml`
-中调整：
+中调整（`signal_threshold` 位于配置根目录）：
 
 ```yaml
 th_window: 80
