@@ -590,6 +590,7 @@ def test_short_momentum_and_order_book():
     }
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
+    rsg.risk_manager.calc_risk = lambda *a, **k: 0.0
 
     res = rsg.generate_signal(
         feats_1h,
@@ -714,6 +715,7 @@ def test_order_book_momentum_threshold():
     }
     feats_4h = {'atr_pct_4h': 0}
     feats_d1 = {}
+    rsg.risk_manager.calc_risk = lambda *a, **k: 0.0
 
     res = rsg.generate_signal(
         feats_1h,
