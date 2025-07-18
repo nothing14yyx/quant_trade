@@ -57,3 +57,25 @@ base_weights:
     assert rsg.base_weights == pytest.approx(expected)
     rsg.stop_weight_update_thread()
 
+
+def test_signal_threshold_from_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = tmp_path / "cfg.yml"
+    cfg_path.write_text(
+        """
+signal_threshold:
+  base_th: 0.2
+""",
+        encoding="utf-8",
+    )
+    cfg = RobustSignalGeneratorConfig(
+        model_paths={},
+        feature_cols_1h=[],
+        feature_cols_4h=[],
+        feature_cols_d1=[],
+        config_path=cfg_path,
+    )
+    rsg = RobustSignalGenerator(cfg)
+    assert rsg.signal_threshold_cfg["base_th"] == pytest.approx(0.2)
+    rsg.stop_weight_update_thread()
+
