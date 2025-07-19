@@ -26,6 +26,7 @@ from .config_manager import ConfigManager
 from .ai_model_predictor import AIModelPredictor
 from .risk_manager import RiskManager
 from .feature_processor import FeatureProcessor
+from .constants import ZeroReason
 
 logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
@@ -1103,10 +1104,10 @@ class RobustSignalGenerator:
         exit_mult: float,
         consensus_all: bool = False,
     ) -> tuple[float, int, float, str | None]:
-        """Calculate final position size and tier given direction and risk factors.
+        """Calculate final position size and tier.
 
-        Also return a ``zero_reason`` when ``pos_size`` is reduced to zero so the
-        caller can trace why no position will be taken.
+        当 ``pos_size`` 为零时会返回 ``zero_reason``，其值来源于 :class:`ZeroReason`，
+        便于上层记录仓位被清零的原因。
         """
 
         tier = base_coeff * abs(grad_dir)
@@ -1122,7 +1123,8 @@ class RobustSignalGenerator:
         pos_size *= crowding_factor
         if direction == 0:
             pos_size = 0.0
-            zero_reason = "no_direction"
+            # 无趋势方向时不做仓位
+            zero_reason = ZeroReason.NO_DIRECTION.value
 
         if (
             regime == "range"
@@ -1145,9 +1147,11 @@ class RobustSignalGenerator:
         if pos_size < dynamic_min:
             direction, pos_size = 0, 0.0
             if low_vol_flag:
-                zero_reason = "vol_ratio"
+                # 低量能环境触发减半，最终仓位仍低于下限
+                zero_reason = ZeroReason.VOL_RATIO.value
             else:
-                zero_reason = "min_pos"
+                # 仓位低于动态下限
+                zero_reason = ZeroReason.MIN_POS.value
 
         # 4h 周期 veto 逻辑已停用
         # if direction == 1 and scores.get("4h", 0) < -self.veto_level:
@@ -2928,10 +2932,18 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
+
+        if weak_vote:
+            direction = 0
+            pos_size = 0.0
+            # 多因子投票强度不足，直接过滤
+            zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
+
         if funding_conflicts > self.veto_level:
             direction = 0
             pos_size = 0.0
-            zero_reason = zero_reason or "funding_conflict"
+            # 资金费率多次冲突，观望
+            zero_reason = zero_reason or ZeroReason.FUNDING_CONFLICT.value
 
         if risk_info.get("oi_overheat"):
             pos_size *= 0.5
@@ -2943,7 +2955,8 @@ class RobustSignalGenerator:
         if conflict_filter_triggered:
             pos_size = 0.0
             direction = 0
-            zero_reason = zero_reason or "conflict_filter"
+            # 因子冲突过滤触发
+            zero_reason = zero_reason or ZeroReason.CONFLICT_FILTER.value
 
         price = (raw_f1h or std_1h).get("close", 0)
         if raw_f4h is not None and "atr_pct_4h" in raw_f4h:
@@ -2981,6 +2994,7 @@ class RobustSignalGenerator:
                 if stop_loss is not None:
                     stop_loss *= 1.2
         if rebound_flag and direction == 1 and pos_size < tier * 0.2:
+            # 超跌反弹时强制给最小仓位并清除归零原因
             pos_size = tier * 0.2
             zero_reason = None
 
@@ -3053,6 +3067,7 @@ class RobustSignalGenerator:
             "signal": int(direction),
             "score": final_score,
             "position_size": float(round(pos_size, 4)),
+            # 仅在仓位为零时记录原因，便于前端追踪
             "zero_reason": zero_reason if pos_size == 0 else None,
             "take_profit": take_profit,
             "stop_loss": stop_loss,
