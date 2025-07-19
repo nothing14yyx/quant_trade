@@ -1,0 +1,21 @@
+# 示例配置文件，仅展示关键字段
+binance:
+  api_key: "${BINANCE_API_KEY}"
+  api_secret: "${BINANCE_API_SECRET}"
+
+mysql:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "${MYSQL_PASSWORD}"
+  database: "quant_trading"
+
+signal_threshold:
+  base_th: 0.08
+  quantile: 0.80
+  rev_boost: 0.15  # detect_reversal 命中时加分
+
+risk_adjust_threshold: 0.03  # 得分绝对值低于该值不会入场
+veto_conflict_count: 2       # funding 冲突达到该数即放弃信号
+min_trend_align: 2           # 趋势方向至少有 N 个周期一致
+veto_level: 0.9
