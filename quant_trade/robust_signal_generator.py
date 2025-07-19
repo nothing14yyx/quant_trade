@@ -609,7 +609,7 @@ class RobustSignalGenerator:
 
         self.max_position = get_cfg_value(cfg, "max_position", 0.3)
         self.risk_scale = get_cfg_value(cfg, "risk_scale", 1.0)
-        self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 1)
+        self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 3)
         self.th_down_d1 = get_cfg_value(self.cfg, "th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
         self.th_window = th_window
@@ -737,7 +737,7 @@ class RobustSignalGenerator:
             "veto_level": 0.7,
             "ic_scores": {},
             "th_down_d1": 0.74,
-            "min_trend_align": 1,
+            "min_trend_align": 3,
             "_ai_score_cache": OrderedDict(),
             "_factor_cache": OrderedDict(),
             "_factor_score_cache": OrderedDict(),
@@ -2811,10 +2811,8 @@ class RobustSignalGenerator:
         st1 = int(np.sign(std_1h.get("supertrend_dir_1h", 0)))
         st4 = int(np.sign(std_4h.get("supertrend_dir_4h", 0))) if std_4h else 0
         stdir = int(np.sign(std_d1.get("supertrend_dir_d1", 0))) if std_d1 else 0
-        gd = int(np.sign(grad_dir))
-        if all(v != 0 for v in (st1, st4, stdir)):
-            if not (st1 == gd == st4 == stdir):
-                return None
+        st_sum = st1 + st4 + stdir
+        st_dir = int(np.sign(st_sum)) if st_sum != 0 else 0
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
         if weak_vote:
             direction = 0
@@ -2849,6 +2847,8 @@ class RobustSignalGenerator:
             for p in ("1h", "4h", "d1"):
                 if np.sign(fs[p]["trend"]) == direction:
                     align_count += 1
+            if st_dir != 0 and st_dir == direction:
+                align_count += 1
             min_align = self.min_trend_align if regime == "trend" else max(
                 self.min_trend_align - 1, 0
             )
