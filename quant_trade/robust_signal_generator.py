@@ -584,6 +584,7 @@ class RobustSignalGenerator:
         self.oi_scale = get_cfg_value(oi_cfg, "scale", 0.8)
         self.max_same_direction_rate = get_cfg_value(oi_cfg, "crowding_threshold", 0.95)
         self.veto_level = get_cfg_value(cfg, "veto_level", 0.7)
+        self.veto_conflict_count = get_cfg_value(cfg, "veto_conflict_count", 1)
         self.flip_coeff = get_cfg_value(cfg, "flip_coeff", 0.3)
         cw_cfg = get_cfg_value(cfg, "cycle_weight", {})
         self.cycle_weight = {
@@ -735,6 +736,7 @@ class RobustSignalGenerator:
             "cycle_weight": {"strong": 1.2, "weak": 0.8, "opposite": 0.5},
             "flip_coeff": 0.3,
             "veto_level": 0.7,
+            "veto_conflict_count": 1,
             "ic_scores": {},
             "th_down_d1": 0.74,
             "min_trend_align": 1,
@@ -2552,8 +2554,8 @@ class RobustSignalGenerator:
                 penalty = min(abs(f_rate) * 20, 0.20)
                 fused_score *= 1 - penalty
                 funding_conflicts += 1
-        if funding_conflicts >= 2:
-            fused_score *= 0.85 ** funding_conflicts
+        if funding_conflicts >= self.veto_conflict_count:
+            return None
 
         fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
             fused_score,
