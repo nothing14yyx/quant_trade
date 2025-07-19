@@ -598,7 +598,9 @@ class RobustSignalGenerator:
         risk_adj_cfg = get_cfg_value(cfg, "risk_adjust", {})
         self.risk_adjust_factor = get_cfg_value(risk_adj_cfg, "factor", 0.9)
         self.risk_adjust_threshold = get_cfg_value(
-            cfg, "risk_adjust_threshold", get_cfg_value(risk_adj_cfg, "threshold", 0.01)
+            cfg,
+            "risk_adjust_threshold",
+            0.03,
         )
 
         protect_cfg = get_cfg_value(cfg, "protection_limits", {})
