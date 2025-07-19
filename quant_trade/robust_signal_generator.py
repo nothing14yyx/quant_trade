@@ -2763,6 +2763,12 @@ class RobustSignalGenerator:
             strong_min,
             getattr(self, "signal_filters", {}).get("conf_min", 1),
         )
+        weak_vote = (
+            abs(vote)
+            < getattr(self, "signal_filters", {}).get("min_vote", 0)
+            or conf_vote
+            < getattr(self, "signal_filters", {}).get("confidence_vote", 0)
+        )
         if abs(vote) >= strong_min:
             fused_score *= max(1, conf_vote)
 
@@ -2810,6 +2816,8 @@ class RobustSignalGenerator:
             if not (st1 == gd == st4 == stdir):
                 return None
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
+        if weak_vote:
+            direction = 0
 
         if regime == "range":
             atr_v = (raw_f1h or std_1h).get("atr_pct_1h")
@@ -2880,6 +2888,10 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
+        if weak_vote:
+            direction = 0
+            pos_size = 0.0
+            zero_reason = zero_reason or "vote_filter"
         if funding_conflicts > self.veto_level:
             direction = 0
             pos_size = 0.0
