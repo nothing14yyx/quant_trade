@@ -29,11 +29,12 @@ def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
     若捕获到 BinanceAPIException 且 code 为 -1003，则额外延长等待时间，
     以避免持续触发限速错误。
     """
-    exc = None
+    last_exc = None
     for i in range(retries):
         try:
             return fn()
         except retry_on as exc:
+            last_exc = exc
             delay = backoff * (2 ** i)
             if isinstance(exc, BinanceAPIException) and getattr(exc, "code", None) == -1003:
                 delay *= 5
@@ -43,7 +44,7 @@ def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
             time.sleep(delay)
     raise RuntimeError(
         f"Failed after {retries} retries for {fn.__qualname__}"
-    ) from exc
+    ) from last_exc
 
 
 def compute_vix_proxy(funding_rate: Optional[float], oi_chg: Optional[float]) -> Optional[float]:
