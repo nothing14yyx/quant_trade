@@ -3074,6 +3074,183 @@ class RobustSignalGenerator:
             "details": final_details,
         }
 
+    def _precheck_and_direction(
+        self,
+        fused_score: float,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        std_15m: dict,
+        raw_f1h: dict,
+        raw_f4h: dict,
+        raw_fd1: dict,
+        raw_f15m: dict,
+        ai_scores: dict,
+        fs: dict,
+        scores: dict,
+        local_details: dict,
+        consensus_all: bool,
+        consensus_14: bool,
+        vol_preds: dict,
+        rise_preds: dict,
+        drawdown_preds: dict,
+        confirm_15m: float,
+        cache: dict,
+    ):
+        """预检查 fused_score，并给出方向及弱票标记。
+
+        若 ``fused_score`` 为 NaN，则立即返回无信号结果，同时更新缓存。
+        """
+
+        if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
+            logging.debug("Fused score NaN, returning 0 signal")
+            self._last_score = fused_score
+            with self._lock:
+                self._prev_raw["15m"] = std_15m
+                self._prev_raw["1h"] = std_1h
+                self._prev_raw["4h"] = std_4h
+                self._prev_raw["d1"] = std_d1
+                for p, raw in [("15m", raw_f15m), ("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+                    maxlen = 4 if p in ("15m", "1h") else 2
+                    self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
+            self._last_signal = 0
+            self._cooldown = 0
+            result = {
+                "signal": 0,
+                "score": float("nan"),
+                "position_size": 0.0,
+                "take_profit": None,
+                "stop_loss": None,
+                "details": {
+                    "ai_1h": ai_scores["1h"],
+                    "ai_4h": ai_scores["4h"],
+                    "ai_d1": ai_scores["d1"],
+                    "factors_1h": fs["1h"],
+                    "factors_4h": fs["4h"],
+                    "factors_d1": fs["d1"],
+                    "score_1h": scores["1h"],
+                    "score_4h": scores["4h"],
+                    "score_d1": scores["d1"],
+                    "strong_confirm_4h": local_details.get("strong_confirm_4h"),
+                    "consensus_14": consensus_14,
+                    "consensus_all": consensus_all,
+                    "vol_pred_1h": vol_preds.get("1h"),
+                    "vol_pred_4h": vol_preds.get("4h"),
+                    "vol_pred_d1": vol_preds.get("d1"),
+                    "rise_pred_1h": rise_preds.get("1h"),
+                    "rise_pred_4h": rise_preds.get("4h"),
+                    "rise_pred_d1": rise_preds.get("d1"),
+                    "drawdown_pred_1h": drawdown_preds.get("1h"),
+                    "drawdown_pred_4h": drawdown_preds.get("4h"),
+                    "drawdown_pred_d1": drawdown_preds.get("d1"),
+                    "funding_conflicts": 0,
+                    "confirm_15m": confirm_15m,
+                    "note": "fused_score was NaN",
+                },
+            }
+            return result, 0, True
+
+        direction = int(np.sign(fused_score)) if fused_score else 0
+        return None, direction, False
+
+    def _risk_checks(
+        self,
+        fused_score: float,
+        logic_score: float,
+        env_score: float,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        raw_f1h: dict,
+        raw_f4h: dict,
+        raw_fd1: dict,
+        vol_preds: dict,
+        open_interest: dict | None,
+        all_scores_list,
+        rev_dir: int,
+        cache: dict,
+        global_metrics: dict | None,
+        symbol: str | None,
+    ):
+        """执行资金费率、拥挤度等风险检查"""
+
+        return self.apply_risk_filters(
+            fused_score,
+            logic_score,
+            env_score,
+            std_1h,
+            std_4h,
+            std_d1,
+            raw_f1h,
+            raw_f4h,
+            raw_fd1,
+            vol_preds,
+            open_interest,
+            all_scores_list,
+            rev_dir,
+            cache,
+            global_metrics,
+            symbol,
+        )
+
+    def _calc_position_and_sl_tp(
+        self,
+        fused_score: float,
+        risk_info: dict,
+        logic_score: float,
+        env_score: float,
+        ai_scores: dict,
+        fs: dict,
+        scores: dict,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        std_15m: dict,
+        raw_f1h: dict,
+        raw_f4h: dict,
+        raw_fd1: dict,
+        raw_f15m: dict,
+        vol_preds: dict,
+        rise_preds: dict,
+        drawdown_preds: dict,
+        short_mom: float,
+        ob_imb: float,
+        confirm_15m: float,
+        extreme_reversal: bool,
+        cache: dict,
+        symbol: str | None,
+        ts=None,
+    ):
+        """根据风险结果计算仓位及止盈止损"""
+
+        return self.finalize_position(
+            fused_score,
+            risk_info,
+            logic_score,
+            env_score,
+            ai_scores,
+            fs,
+            scores,
+            std_1h,
+            std_4h,
+            std_d1,
+            std_15m,
+            raw_f1h,
+            raw_f4h,
+            raw_fd1,
+            raw_f15m,
+            vol_preds,
+            rise_preds,
+            drawdown_preds,
+            short_mom,
+            ob_imb,
+            confirm_15m,
+            extreme_reversal,
+            cache,
+            symbol,
+            ts,
+        )
+
     def _filter_and_finalize(
         self,
         prepared: dict,
@@ -3240,76 +3417,93 @@ class RobustSignalGenerator:
         cache = prepared["cache"]
         rev_dir = prepared["rev_dir"]
 
-        # ===== 7. 如果 fused_score 为 NaN，直接返回无信号 =====
-        if fused_score is None or (isinstance(fused_score, float) and np.isnan(fused_score)):
-            logging.debug("Fused score NaN, returning 0 signal")
-            self._last_score = fused_score
-            with self._lock:
-                self._prev_raw["15m"] = std_15m
-                self._prev_raw["1h"] = std_1h
-                self._prev_raw["4h"] = std_4h
-                self._prev_raw["d1"] = std_d1
-                for p, raw in [("15m", raw_f15m), ("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                    maxlen = 4 if p in ("15m", "1h") else 2
-                    self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
-            self._last_signal = 0
-            self._cooldown = 0
-            return {
-                'signal': 0,
-                'score': float('nan'),
-                'position_size': 0.0,
-                'take_profit': None,
-                'stop_loss': None,
-                'details': {
-                    'ai_1h': ai_scores['1h'],   'ai_4h': ai_scores['4h'],   'ai_d1': ai_scores['d1'],
-                    'factors_1h': fs['1h'],     'factors_4h': fs['4h'],     'factors_d1': fs['d1'],
-                    'score_1h': scores['1h'],   'score_4h': scores['4h'],   'score_d1': scores['d1'],
-                    'strong_confirm_4h': local_details.get('strong_confirm_4h'),
-                    'consensus_14': consensus_14, 'consensus_all': consensus_all,
-                    'vol_pred_1h': vol_preds.get('1h'),
-                    'vol_pred_4h': vol_preds.get('4h'),
-                    'vol_pred_d1': vol_preds.get('d1'),
-                    'rise_pred_1h': rise_preds.get('1h'),
-                    'rise_pred_4h': rise_preds.get('4h'),
-                    'rise_pred_d1': rise_preds.get('d1'),
-                    'drawdown_pred_1h': drawdown_preds.get('1h'),
-                    'drawdown_pred_4h': drawdown_preds.get('4h'),
-                    'drawdown_pred_d1': drawdown_preds.get('d1'),
-                    'funding_conflicts': 0,
-                    'confirm_15m': confirm_15m,
-                    'note': 'fused_score was NaN'
-                }
-            }
+        pre_res, _, _ = self._precheck_and_direction(
+            fused_score,
+            std_1h,
+            std_4h,
+            std_d1,
+            std_15m,
+            raw_f1h,
+            raw_f4h,
+            raw_fd1,
+            raw_f15m,
+            ai_scores,
+            fs,
+            scores,
+            local_details,
+            consensus_all,
+            consensus_14,
+            vol_preds,
+            rise_preds,
+            drawdown_preds,
+            confirm_15m,
+            cache,
+        )
+        if pre_res is not None:
+            return pre_res
 
-        result, fused_score, base_th, risk_info = self._filter_and_finalize(
-            prepared,
+        risk_info = self._risk_checks(
+            fused_score,
+            logic_score,
+            env_score,
+            std_1h,
+            std_4h,
+            std_d1,
+            raw_f1h,
+            raw_f4h,
+            raw_fd1,
+            vol_preds,
+            open_interest,
+            all_scores_list,
+            rev_dir,
             {
-                "fused_score": fused_score,
-                "logic_score": logic_score,
-                "env_score": env_score,
-                "fs": fs,
-                "scores": scores,
-                "ai_scores": ai_scores,
-                "vol_preds": vol_preds,
-                "rise_preds": rise_preds,
-                "drawdown_preds": drawdown_preds,
-                "short_mom": short_mom,
-                "ob_imb": ob_imb,
-                "confirm_15m": confirm_15m,
                 "oi_overheat": oi_overheat,
                 "th_oi": th_oi,
                 "oi_chg": oi_chg,
-                "consensus_all": consensus_all,
-                "consensus_14": consensus_14,
-                "consensus_4d1": consensus_4d1,
-                "local_details": local_details,
-                "extreme_reversal": extreme_reversal,
+                "history_scores": cache["history_scores"],
             },
-            all_scores_list,
             global_metrics,
-            open_interest,
             symbol,
         )
+        if risk_info is None:
+            logger.debug("step=%s fused=%.3f risk filtered", ts, fused_score)
+            return None
+        risk_info["logic_score"] = logic_score
+        risk_info["env_score"] = env_score
+        risk_info["consensus_all"] = consensus_all
+        risk_info["consensus_14"] = consensus_14
+        risk_info["consensus_4d1"] = consensus_4d1
+        risk_info["local_details"] = local_details
+
+        result = self._calc_position_and_sl_tp(
+            risk_info["fused_score"],
+            risk_info,
+            logic_score,
+            env_score,
+            ai_scores,
+            fs,
+            scores,
+            std_1h,
+            std_4h,
+            std_d1,
+            std_15m,
+            raw_f1h,
+            raw_f4h,
+            raw_fd1,
+            raw_f15m,
+            vol_preds,
+            rise_preds,
+            drawdown_preds,
+            short_mom,
+            ob_imb,
+            confirm_15m,
+            extreme_reversal,
+            cache,
+            symbol,
+            ts,
+        )
+        base_th = risk_info["base_th"]
+        fused_score = risk_info["fused_score"]
         if result is None:
             logger.debug(
                 "step=%s fused=%.3f th=%.3f position skipped",
