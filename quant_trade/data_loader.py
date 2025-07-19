@@ -834,7 +834,12 @@ class DataLoader:
         df = df[df["volume"] != 0]
         after = len(df)
         if before - after > 0:
-            print(f"[{symbol}-{interval}] K线全为0/NaN的行已剔除：{before - after} 条")
+            logger.info(
+                "[%s-%s] K线全为0/NaN的行已剔除：%s 条",
+                symbol,
+                interval,
+                before - after,
+            )
 
         # =============================================
         # 新增空表保护！！！
