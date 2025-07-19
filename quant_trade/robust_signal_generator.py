@@ -549,7 +549,7 @@ class RobustSignalGenerator:
         filters_cfg = get_cfg_value(cfg, "signal_filters", {})
         # ↓ 放宽阈值，防止信号被过度过滤
         self.signal_filters = {
-            "min_vote": get_cfg_value(filters_cfg, "min_vote", 2),
+            "min_vote": get_cfg_value(filters_cfg, "min_vote", 1),
             "confidence_vote": get_cfg_value(filters_cfg, "confidence_vote", 0.12),
             "conf_min": get_cfg_value(filters_cfg, "conf_min", 0.25),
         }
@@ -2587,7 +2587,7 @@ class RobustSignalGenerator:
             oi_change=open_interest.get("oi_chg") if open_interest else None,
         )
 
-        fused_score *= 1 - self.risk_adjust_factor
+        fused_score *= 1 - self.risk_adjust_factor * risk_score
         if abs(fused_score) < self.risk_adjust_threshold:
             return None
 
@@ -3000,7 +3000,7 @@ class RobustSignalGenerator:
 
         # 使用传入的逻辑与环境得分计算最终得分
         score_raw = logic_score * env_score
-        score_raw *= 1 - self.risk_adjust_factor
+        score_raw *= 1 - self.risk_adjust_factor * risk_score
         if vote_sign != 0 and np.sign(score_raw) != vote_sign:
             strong_min = max(self.vote_params.get("strong_min", 1), 1)
             penalty = abs(vote) / strong_min
