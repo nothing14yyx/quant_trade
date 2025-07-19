@@ -12,6 +12,7 @@ from .data_loader import DataLoader
 from .feature_engineering import FeatureEngineer
 from .robust_signal_generator import RobustSignalGenerator
 from .offline_price_table import generate_offline_price_table
+from .constants import ZeroReason
 
 
 def __getattr__(name: str):
@@ -25,5 +26,6 @@ __all__ = [
     "DataLoader",
     "FeatureEngineer",
     "RobustSignalGenerator",
+    "ZeroReason",
     "generate_offline_price_table",
 ]
