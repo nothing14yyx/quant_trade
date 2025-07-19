@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import logging
 import pandas as pd
 import numpy as np
 import yaml
@@ -9,6 +10,8 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGeneratorConfig,
 )
 from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
+
+logger = logging.getLogger(__name__)
 
 # 配置文件路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
@@ -312,13 +315,13 @@ def run_backtest(*, recent_days: int | None = None):
 
         # 保存每个币种明细
         trades_df.to_csv(f'backtest_logs/{symbol}_fusion_trades.csv', index=False)
-        print(f"{symbol} 回测完成，信号数：{len(trades_df)}")
+        logger.info("%s 回测完成，信号数：%s", symbol, len(trades_df))
 
     # 汇总
     results_df = pd.DataFrame(results)
     results_df.to_csv('backtest_fusion_summary.csv', index=False)
-    print("========== 回测汇总 ==========")
-    print(results_df.to_string(index=False))
+    logger.info("========== 回测汇总 ==========")
+    logger.info("%s", results_df.to_string(index=False))
 
     # 所有明细也合并导出一份（可选）
     all_trades = pd.concat(trades_all, ignore_index=True)
