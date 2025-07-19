@@ -109,6 +109,8 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
     "_factor_cache",
     "_factor_score_cache",
     "_fuse_cache",
+    "rebound_cooldown",
+    "last_rebound_ts",
 }
 
 from dataclasses import dataclass
@@ -585,6 +587,7 @@ class RobustSignalGenerator:
         self.oi_scale = get_cfg_value(oi_cfg, "scale", 0.8)
         self.max_same_direction_rate = get_cfg_value(oi_cfg, "crowding_threshold", 0.95)
         self.veto_level = get_cfg_value(cfg, "veto_level", 0.7)
+        self.veto_conflict_count = get_cfg_value(cfg, "veto_conflict_count", 1)
         self.flip_coeff = get_cfg_value(cfg, "flip_coeff", 0.3)
         cw_cfg = get_cfg_value(cfg, "cycle_weight", {})
         self.cycle_weight = {
@@ -599,7 +602,9 @@ class RobustSignalGenerator:
         risk_adj_cfg = get_cfg_value(cfg, "risk_adjust", {})
         self.risk_adjust_factor = get_cfg_value(risk_adj_cfg, "factor", 0.9)
         self.risk_adjust_threshold = get_cfg_value(
-            cfg, "risk_adjust_threshold", get_cfg_value(risk_adj_cfg, "threshold", 0.01)
+            cfg,
+            "risk_adjust_threshold",
+            0.03,
         )
 
         protect_cfg = get_cfg_value(cfg, "protection_limits", {})
@@ -610,7 +615,7 @@ class RobustSignalGenerator:
 
         self.max_position = get_cfg_value(cfg, "max_position", 0.3)
         self.risk_scale = get_cfg_value(cfg, "risk_scale", 1.0)
-        self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 1)
+        self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 3)
         self.th_down_d1 = get_cfg_value(self.cfg, "th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
         self.th_window = th_window
@@ -677,6 +682,8 @@ class RobustSignalGenerator:
         self._cooldown = 0
         self._volume_checked = False
         self._equity_drawdown = 0.0
+        self.rebound_cooldown = get_cfg_value(cfg, "rebound_cooldown", 3)
+        self.last_rebound_ts = 0
 
         # 缓存计算结果，避免重复计算
         self.cache_maxsize = cache_maxsize
@@ -736,14 +743,17 @@ class RobustSignalGenerator:
             "cycle_weight": {"strong": 1.2, "weak": 0.8, "opposite": 0.5},
             "flip_coeff": 0.3,
             "veto_level": 0.7,
+            "veto_conflict_count": 1,
             "ic_scores": {},
             "th_down_d1": 0.74,
-            "min_trend_align": 1,
+            "min_trend_align": 3,
             "_ai_score_cache": OrderedDict(),
             "_factor_cache": OrderedDict(),
             "_factor_score_cache": OrderedDict(),
             "_fuse_cache": OrderedDict(),
             "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
+            "rebound_cooldown": 3,
+            "last_rebound_ts": 0,
         }
         if name in defaults:
             val = defaults[name]
@@ -955,6 +965,7 @@ class RobustSignalGenerator:
                     "oi_change_history": self.oi_change_history,
                     "_raw_history": self._raw_history,
                     "_prev_raw": self._prev_raw,
+                    "last_rebound_ts": self.last_rebound_ts,
                 }
             if symbol not in self.symbol_data:
                 self.symbol_data[symbol] = {
@@ -967,6 +978,7 @@ class RobustSignalGenerator:
                         "d1": deque(maxlen=2),
                     },
                     "_prev_raw": {p: None for p in ("15m", "1h", "4h", "d1")},
+                    "last_rebound_ts": 0,
                 }
             return self.symbol_data[symbol]
 
@@ -2556,8 +2568,8 @@ class RobustSignalGenerator:
                 penalty = min(abs(f_rate) * 20, 0.20)
                 fused_score *= 1 - penalty
                 funding_conflicts += 1
-        if funding_conflicts >= 2:
-            fused_score *= 0.85 ** funding_conflicts
+        if funding_conflicts >= self.veto_conflict_count:
+            return None
 
         fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
             fused_score,
@@ -2596,6 +2608,7 @@ class RobustSignalGenerator:
             "crowding_factor": crowding_factor,
             "crowding_adjusted": True,
             "base_th": base_th,
+            "rev_boost": rev_boost,
             "regime": regime,
             "rev_dir": rev_dir,
             "funding_conflicts": funding_conflicts,
@@ -2627,6 +2640,7 @@ class RobustSignalGenerator:
         extreme_reversal: bool,
         cache: dict,
         symbol: str | None,
+        ts=None,
     ):
         """根据阈值与信号方向计算仓位和止盈止损。
 
@@ -2655,6 +2669,7 @@ class RobustSignalGenerator:
             extreme_reversal: 超买或超卖反转标记。
             cache: 币种缓存。
             symbol: 币种符号。
+            ts: 当前时间戳。
 
         Returns:
             包含 ``signal``、``score`` 等字段的结果字典。
@@ -2776,6 +2791,20 @@ class RobustSignalGenerator:
         if abs(vote) >= strong_min:
             fused_score *= max(1, conf_vote)
 
+        if weak_vote:
+            return {
+                "signal": 0,
+                "score": fused_score,
+                "position_size": 0.0,
+                "zero_reason": "vote_filter",
+                "take_profit": None,
+                "stop_loss": None,
+                "details": {
+                    "vote": {"value": vote, "confidence": conf_vote, "ob_th": ob_th},
+                    "zero_reason": "vote_filter",
+                },
+            }
+
         vote_sign = int(np.sign(vote))
         if vote_sign != 0 and np.sign(fused_score) != vote_sign:
             strong_min = max(self.vote_params.get("strong_min", 1), 1)
@@ -2785,6 +2814,8 @@ class RobustSignalGenerator:
         rsi = raw_fd1.get("rsi_d1")
         adx = raw_fd1.get("adx_d1", 0)
         rebound_flag = False
+        reb_boost_applied = False
+        rebound_strength = 0.0
         if rsi is not None and rsi < 30:
             hist = cache.get("_raw_history", {}).get("1h", [])
             rsi_hist = [r.get("rsi_1h") for r in hist]
@@ -2802,8 +2833,17 @@ class RobustSignalGenerator:
                 rebound_flag = True
             hammer = raw_f1h.get("long_lower_shadow_1h", 0) > 0.6
             rebound_flag = rebound_flag or hammer
+            rebound_strength = max(0.0, min(1.0, (30 - float(rsi)) / 30))
             if rebound_flag:
-                fused_score += 0.3
+                last_ts = cache.get("last_rebound_ts", 0)
+                cooldown = self.rebound_cooldown * 3600
+                cur_ts = ts if ts is not None else time.time()
+                if cur_ts - last_ts >= cooldown:
+                    fused_score += risk_info.get("rev_boost", 0) * rebound_strength
+                    cache["last_rebound_ts"] = cur_ts
+                    if not symbol:
+                        self.last_rebound_ts = cur_ts
+                    reb_boost_applied = True
 
 
         cfg_th_sig = self.signal_threshold_cfg
@@ -2815,10 +2855,8 @@ class RobustSignalGenerator:
         st1 = int(np.sign(std_1h.get("supertrend_dir_1h", 0)))
         st4 = int(np.sign(std_4h.get("supertrend_dir_4h", 0))) if std_4h else 0
         stdir = int(np.sign(std_d1.get("supertrend_dir_d1", 0))) if std_d1 else 0
-        gd = int(np.sign(grad_dir))
-        if all(v != 0 for v in (st1, st4, stdir)):
-            if not (st1 == gd == st4 == stdir):
-                return None
+        st_sum = st1 + st4 + stdir
+        st_dir = int(np.sign(st_sum)) if st_sum != 0 else 0
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
         if weak_vote:
             direction = 0
@@ -2853,6 +2891,8 @@ class RobustSignalGenerator:
             for p in ("1h", "4h", "d1"):
                 if np.sign(fs[p]["trend"]) == direction:
                     align_count += 1
+            if st_dir != 0 and st_dir == direction:
+                align_count += 1
             min_align = self.min_trend_align if regime == "trend" else max(
                 self.min_trend_align - 1, 0
             )
@@ -2892,11 +2932,13 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
+
         if weak_vote:
             direction = 0
             pos_size = 0.0
             # 多因子投票强度不足，直接过滤
             zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
+
         if funding_conflicts > self.veto_level:
             direction = 0
             pos_size = 0.0
@@ -3017,6 +3059,7 @@ class RobustSignalGenerator:
             "extreme_reversal": extreme_reversal,
             "conflict_filter_triggered": conflict_filter_triggered,
             "confirm_15m": confirm_15m,
+            "reb_boost_applied": reb_boost_applied,
         }
         final_details.update(risk_info.get("local_details", {}))
 
@@ -3098,6 +3141,7 @@ class RobustSignalGenerator:
             scores["extreme_reversal"],
             prepared["cache"],
             symbol,
+            prepared.get("ts"),
         )
         return result, risk_info["fused_score"], risk_info["base_th"], risk_info
 
