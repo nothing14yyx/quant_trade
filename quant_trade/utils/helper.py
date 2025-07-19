@@ -168,25 +168,18 @@ def calc_td_sequential(close: pd.Series, lookback: int = 4) -> pd.DataFrame:
     """
 
     close = pd.to_numeric(close, errors="coerce")
-    arr = close.to_numpy(dtype="float64")
-    buy = np.zeros_like(arr, dtype="float64")
-    sell = np.zeros_like(arr, dtype="float64")
-    for i in range(arr.size):
-        if i >= lookback and not np.isnan(arr[i]) and not np.isnan(arr[i - lookback]):
-            if arr[i] < arr[i - lookback]:
-                buy[i] = buy[i - 1] + 1
-            else:
-                buy[i] = 0
+    shifted = close.shift(lookback)
+    buy_cond = (close < shifted) & close.notna() & shifted.notna()
+    sell_cond = (close > shifted) & close.notna() & shifted.notna()
 
-            if arr[i] > arr[i - lookback]:
-                sell[i] = sell[i - 1] + 1
-            else:
-                sell[i] = 0
-        else:
-            if i > 0:
-                buy[i] = 0
-                sell[i] = 0
-    df = pd.DataFrame({"td_buy_count": buy, "td_sell_count": sell}, index=close.index)
+    buy_groups = (~buy_cond).astype(int).cumsum()
+    sell_groups = (~sell_cond).astype(int).cumsum()
+
+    buy = buy_cond.astype(float).groupby(buy_groups).cumsum()
+    sell = sell_cond.astype(float).groupby(sell_groups).cumsum()
+
+    df = pd.DataFrame({"td_buy_count": buy, "td_sell_count": sell})
+    df.index = close.index
     return df
 
 
