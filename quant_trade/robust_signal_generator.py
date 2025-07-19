@@ -549,7 +549,7 @@ class RobustSignalGenerator:
         filters_cfg = get_cfg_value(cfg, "signal_filters", {})
         # ↓ 放宽阈值，防止信号被过度过滤
         self.signal_filters = {
-            "min_vote": get_cfg_value(filters_cfg, "min_vote", 2),
+            "min_vote": get_cfg_value(filters_cfg, "min_vote", 1),
             "confidence_vote": get_cfg_value(filters_cfg, "confidence_vote", 0.12),
             "conf_min": get_cfg_value(filters_cfg, "conf_min", 0.25),
         }
