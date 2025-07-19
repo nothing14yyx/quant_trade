@@ -192,6 +192,40 @@ def test_calc_td_sequential_td9():
     assert res_up['td_sell_count'].iloc[-1] == 9
 
 
+def _calc_td_sequential_loop(close: pd.Series, lookback: int = 4) -> pd.DataFrame:
+    close = pd.to_numeric(close, errors="coerce")
+    arr = close.to_numpy(dtype="float64")
+    buy = np.zeros_like(arr, dtype="float64")
+    sell = np.zeros_like(arr, dtype="float64")
+    for i in range(arr.size):
+        if i >= lookback and not np.isnan(arr[i]) and not np.isnan(arr[i - lookback]):
+            if arr[i] < arr[i - lookback]:
+                buy[i] = buy[i - 1] + 1
+            else:
+                buy[i] = 0
+
+            if arr[i] > arr[i - lookback]:
+                sell[i] = sell[i - 1] + 1
+            else:
+                sell[i] = 0
+        else:
+            if i > 0:
+                buy[i] = 0
+                sell[i] = 0
+    return pd.DataFrame({"td_buy_count": buy, "td_sell_count": sell}, index=close.index)
+
+
+def test_calc_td_sequential_vectorized_equivalent():
+    np.random.seed(0)
+    idx = pd.date_range('2020-01-01', periods=50, freq='h')
+    close = pd.Series(np.random.randn(50).cumsum() + 100, index=idx)
+
+    expected = _calc_td_sequential_loop(close)
+    result = helper.calc_td_sequential(close)
+
+    pd.testing.assert_frame_equal(result, expected)
+
+
 
 
 
