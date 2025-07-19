@@ -108,6 +108,8 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
     "_factor_cache",
     "_factor_score_cache",
     "_fuse_cache",
+    "rebound_cooldown",
+    "last_rebound_ts",
 }
 
 from dataclasses import dataclass
@@ -679,6 +681,8 @@ class RobustSignalGenerator:
         self._cooldown = 0
         self._volume_checked = False
         self._equity_drawdown = 0.0
+        self.rebound_cooldown = get_cfg_value(cfg, "rebound_cooldown", 3)
+        self.last_rebound_ts = 0
 
         # 缓存计算结果，避免重复计算
         self.cache_maxsize = cache_maxsize
@@ -747,6 +751,8 @@ class RobustSignalGenerator:
             "_factor_score_cache": OrderedDict(),
             "_fuse_cache": OrderedDict(),
             "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
+            "rebound_cooldown": 3,
+            "last_rebound_ts": 0,
         }
         if name in defaults:
             val = defaults[name]
@@ -958,6 +964,7 @@ class RobustSignalGenerator:
                     "oi_change_history": self.oi_change_history,
                     "_raw_history": self._raw_history,
                     "_prev_raw": self._prev_raw,
+                    "last_rebound_ts": self.last_rebound_ts,
                 }
             if symbol not in self.symbol_data:
                 self.symbol_data[symbol] = {
@@ -970,6 +977,7 @@ class RobustSignalGenerator:
                         "d1": deque(maxlen=2),
                     },
                     "_prev_raw": {p: None for p in ("15m", "1h", "4h", "d1")},
+                    "last_rebound_ts": 0,
                 }
             return self.symbol_data[symbol]
 
@@ -2596,6 +2604,7 @@ class RobustSignalGenerator:
             "crowding_factor": crowding_factor,
             "crowding_adjusted": True,
             "base_th": base_th,
+            "rev_boost": rev_boost,
             "regime": regime,
             "rev_dir": rev_dir,
             "funding_conflicts": funding_conflicts,
@@ -2627,6 +2636,7 @@ class RobustSignalGenerator:
         extreme_reversal: bool,
         cache: dict,
         symbol: str | None,
+        ts=None,
     ):
         """根据阈值与信号方向计算仓位和止盈止损。
 
@@ -2655,6 +2665,7 @@ class RobustSignalGenerator:
             extreme_reversal: 超买或超卖反转标记。
             cache: 币种缓存。
             symbol: 币种符号。
+            ts: 当前时间戳。
 
         Returns:
             包含 ``signal``、``score`` 等字段的结果字典。
@@ -2799,6 +2810,8 @@ class RobustSignalGenerator:
         rsi = raw_fd1.get("rsi_d1")
         adx = raw_fd1.get("adx_d1", 0)
         rebound_flag = False
+        reb_boost_applied = False
+        rebound_strength = 0.0
         if rsi is not None and rsi < 30:
             hist = cache.get("_raw_history", {}).get("1h", [])
             rsi_hist = [r.get("rsi_1h") for r in hist]
@@ -2816,8 +2829,17 @@ class RobustSignalGenerator:
                 rebound_flag = True
             hammer = raw_f1h.get("long_lower_shadow_1h", 0) > 0.6
             rebound_flag = rebound_flag or hammer
+            rebound_strength = max(0.0, min(1.0, (30 - float(rsi)) / 30))
             if rebound_flag:
-                fused_score += 0.3
+                last_ts = cache.get("last_rebound_ts", 0)
+                cooldown = self.rebound_cooldown * 3600
+                cur_ts = ts if ts is not None else time.time()
+                if cur_ts - last_ts >= cooldown:
+                    fused_score += risk_info.get("rev_boost", 0) * rebound_strength
+                    cache["last_rebound_ts"] = cur_ts
+                    if not symbol:
+                        self.last_rebound_ts = cur_ts
+                    reb_boost_applied = True
 
 
         cfg_th_sig = self.signal_threshold_cfg
@@ -3023,6 +3045,7 @@ class RobustSignalGenerator:
             "extreme_reversal": extreme_reversal,
             "conflict_filter_triggered": conflict_filter_triggered,
             "confirm_15m": confirm_15m,
+            "reb_boost_applied": reb_boost_applied,
         }
         final_details.update(risk_info.get("local_details", {}))
 
@@ -3103,6 +3126,7 @@ class RobustSignalGenerator:
             scores["extreme_reversal"],
             prepared["cache"],
             symbol,
+            prepared.get("ts"),
         )
         return result, risk_info["fused_score"], risk_info["base_th"], risk_info
 
