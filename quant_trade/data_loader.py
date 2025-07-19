@@ -356,8 +356,11 @@ class DataLoader:
 
     def update_cg_market_data(self, symbols: List[str]) -> None:
         """拉取 CoinGecko 市值信息，自动回补缺失区间"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        start_time = time.time()
         headers = self._cg_headers()
-        rows = []
+        rows: List[Dict[str, object]] = []
 
         today = pd.Timestamp.utcnow().floor("D").tz_localize(None)
         tomorrow = today + dt.timedelta(days=365)
@@ -369,17 +372,18 @@ class DataLoader:
         last_df = pd.read_sql(stmt, self.engine, params={"symbols": symbols}, parse_dates=["ts"])
         last_map = {r["symbol"]: r["ts"] for _, r in last_df.iterrows()}
 
-        for sym in symbols:
+        def fetch_symbol(sym: str) -> List[Dict[str, object]]:
+            out: List[Dict[str, object]] = []
             last_ts = last_map.get(sym)
             if last_ts is None or pd.isna(last_ts):
                 start = today - dt.timedelta(days=365)
             else:
                 start = last_ts + dt.timedelta(days=1)
             if start > today:
-                continue
+                return out
             cid = self._cg_get_id(sym)
             if not cid:
-                continue
+                return out
             self.cg_rate_limiter.acquire()
             data = _safe_retry(
                 lambda: requests.get(
@@ -400,15 +404,29 @@ class DataLoader:
             volumes = data.get("total_volumes", [])
             for p, m, v in zip(prices, m_caps, volumes):
                 ts = pd.to_datetime(p[0], unit="ms").to_pydatetime().replace(tzinfo=None)
-                rows.append({
+                out.append({
                     "symbol": sym,
                     "timestamp": ts,
                     "price": float(p[1]),
                     "market_cap": float(m[1]),
                     "total_volume": float(v[1]),
                 })
+            logger.info("[cg_market] %s fetched %s rows", sym, len(out))
             time.sleep(0.1)
+            return out
+
+        logger.info("[cg_market] fetch %s symbols…", len(symbols))
+        max_workers = min(4, max(1, len(symbols)))
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(fetch_symbol, s): s for s in symbols}
+            for f in as_completed(futures):
+                try:
+                    rows.extend(f.result())
+                except Exception as e:  # pragma: no cover - unexpected errors
+                    logger.exception("[cg_market] worker err: %s", e)
+
         if not rows:
+            logger.info("[cg_market] no new rows")
             return
         with self.engine.begin() as conn:
             conn.execute(
@@ -418,7 +436,8 @@ class DataLoader:
                 ),
                 rows,
             )
-        logger.info("[cg_market] %s rows", len(rows))
+        elapsed = time.time() - start_time
+        logger.info("[cg_market] 写入 %s 行 (%.2fs)", len(rows), elapsed)
 
     def update_cg_global_metrics(self, min_interval_hours: float = 24.0) -> None:
         """更新 CoinGecko 全局指标
