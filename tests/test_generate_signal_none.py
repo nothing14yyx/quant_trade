@@ -1,4 +1,5 @@
 import pandas as pd
+import logging
 
 import quant_trade.generate_signal_from_db as gsdb
 import quant_trade.utils.db as db
@@ -15,7 +16,7 @@ class DummySG:
         return None
 
 
-def test_main_handles_none(monkeypatch, capsys):
+def test_main_handles_none(monkeypatch, caplog):
     df = pd.DataFrame({
         "open_time": pd.date_range("2024-01-01", periods=1, freq="h"),
         "close": [1.0],
@@ -39,6 +40,6 @@ def test_main_handles_none(monkeypatch, capsys):
     monkeypatch.setattr(gsdb, "RobustSignalGenerator", lambda *a, **k: DummySG())
     monkeypatch.setattr(gsdb, "collect_feature_cols", lambda *a, **k: [])
 
-    gsdb.main("AAA")
-    out, _ = capsys.readouterr()
-    assert "Empty DataFrame" in out
+    with caplog.at_level(logging.INFO):
+        gsdb.main("AAA")
+    assert "Empty DataFrame" in caplog.text
