@@ -2772,6 +2772,20 @@ class RobustSignalGenerator:
         if abs(vote) >= strong_min:
             fused_score *= max(1, conf_vote)
 
+        if weak_vote:
+            return {
+                "signal": 0,
+                "score": fused_score,
+                "position_size": 0.0,
+                "zero_reason": "vote_filter",
+                "take_profit": None,
+                "stop_loss": None,
+                "details": {
+                    "vote": {"value": vote, "confidence": conf_vote, "ob_th": ob_th},
+                    "zero_reason": "vote_filter",
+                },
+            }
+
         vote_sign = int(np.sign(vote))
         if vote_sign != 0 and np.sign(fused_score) != vote_sign:
             strong_min = max(self.vote_params.get("strong_min", 1), 1)
@@ -2888,10 +2902,6 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
-        if weak_vote:
-            direction = 0
-            pos_size = 0.0
-            zero_reason = zero_reason or "vote_filter"
         if funding_conflicts > self.veto_level:
             direction = 0
             pos_size = 0.0
