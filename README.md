@@ -80,6 +80,15 @@ pytest -q tests
 
 无论从哪个目录运行，`RobustSignalGenerator` 都会自动解析相对模型路径，无需手动调整工作目录。
 
+## 信号生成流程
+
+```mermaid
+flowchart TD
+    A[准备特征] --> B[阶段一: 计算多周期得分]
+    B --> C[阶段二: 风险与拥挤度检查]
+    C --> D[阶段三: 计算仓位与止盈止损]
+```
+
 内存不足或特征过多时，可以先在 `utils/config.yaml` 将 `feature_engineering.topn`
 调小（如 20），或在执行 `feature_engineering.py` 时传入
 `merge_features(topn=20)`。此外，`data_loader` 区段的 `start` 与 `end`
@@ -93,6 +102,8 @@ pytest -q tests
 risk_adjust:
   factor: 0.7        # 风险惩罚系数，值越低得分扣减越轻
 risk_adjust_threshold: 0.1     # 调整后的得分绝对值必须高于该值才会生成信号
+veto_conflict_count: 2         # funding 冲突达到此数目直接放弃信号
+min_trend_align: 2             # 趋势方向至少在 N 个周期保持一致
 protection_limits:
   risk_score: 1.0    # 允许的风险得分上限
 crowding_limit: 1.05     # 允许的拥挤度上限
@@ -123,6 +134,7 @@ signal_threshold:
   quantile: 0.65
 ```
 这会使阈值更快反应最新波动，从而在行情活跃时给出更多交易机会。
+`rev_boost` 则决定在检测到潜在反转时额外加成的得分，数值越大越易触发交易。
 
 ## 数据库初始化
 

@@ -53,4 +53,5 @@ def make_dummy_rsg():
         'ob_threshold': {'min_ob_th': 0.10},
     }
     rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
+    rsg.min_trend_align = 1
     return rsg
