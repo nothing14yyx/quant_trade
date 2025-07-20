@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from quant_trade import run_scheduler
 
 
-def test_generate_signals_skip_none(monkeypatch):
+def test_generate_signals_parallel(monkeypatch):
     inserted = []
 
     class DummyConn:
@@ -14,18 +14,21 @@ def test_generate_signals_skip_none(monkeypatch):
             pass
 
         def execute(self, *args, **kwargs):
-            inserted.extend(args[1] if len(args) > 1 else kwargs.get('params', []))
+            inserted.extend(args[1])
 
     engine = SimpleNamespace(begin=lambda: DummyConn())
 
     sched = SimpleNamespace(
         engine=engine,
-        sg=SimpleNamespace(generate_signal=lambda *a, **k: None),
+        sg=SimpleNamespace(
+            generate_signal=lambda *a, **k: {"signal": 1, "score": k["raw_features_1h"]["close"]}
+        ),
         scaler_params=None,
     )
 
-    async def dummy_prepare(*args, **kwargs):
-        return {}, {}, {}, {"close": 1}, {}, {}
+    async def dummy_prepare(engine, sym, params):
+        close = 1 if sym == "A" else 2
+        return {}, {}, {}, {"close": close}, {}, {}
 
     async def dummy_oi(*args, **kwargs):
         return {}
@@ -41,6 +44,6 @@ def test_generate_signals_skip_none(monkeypatch):
     monkeypatch.setattr(run_scheduler, "load_order_book_imbalance_async", dummy_imb)
     monkeypatch.setattr(run_scheduler, "load_global_metrics_async", dummy_metrics)
 
-    run_scheduler.Scheduler.generate_signals(sched, ["AAA"])
-    assert inserted == []
-
+    run_scheduler.Scheduler.generate_signals(sched, ["A", "B"])
+    scores = {d["symbol"]: d["score"] for d in inserted}
+    assert scores == {"A": 1, "B": 2}
