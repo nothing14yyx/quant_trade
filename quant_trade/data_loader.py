@@ -106,6 +106,17 @@ class DataLoader:
         )
         self.engine = create_engine(conn_str, pool_recycle=3600)
 
+        # CoinMetrics loader
+        from .coinmetrics_loader import CoinMetricsLoader
+
+        cm_cfg = cfg.get("coinmetrics", {})
+        cm_metrics = cm_cfg.get("metrics") or []
+        self.cm_loader = CoinMetricsLoader(
+            self.engine,
+            api_key=os.getenv("COINMETRICS_API_KEY", cm_cfg.get("api_key", "")),
+            metrics=cm_metrics,
+        )
+
         # Params
         dl = cfg.get("data_loader", {})
         self.topn       = dl.get("topn", 20)
@@ -598,6 +609,12 @@ class DataLoader:
                 )
             logger.info("[cg_category_stats] %s rows", len(rows))
 
+    def update_cm_metrics(self, symbols: List[str]) -> None:
+        """更新链上指标"""
+        if not self.cm_loader.metrics:
+            return
+        self.cm_loader.update_cm_metrics(symbols)
+
     def get_hot_sector(self) -> Optional[dict]:
         """根据最新的 volume_24h 判断热门板块"""
         q = (
@@ -890,6 +907,10 @@ class DataLoader:
             self.update_cg_category_stats()
         except Exception as e:
             logger.exception("[coingecko] err: %s", e)
+        try:
+            self.update_cm_metrics(symbols)
+        except Exception as e:
+            logger.exception("[coinmetrics] err: %s", e)
         # 2. 更新 funding rate / open interest（并发）
         logger.info("[sync] funding/openInterest … (%s)", len(symbols))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
