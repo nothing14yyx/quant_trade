@@ -40,6 +40,7 @@ def make_rsg():
     r.crowding_limit = 1.1
     r.max_position = 0.3
     r.risk_scale = 1.0
+    r.flip_confirm_bars = 3
     return r
 
 
