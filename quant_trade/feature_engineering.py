@@ -695,6 +695,24 @@ class FeatureEngineer:
         )
         logger.info("✅ feature_cols 保存至 %s", self.feature_cols_path)
 
+    async def merge_features_async(
+        self,
+        topn: int | None = None,
+        save_to_db: bool = False,
+        batch_size: int | None = None,
+        n_jobs: int = 1,
+        use_polars: bool = False,
+    ) -> None:
+        """异步调用 :meth:`merge_features`"""
+        await asyncio.to_thread(
+            self.merge_features,
+            topn=topn,
+            save_to_db=save_to_db,
+            batch_size=batch_size,
+            n_jobs=n_jobs,
+            use_polars=use_polars,
+        )
+
 
 # ────────────────────────────────────────────────────────────────────────
 # CLI
