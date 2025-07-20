@@ -747,6 +747,40 @@ def calc_features_raw(
             feats["volume"] / cg_tv.replace(0, np.nan),
         )
 
+    # ======== CM 链上指标 ========
+    if "AdrActCnt" in df:
+        active = pd.to_numeric(df["AdrActCnt"], errors="coerce")
+        assign_safe(
+            feats,
+            f"active_addr_roc_{period}",
+            active.pct_change(fill_method=None),
+        )
+
+    if "AdrNewCnt" in df:
+        new_addr = pd.to_numeric(df["AdrNewCnt"], errors="coerce")
+        assign_safe(
+            feats,
+            f"new_addr_roc_{period}",
+            new_addr.pct_change(fill_method=None),
+        )
+
+    if "TxCnt" in df:
+        tx_cnt = pd.to_numeric(df["TxCnt"], errors="coerce")
+        assign_safe(
+            feats,
+            f"tx_count_roc_{period}",
+            tx_cnt.pct_change(fill_method=None),
+        )
+
+    if "CapMrktCurUSD" in df and "CapRealUSD" in df:
+        cap_mkt = pd.to_numeric(df["CapMrktCurUSD"], errors="coerce")
+        cap_real = pd.to_numeric(df["CapRealUSD"], errors="coerce")
+        assign_safe(
+            feats,
+            f"mvrv_ratio_{period}",
+            cap_mkt / cap_real.replace(0, np.nan),
+        )
+
     if symbol is not None:
         null_ratio = feats.isnull().all(axis=1).mean()
         if null_ratio > 0.5:
