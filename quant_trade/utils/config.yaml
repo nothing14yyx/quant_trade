@@ -413,6 +413,13 @@ signal_threshold:
   # base_th / low_base 单位为 fused_score
   rev_boost: 0.15      # detect_reversal 命中时加分
   rev_th_mult: 0.60    # 急反转时降低门槛
+dynamic_threshold:
+  atr_mult: 4.0
+  atr_cap: 0.10
+  funding_mult: 8.0
+  funding_cap: 0.08
+  adx_div: 100.0
+  adx_cap: 0.04
 position_coeff:
   range: 0.40
   trend: 0.60
