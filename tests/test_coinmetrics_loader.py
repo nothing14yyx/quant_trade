@@ -3,6 +3,7 @@ import sqlalchemy
 import requests
 
 from quant_trade.coinmetrics_loader import CoinMetricsLoader
+from quant_trade.data_loader import DataLoader
 
 
 def make_loader(engine):
@@ -46,3 +47,40 @@ def test_update_cm_metrics(monkeypatch):
     assert len(df) == 2
     assert set(df['metric']) == {'AdrActCnt', 'AdrNewCnt'}
     assert df['value'].sum() == 15
+
+
+def make_dl(engine):
+    dl = DataLoader.__new__(DataLoader)
+    dl.cm_loader = make_loader(engine)
+    return dl
+
+
+def test_data_loader_update_cm_metrics(monkeypatch):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            'CREATE TABLE cm_onchain_metrics (symbol TEXT, timestamp TEXT, metric TEXT, value REAL, PRIMARY KEY(symbol, timestamp, metric))'
+        )
+    dl = make_dl(engine)
+
+    def fake_get(url, params=None, headers=None, timeout=10):
+        class R:
+            def json(self):
+                return {
+                    'data': [{
+                        'asset': 'btc',
+                        'time': '2024-06-02T00:00:00Z',
+                        'AdrActCnt': '1',
+                        'AdrNewCnt': '2'
+                    }]
+                }
+        return R()
+
+    monkeypatch.setattr(requests, 'get', fake_get)
+
+    dl.update_cm_metrics(['BTCUSDT'])
+
+    df = pd.read_sql('cm_onchain_metrics', engine)
+    assert len(df) == 2
+    assert set(df['metric']) == {'AdrActCnt', 'AdrNewCnt'}
+    assert df['value'].sum() == 3
