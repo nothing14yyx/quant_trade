@@ -75,6 +75,37 @@ def get_cfg_value(cfg: Mapping[str, Any] | None, key: str, default: Any = None) 
     return default if val is None else val
 
 
+def get_feat(
+    raw_dict: Mapping[str, Any] | None,
+    std_dict: Mapping[str, Any] | None,
+    key: str,
+    default: Any | None = None,
+) -> Any:
+    """Return feature ``key`` from ``raw_dict`` then ``std_dict`` with fallback.
+
+    Parameters
+    ----------
+    raw_dict : Mapping[str, Any] | None
+        原始特征字典。
+    std_dict : Mapping[str, Any] | None
+        标准化特征字典。
+    key : str
+        待读取的特征名。
+    default : Any, optional
+        找不到时返回的默认值，默认为 ``None``。
+    """
+
+    if raw_dict is not None:
+        val = raw_dict.get(key)
+        if val is not None:
+            return val
+    if std_dict is not None:
+        val = std_dict.get(key)
+        if val is not None:
+            return val
+    return default
+
+
 def calc_mfi_np(high, low, close, volume, window=14):
     """Return Money Flow Ratio and Money Flow Index"""
     if len(high) == 0:
