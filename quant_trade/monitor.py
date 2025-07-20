@@ -1,4 +1,5 @@
 import time
+import json
 import pandas as pd
 import altair as alt
 from sqlalchemy import text
@@ -9,16 +10,25 @@ from quant_trade.utils.db import CONFIG_PATH
 
 def fetch_recent(engine, limit=1000):
     sig_query = text(
-        "SELECT open_time, signal, score, oi_change FROM signals ORDER BY open_time DESC LIMIT :lim"
+        "SELECT time AS open_time, signal, score, indicators FROM live_full_data "
+        "ORDER BY time DESC LIMIT :lim"
     )
-    fac_query = text(
-        "SELECT open_time, ai, trend, momentum, volatility, volume, sentiment, funding FROM factor_scores ORDER BY open_time DESC LIMIT :lim"
-    )
-    sig = pd.read_sql(sig_query, engine, params={"lim": limit})
-    fac = pd.read_sql(fac_query, engine, params={"lim": limit})
+
+    sig = pd.read_sql(sig_query, engine, params={"lim": limit}, parse_dates=["open_time"])
     sig = sig.sort_values("open_time")
-    fac = fac.sort_values("open_time")
-    return sig, fac
+
+    factors: list[dict] = []
+    for ind in sig.get("indicators", []):
+        try:
+            data = json.loads(ind or "{}")
+            fac_dict = data.get("details", {}).get("factors", {})
+        except Exception:
+            fac_dict = {}
+        factors.append(fac_dict)
+
+    fac = pd.DataFrame(factors)
+    fac["open_time"] = sig["open_time"].values
+    return sig.drop(columns=["indicators"]), fac.sort_values("open_time")
 
 
 def plot_ic_curve(df: pd.DataFrame) -> alt.Chart:
@@ -49,10 +59,8 @@ def run_monitor(cfg_path: str | None = None, interval: int = 3600, limit: int = 
     while True:
         sig, fac = fetch_recent(engine, limit=limit)
         ic_chart = plot_ic_curve(sig)
-        oi_chart = plot_oi_change(sig)
         ic_chart.save("ic_curve.html")
-        oi_chart.save("oi_change.html")
         time.sleep(interval)
 
 
-__all__ = ["run_monitor", "fetch_recent", "plot_ic_curve", "plot_oi_change"]
+__all__ = ["run_monitor", "fetch_recent", "plot_ic_curve"]
