@@ -781,6 +781,8 @@ class RobustSignalGenerator:
             "rebound_cooldown": 3,
             "last_rebound_ts": 0,
             "dynamic_th_params": DynamicThresholdParams.from_cfg({}),
+            "market_phase": "range",
+            "phase_th_mult": 1.0,
         }
         if name in defaults:
             val = defaults[name]
@@ -1556,6 +1558,23 @@ class RobustSignalGenerator:
         t = threading.Thread(target=self._weight_update_loop, args=(interval,), daemon=True)
         t.start()
         self._weight_thread = t
+
+    def update_market_phase(self, engine):
+        """根据链上指标更新市场阶段并调整阈值系数"""
+        try:
+            from .market_phase import detect_market_phase
+
+            phase = detect_market_phase(engine)
+        except Exception as e:
+            logger.warning("detect_market_phase failed: %s", e)
+            phase = "range"
+
+        self.market_phase = phase
+        self.phase_th_mult = {
+            "bull": 0.9,
+            "bear": 1.1,
+            "range": 1.0,
+        }.get(phase, 1.0)
 
     def stop_weight_update_thread(self):
         if self._weight_thread:
@@ -2678,6 +2697,7 @@ class RobustSignalGenerator:
             reversal=bool(rev_dir),
             history_scores=cache["history_scores"],
         )
+        base_th *= getattr(self, "phase_th_mult", 1.0)
         if rev_dir != 0:
             fused_score += rev_boost * rev_dir
             self._cooldown = 0
