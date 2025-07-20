@@ -114,7 +114,7 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
 }
 
 from dataclasses import dataclass
-from quant_trade.utils import get_cfg_value, collect_feature_cols
+from quant_trade.utils import get_cfg_value, collect_feature_cols, get_feat
 
 
 @dataclass
@@ -2834,17 +2834,9 @@ class RobustSignalGenerator:
         rev_dir = risk_info["rev_dir"]
         funding_conflicts = risk_info["funding_conflicts"]
 
-        vol_ratio_1h_4h = None
-        if raw_f1h is not None:
-            vol_ratio_1h_4h = raw_f1h.get("vol_ratio_1h_4h")
-        if vol_ratio_1h_4h is None and raw_f4h is not None:
-            vol_ratio_1h_4h = raw_f4h.get("vol_ratio_1h_4h")
+        vol_ratio_1h_4h = get_feat(raw_f1h, std_1h, "vol_ratio_1h_4h")
         if vol_ratio_1h_4h is None:
-            vol_ratio_1h_4h = std_1h.get("vol_ratio_1h_4h")
-        if vol_ratio_1h_4h is None and std_4h is not None:
-            vol_ratio_1h_4h = std_4h.get("vol_ratio_1h_4h")
-        if vol_ratio_1h_4h is None:
-            vol_ratio_1h_4h = 1.0
+            vol_ratio_1h_4h = get_feat(raw_f4h, std_4h, "vol_ratio_1h_4h", 1.0)
         ob_th = max(
             self.ob_th_params["min_ob_th"],
             self.ob_th_params["dynamic_factor"] * vol_ratio_1h_4h,
@@ -3012,11 +3004,7 @@ class RobustSignalGenerator:
             confidence_factor += 0.1
         if strong_confirm_vote:
             confidence_factor += 0.05
-        vol_ratio = None
-        if raw_f1h is not None:
-            vol_ratio = raw_f1h.get("vol_ma_ratio_1h")
-        if vol_ratio is None:
-            vol_ratio = std_1h.get("vol_ma_ratio_1h")
+        vol_ratio = get_feat(raw_f1h, std_1h, "vol_ma_ratio_1h")
         tier = None
         fused_score = soft_clip(fused_score, k=1.0)
         pos_size, direction, tier, zero_reason = self.compute_position_size(
