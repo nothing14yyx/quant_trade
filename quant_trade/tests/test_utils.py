@@ -54,4 +54,5 @@ def make_dummy_rsg():
     }
     rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
     rsg.min_trend_align = 1
+    rsg.flip_confirm_bars = 3
     return rsg
