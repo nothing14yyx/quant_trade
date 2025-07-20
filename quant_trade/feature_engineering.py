@@ -153,7 +153,7 @@ class FeatureEngineer:
     5. _add_missing_flags 中一次性 concat，避免 DataFrame 碎片化。
     """
 
-    def __init__(self, config_path: str | os.PathLike = "utils/config.yaml") -> None:
+    def __init__(self, config_path: str | os.PathLike = "utils/config.yaml", *, include_order_book: bool = False) -> None:
         path = Path(config_path)
         if not path.is_absolute() and not path.is_file():
             path = Path(__file__).resolve().parent / path
@@ -171,6 +171,7 @@ class FeatureEngineer:
         # Feature-engineering 配置
         fe_cfg = self.cfg.get("feature_engineering", {})
         self.topn: int = int(fe_cfg.get("topn", 30))
+        self.include_order_book: bool = bool(fe_cfg.get("include_order_book", include_order_book))
         self.feature_cols_path: Path = Path(
             fe_cfg.get("feature_cols_path", "data/merged/feature_cols.txt")
         )
@@ -560,7 +561,7 @@ class FeatureEngineer:
             feat.rename(columns={"index": "open_time"}, inplace=True, errors="ignore")
 
         ob_df = self.load_order_book(sym)
-        if ob_df is not None and not ob_df.empty:
+        if self.include_order_book and ob_df is not None and len(ob_df) >= 50:
             ob_feat = calc_order_book_features(ob_df)
             ob_feat.reset_index(inplace=True)
             f1h = pd.merge_asof(
