@@ -360,6 +360,30 @@ class FeatureEngineer:
                     direction="backward",
                 )
 
+        # merge cm_onchain_metrics
+        try:
+            q = (
+                "SELECT timestamp AS open_time, AdrActCnt, AdrNewCnt, TxCnt, "
+                "CapMrktCurUSD, CapRealUSD FROM cm_onchain_metrics "
+                "WHERE symbol=%s ORDER BY timestamp"
+            )
+            cm_df = pd.read_sql(q, self.engine, params=(symbol,), parse_dates=["open_time"])
+        except Exception:  # pragma: no cover - optional table
+            cm_df = None
+        if cm_df is not None and not cm_df.empty:
+            out = pd.merge_asof(
+                out.sort_values("open_time"),
+                cm_df.sort_values("open_time"),
+                on="open_time",
+                direction="backward",
+            )
+        else:
+            out["AdrActCnt"] = None
+            out["AdrNewCnt"] = None
+            out["TxCnt"] = None
+            out["CapMrktCurUSD"] = None
+            out["CapRealUSD"] = None
+
         return out.set_index("open_time").sort_index()
 
     def load_order_book(self, symbol: str) -> Optional[pd.DataFrame]:
