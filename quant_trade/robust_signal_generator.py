@@ -2147,6 +2147,47 @@ class RobustSignalGenerator:
             "deltas": deltas,
         }
 
+    def _calc_ai_for_period(self, period: str, feats: dict):
+        """计算单个周期的 AI 相关预测"""
+
+        models_p = self.models.get(period, {})
+
+        if not models_p:
+            return None, None, None, None
+
+        if "cls" in models_p and "up" not in models_p:
+            ai_score = self.get_ai_score_cls(feats, models_p["cls"])
+        else:
+            cal_up = self.calibrators.get(period, {}).get("up")
+            cal_down = self.calibrators.get(period, {}).get("down")
+            if cal_up is None and cal_down is None:
+                ai_score = self.get_ai_score(
+                    feats,
+                    models_p["up"],
+                    models_p["down"],
+                )
+            else:
+                ai_score = self.get_ai_score(
+                    feats,
+                    models_p["up"],
+                    models_p["down"],
+                    cal_up,
+                    cal_down,
+                )
+
+        vol_pred = None
+        rise_pred = None
+        drawdown_pred = None
+
+        if "vol" in models_p:
+            vol_pred = self.get_vol_prediction(feats, models_p["vol"])
+        if "rise" in models_p:
+            rise_pred = self.get_reg_prediction(feats, models_p["rise"])
+        if "drawdown" in models_p:
+            drawdown_pred = self.get_reg_prediction(feats, models_p["drawdown"])
+
+        return ai_score, vol_pred, rise_pred, drawdown_pred
+
     def compute_ai_scores(
         self,
         feats_1h: PeriodFeatures,
@@ -2169,34 +2210,15 @@ class RobustSignalGenerator:
             ("4h", feats_4h.std),
             ("d1", feats_d1.std),
         ]:
-            models_p = self.models.get(p, {})
-            if "cls" in models_p and "up" not in models_p:
-                ai_scores[p] = self.get_ai_score_cls(feats, models_p["cls"])
-            else:
-                cal_up = self.calibrators.get(p, {}).get("up")
-                cal_down = self.calibrators.get(p, {}).get("down")
-                if cal_up is None and cal_down is None:
-                    ai_scores[p] = self.get_ai_score(
-                        feats,
-                        models_p["up"],
-                        models_p["down"],
-                    )
-                else:
-                    ai_scores[p] = self.get_ai_score(
-                        feats,
-                        models_p["up"],
-                        models_p["down"],
-                        cal_up,
-                        cal_down,
-                    )
-            if "vol" in models_p:
-                vol_preds[p] = self.get_vol_prediction(feats, models_p["vol"])
-            if "rise" in models_p:
-                rise_preds[p] = self.get_reg_prediction(feats, models_p["rise"])
-            if "drawdown" in models_p:
-                drawdown_preds[p] = self.get_reg_prediction(
-                    feats, models_p["drawdown"]
-                )
+            ai, vol, rise, drawdown = self._calc_ai_for_period(p, feats)
+            if ai is not None:
+                ai_scores[p] = ai
+            if vol is not None:
+                vol_preds[p] = vol
+            if rise is not None:
+                rise_preds[p] = rise
+            if drawdown is not None:
+                drawdown_preds[p] = drawdown
 
         extreme_reversal = False
         rsi = feats_d1.raw.get("rsi_d1", 50)
