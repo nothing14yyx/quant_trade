@@ -159,6 +159,10 @@ class Scheduler:
             self.dl.update_cg_category_stats()
         except Exception as e:
             logging.exception("update coingecko failed: %s", e)
+        try:
+            self.dl.update_cm_metrics(symbols)
+        except Exception as e:
+            logging.exception("update coinmetrics failed: %s", e)
 
     def update_features(self):
         """重新计算特征并写入数据库"""
