@@ -10,11 +10,12 @@ from quant_trade.utils.db import CONFIG_PATH
 
 def fetch_recent(engine, limit=1000):
     sig_query = text(
-        "SELECT `time` AS open_time, signal, score, indicators FROM live_full_data "
+        "SELECT `time`, signal, score, indicators FROM live_full_data "
         "ORDER BY `time` DESC LIMIT :lim"
     )
 
-    sig = pd.read_sql(sig_query, engine, params={"lim": limit}, parse_dates=["open_time"])
+    sig = pd.read_sql(sig_query, engine, params={"lim": limit}, parse_dates=["time"])
+    sig = sig.rename(columns={"time": "open_time"})
     sig = sig.sort_values("open_time")
 
     factors: list[dict] = []
