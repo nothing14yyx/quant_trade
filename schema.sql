@@ -95,6 +95,18 @@ CREATE TABLE cg_category_stats (
     updated_at DATETIME
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE cm_onchain_metrics (
+    symbol VARCHAR(20) NOT NULL,
+    timestamp DATETIME(3) NOT NULL,
+    metric VARCHAR(64) NOT NULL,
+    value DOUBLE,
+    PRIMARY KEY (symbol, timestamp, metric),
+    INDEX idx_cm_symbol (symbol),
+    INDEX idx_cm_timestamp (timestamp),
+    INDEX idx_cm_metric (metric),
+    INDEX idx_cm_value (value)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `features` (
     `symbol` VARCHAR(24) NOT NULL,
     `open_time` DATETIME,
