@@ -9,6 +9,12 @@ from __future__ import annotations
 import os, time, re, logging, threading, datetime as dt
 from typing import Dict, List, Optional
 
+if __package__ is None and __name__ == "__main__":
+    import os
+    import sys
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    __package__ = "quant_trade"
+
 import json
 import yaml, requests, pandas as pd, numpy as np
 from binance.client import Client
