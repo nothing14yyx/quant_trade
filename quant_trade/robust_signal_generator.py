@@ -2933,11 +2933,6 @@ class RobustSignalGenerator:
             consensus_all=risk_info.get("consensus_all", False),
         )
 
-        if weak_vote:
-            direction = 0
-            pos_size = 0.0
-            # 多因子投票强度不足，直接过滤
-            zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
 
         if funding_conflicts > self.veto_level:
             direction = 0
