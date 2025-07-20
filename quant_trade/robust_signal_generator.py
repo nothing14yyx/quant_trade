@@ -1141,6 +1141,39 @@ class RobustSignalGenerator:
 
         return exit_mult
 
+    def _apply_risk_adjustment(self, pos_size: float, risk_score: float) -> float:
+        """根据风险评分调整仓位大小"""
+        risk_factor = math.exp(-self.risk_scale * risk_score)
+        return pos_size * risk_factor
+
+    def _apply_low_volume_penalty(
+        self,
+        pos_size: float,
+        *,
+        regime: str,
+        vol_ratio: float | None,
+        fused_score: float,
+        base_th: float,
+        consensus_all: bool,
+    ) -> tuple[float, bool]:
+        """在低成交量环境下惩罚仓位, 返回是否触发标记"""
+        low_vol_flag = (
+            regime == "range"
+            and vol_ratio is not None
+            and vol_ratio < self.low_vol_ratio
+            and abs(fused_score) < base_th + 0.02
+            and not consensus_all
+        )
+        if low_vol_flag:
+            pos_size *= 0.5
+        return pos_size, low_vol_flag
+
+    def _apply_vol_prediction_adjustment(self, pos_size: float, vol_p: float | None) -> float:
+        """根据预测波动率对仓位进行修正"""
+        if vol_p is not None:
+            pos_size *= max(0.4, 1 - min(0.6, vol_p))
+        return pos_size
+
     def compute_position_size(
         self,
         *,
@@ -1171,8 +1204,8 @@ class RobustSignalGenerator:
         zero_reason: str | None = None
         low_vol_flag = False
 
-        risk_factor = math.exp(-self.risk_scale * risk_score)
-        pos_size = base_size * sigmoid(confidence_factor) * risk_factor
+        pos_size = base_size * sigmoid(confidence_factor)
+        pos_size = self._apply_risk_adjustment(pos_size, risk_score)
         pos_size *= exit_mult
         pos_size = min(pos_size, self.max_position)
         pos_size *= crowding_factor
@@ -1181,19 +1214,17 @@ class RobustSignalGenerator:
             # 无趋势方向时不做仓位
             zero_reason = ZeroReason.NO_DIRECTION.value
 
-        if (
-            regime == "range"
-            and vol_ratio is not None
-            and vol_ratio < self.low_vol_ratio
-            and abs(fused_score) < base_th + 0.02
-            and not consensus_all
-        ):
-            pos_size *= 0.5
-            low_vol_flag = True
+        pos_size, low_vol_flag = self._apply_low_volume_penalty(
+            pos_size,
+            regime=regime,
+            vol_ratio=vol_ratio,
+            fused_score=fused_score,
+            base_th=base_th,
+            consensus_all=consensus_all,
+        )
 
 
-        if vol_p is not None:
-            pos_size *= max(0.4, 1 - min(0.6, vol_p))
+        pos_size = self._apply_vol_prediction_adjustment(pos_size, vol_p)
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
         min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
