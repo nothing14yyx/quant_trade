@@ -1009,12 +1009,24 @@ class RobustSignalGenerator:
             return {c: row.iat[i] for c, i in idx_map.items()}
         return {}
 
+    def get_feat_value(self, features: dict | None, key: str, default: float = 0.0):
+        """Return ``features[key]`` if available and valid, else ``default``."""
+
+        if not features:
+            return default
+        val = features.get(key, default)
+        if val is None:
+            return default
+        if isinstance(val, (int, float)) and pd.isna(val):
+            return default
+        return val
+
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> float:
         """根据1h MA5 与 MA20 判断并返回分数乘数"""
 
-        sma5 = features.get('sma_5_1h')
-        sma20 = features.get('sma_20_1h')
-        ma_ratio = features.get('ma_ratio_5_20', 1.0)
+        sma5 = self.get_feat_value(features, 'sma_5_1h', None)
+        sma20 = self.get_feat_value(features, 'sma_20_1h', None)
+        ma_ratio = self.get_feat_value(features, 'ma_ratio_5_20', 1.0)
         if sma5 is None or sma20 is None:
             return 1.0
 
@@ -1217,15 +1229,7 @@ class RobustSignalGenerator:
 
         # 去除重复字段，避免两次写入同名特征
         dedup_row = {k: v for k, v in features.items()}
-
-        def safe(key: str, default=0):
-            """如果值缺失或为 NaN，返回 default。"""
-            v = dedup_row.get(key, default)
-            if v is None:
-                return default
-            if isinstance(v, (float, int)) and pd.isna(v):
-                return default
-            return v
+        safe = lambda k, d=0: self.get_feat_value(dedup_row, k, d)
 
         td_score = math.tanh(
             (safe(f"td_sell_count_{period}", 0) - safe(f"td_buy_count_{period}", 0))
