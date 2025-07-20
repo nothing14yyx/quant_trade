@@ -10,8 +10,8 @@ from quant_trade.utils.db import CONFIG_PATH
 
 def fetch_recent(engine, limit=1000):
     sig_query = text(
-        "SELECT time AS open_time, signal, score, indicators FROM live_full_data "
-        "ORDER BY time DESC LIMIT :lim"
+        "SELECT `time` AS open_time, signal, score, indicators FROM live_full_data "
+        "ORDER BY `time` DESC LIMIT :lim"
     )
 
     sig = pd.read_sql(sig_query, engine, params={"lim": limit}, parse_dates=["open_time"])
