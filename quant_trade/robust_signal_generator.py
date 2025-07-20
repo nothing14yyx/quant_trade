@@ -101,6 +101,7 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
     "_weight_thread",
     "cycle_weight",
     "flip_coeff",
+    "flip_confirm_bars",
     "veto_level",
     "ic_scores",
     "th_down_d1",
@@ -254,6 +255,16 @@ def softmax(x):
 def sigmoid(x):
     """标准 sigmoid 函数"""
     return 1 / (1 + np.exp(-x))
+
+
+def smooth_score(history_scores, window: int = 3) -> float:
+    """简单滑动平均, 返回最近 ``window`` 个得分的均值."""
+    if not history_scores:
+        return 0.0
+    arr = np.asarray(list(history_scores)[-window:], dtype=float)
+    if arr.size == 0:
+        return 0.0
+    return float(np.nanmean(arr))
 
 
 def weighted_quantile(values, q, sample_weight=None):
@@ -614,6 +625,7 @@ class RobustSignalGenerator:
         self.veto_level = get_cfg_value(cfg, "veto_level", 0.7)
         self.veto_conflict_count = get_cfg_value(cfg, "veto_conflict_count", 1)
         self.flip_coeff = get_cfg_value(cfg, "flip_coeff", 0.3)
+        self.flip_confirm_bars = get_cfg_value(cfg, "flip_confirm_bars", 3)
         cw_cfg = get_cfg_value(cfg, "cycle_weight", {})
         self.cycle_weight = {
             "strong": get_cfg_value(cw_cfg, "strong", 1.2),
@@ -3378,8 +3390,7 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """执行资金费率、拥挤度等风险检查"""
-
-        return self.apply_risk_filters(
+        result = self.apply_risk_filters(
             fused_score,
             logic_score,
             env_score,
@@ -3397,6 +3408,22 @@ class RobustSignalGenerator:
             global_metrics,
             symbol,
         )
+
+        if result is None:
+            return None
+
+        sm = smooth_score(cache.get("history_scores", []), self.flip_confirm_bars)
+        direction = int(np.sign(sm)) if sm else 0
+        if (
+            self._last_signal != 0
+            and direction != 0
+            and direction != self._last_signal
+        ):
+            hist = list(cache.get("history_scores", []))[-self.flip_confirm_bars :]
+            if len(hist) < self.flip_confirm_bars or any(int(np.sign(v)) != direction for v in hist):
+                return None
+        result["smooth_score"] = sm
+        return result
 
     def _calc_position_and_sl_tp(
         self,

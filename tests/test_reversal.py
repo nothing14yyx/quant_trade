@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from collections import deque
 
-from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import RobustSignalGenerator, smooth_score
 
 
 def make_rsg():
@@ -60,6 +60,8 @@ def make_rsg():
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg._raw_history = {'1h': deque(maxlen=4), '4h': deque(maxlen=2), 'd1': deque(maxlen=2)}
     rsg._cooldown = 3
+    rsg.min_trend_align = 1
+    rsg.flip_confirm_bars = 3
     return rsg
 
 
@@ -98,3 +100,49 @@ def test_flip_on_reversal():
     )
     assert res['signal'] == 0
     assert gen._cooldown == 0
+
+
+def test_smooth_score_basic():
+    hist = deque([1, 2, 3, 4])
+    assert smooth_score(hist, window=3) == pytest.approx(3.0)
+
+
+def test_flip_requires_confirmation():
+    rsg = make_rsg()
+    rsg.flip_confirm_bars = 3
+    rsg._cooldown = 0
+    rsg.dynamic_weight_update = lambda: rsg.base_weights
+    rsg.get_ai_score = lambda f, u, d: 0
+    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.combine_score = lambda ai, fs, w=None: -0.4
+    rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
+    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.models = {'1h': {'up': None, 'down': None},
+                  '4h': {'up': None, 'down': None},
+                  'd1': {'up': None, 'down': None}}
+    rsg.risk_manager.calc_risk = lambda *a, **k: 0
+
+    feats_1h = {
+        'close': 100,
+        'atr_pct_1h': 0.05,
+        'adx_1h': 0,
+        'funding_rate_1h': 0,
+        'vol_ma_ratio_1h': 1,
+        'vol_breakout_1h': 1,
+        'bb_width_1h': 0.02,
+    }
+    feats_4h = {'atr_pct_4h': 0}
+    feats_d1 = {}
+
+    rsg._last_signal = 1
+    rsg._last_score = 0.4
+
+    # first bar, not enough confirmation
+    assert rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h) is None
+    assert rsg._last_signal == 1
+    # second bar, still waiting
+    assert rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h) is None
+    assert rsg._last_signal == 1
+    # third bar, flip allowed
+    res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h)
+    assert res['signal'] == -1

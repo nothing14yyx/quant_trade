@@ -50,6 +50,7 @@ def make_rsg():
     rsg.crowding_limit = 1.1
     rsg.max_position = 0.3
     rsg.risk_scale = 1.0
+    rsg.flip_confirm_bars = 3
     return rsg
 
 
@@ -133,7 +134,7 @@ def test_flip_threshold_allows_switch():
         raw_features_d1=feats_d1,
         symbol='BTC'
     )
-    assert res['signal'] == 0
+    assert res is None
 
 
 def test_range_filter_keeps_strong_signal():
