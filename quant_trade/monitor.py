@@ -10,7 +10,7 @@ from quant_trade.utils.db import CONFIG_PATH
 
 def fetch_recent(engine, limit=1000):
     sig_query = text(
-        "SELECT `time`, signal, score, indicators FROM live_full_data "
+        "SELECT `time`, 'signal', score, indicators FROM live_full_data "
         "ORDER BY `time` DESC LIMIT :lim"
     )
 

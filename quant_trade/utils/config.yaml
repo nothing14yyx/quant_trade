@@ -12,7 +12,6 @@ coinmetrics:
   api_key: "${COINMETRICS_API_KEY}"
   metrics:
     - AdrActCnt
-    - AdrNewCnt
     - TxCnt
     - CapMrktCurUSD
 
