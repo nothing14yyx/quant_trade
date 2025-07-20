@@ -5,6 +5,7 @@ FeatureEngineer v2.3-patch1 (External indicators removed)  (2025-06-03)
 """
 
 import os
+import asyncio
 import logging
 from pathlib import Path
 from typing import List, Optional
@@ -15,7 +16,7 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sklearn.metrics import mutual_info_score
 
 # 不再 import calc_features_full，而改为：
@@ -363,14 +364,21 @@ class FeatureEngineer:
         # merge cm_onchain_metrics
         try:
             q = (
-                "SELECT timestamp AS open_time, AdrActCnt, AdrNewCnt, TxCnt, "
-                "CapMrktCurUSD, CapRealUSD FROM cm_onchain_metrics "
-                "WHERE symbol=%s ORDER BY timestamp"
+                "SELECT timestamp, metric, value FROM cm_onchain_metrics "
+                "WHERE symbol=:sym AND metric IN "
+                "('AdrActCnt','AdrNewCnt','TxCnt','CapMrktCurUSD','CapRealUSD') "
+                "ORDER BY timestamp"
             )
-            cm_df = pd.read_sql(q, self.engine, params=(symbol,), parse_dates=["open_time"])
+            cm_df = pd.read_sql(text(q), self.engine, params={"sym": symbol}, parse_dates=["timestamp"])
         except Exception:  # pragma: no cover - optional table
             cm_df = None
+
         if cm_df is not None and not cm_df.empty:
+            cm_df = (
+                cm_df.pivot(index="timestamp", columns="metric", values="value")
+                .reset_index()
+                .rename(columns={"timestamp": "open_time"})
+            )
             out = pd.merge_asof(
                 out.sort_values("open_time"),
                 cm_df.sort_values("open_time"),
