@@ -5,6 +5,7 @@ FeatureEngineer v2.3-patch1 (External indicators removed)  (2025-06-03)
 """
 
 import os
+import asyncio
 import logging
 from pathlib import Path
 from typing import List, Optional
