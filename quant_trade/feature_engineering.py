@@ -637,6 +637,11 @@ class FeatureEngineer:
         if len(na_cols):
             out.drop(columns=na_cols, inplace=True)
 
+        raw_cols = ["AdrActCnt", "AdrNewCnt", "TxCnt", "CapMrktCurUSD", "CapRealUSD"]
+        drop_cols = [c for c in raw_cols if c in out.columns]
+        if drop_cols:
+            out.drop(columns=drop_cols, inplace=True)
+
         if out.shape[1] > 0:
             return out
         return None
