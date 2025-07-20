@@ -8,6 +8,14 @@ binance:
 coingecko:
   api_key: "${COINGECKO_API_KEY}"  # 可为空或填写公共 API 密钥
 
+coinmetrics:
+  api_key: "${COINMETRICS_API_KEY}"
+  metrics:
+    - AdrActCnt
+    - AdrNewCnt
+    - TxCnt
+    - CapMrktCurUSD
+
 mysql:
   host: "localhost"
   port: 3306
