@@ -3039,6 +3039,7 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
+
         pos_size, direction, zero_reason = self._apply_position_filters(
             pos_size,
             direction,
