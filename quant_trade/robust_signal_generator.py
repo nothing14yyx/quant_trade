@@ -10,6 +10,7 @@
 
 import numpy as np
 import math
+import shap
 from quant_trade.utils.soft_clip import soft_clip
 
 import pandas as pd
@@ -1740,6 +1741,63 @@ class RobustSignalGenerator:
 
         return (fs_matrix.T * weight_arr).sum(axis=1).astype(float)
 
+    def _compute_factor_breakdown(self, ai_scores: dict, fs: dict) -> dict:
+        """使用 SHAP 计算各因子贡献度"""
+        with self._lock:
+            weights = self.current_weights.copy()
+        w1 = weights.copy()
+        for k in ("trend", "momentum", "volume"):
+            w1[k] = w1.get(k, 0) * 0.7
+
+        coef = np.array(
+            [
+                w1["ai"],
+                w1["trend"],
+                w1["momentum"],
+                w1["volatility"],
+                w1["volume"],
+                w1["sentiment"],
+                w1["funding"],
+            ],
+            dtype=float,
+        )
+        feats = np.array(
+            [
+                ai_scores.get("1h", 0.0),
+                fs["1h"].get("trend", 0.0),
+                fs["1h"].get("momentum", 0.0),
+                fs["1h"].get("volatility", 0.0),
+                fs["1h"].get("volume", 0.0),
+                fs["1h"].get("sentiment", 0.0),
+                fs["1h"].get("funding", 0.0),
+            ]
+        ).reshape(1, -1)
+
+        class _LinModel:
+            def __init__(self, c):
+                self.coef_ = c
+                self.intercept_ = 0.0
+
+            def predict(self, X):
+                return X.dot(self.coef_)
+
+        expl = shap.LinearExplainer(_LinModel(coef), np.zeros((1, len(coef))))
+        sv = expl.shap_values(feats)
+        if isinstance(sv, list):
+            sv = sv[0]
+        sv = sv[0]
+
+        keys = [
+            "ai",
+            "trend",
+            "momentum",
+            "volatility",
+            "volume",
+            "sentiment",
+            "funding",
+        ]
+        return {k: float(v) for k, v in zip(keys, sv)}
+
     def consensus_check(self, s1, s2, s3, min_agree=2):
         # 多周期方向共振（如调研建议），可加全分歧减弱等逻辑
         signs = np.sign([s1, s2, s3])
@@ -2938,6 +2996,7 @@ class RobustSignalGenerator:
             包含 ``signal``、``score`` 等字段的结果字典。
         """
         base_th = risk_info["base_th"]
+        factor_breakdown = self._compute_factor_breakdown(ai_scores, fs)
         if not risk_info.get("crowding_adjusted"):
             fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
                 fused_score,
@@ -3052,6 +3111,7 @@ class RobustSignalGenerator:
                     "vote": {"value": vote, "confidence": conf_vote, "ob_th": ob_th},
                     "zero_reason": "vote_filter",
                 },
+                "factor_breakdown": factor_breakdown,
             }
 
         vote_sign = int(np.sign(vote))
@@ -3277,6 +3337,7 @@ class RobustSignalGenerator:
             "take_profit": take_profit,
             "stop_loss": stop_loss,
             "details": final_details,
+            "factor_breakdown": factor_breakdown,
         }
 
     def _precheck_and_direction(
@@ -3352,6 +3413,7 @@ class RobustSignalGenerator:
                     "confirm_15m": confirm_15m,
                     "note": "fused_score was NaN",
                 },
+                "factor_breakdown": self._compute_factor_breakdown(ai_scores, fs),
             }
             return result, 0, True
 
