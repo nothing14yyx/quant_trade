@@ -263,5 +263,17 @@
   "AEVOUSDT": "aevo-exchange",
   "CATIUSDT": "catizen",
   "RDNTUSDT": "radiant-capital",
-  "MEWUSDT": "cat-in-a-dogs-world"
+  "MEWUSDT": "cat-in-a-dogs-world",
+  "ERAUSDT": "caldera",
+  "FXSUSDT": "frax-share",
+  "RSRUSDT": "reserve-rights-token",
+  "VETUSDT": "vechain",
+  "EPICUSDT": "epic-chain",
+  "USTCUSDT": "terrausd",
+  "STRKUSDT": "starknet",
+  "XTZUSDT": "tezos",
+  "ACXUSDT": "across-protocol",
+  "HEIUSDT": "heima",
+  "DIAUSDT": "dia-data",
+  "BBUSDT": "bouncebit"
 }

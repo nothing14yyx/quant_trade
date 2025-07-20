@@ -17,7 +17,7 @@ mysql:
   charset: "utf8mb4"
 
 data_loader:
-  topn: 100             # 获取成交额排名前N的合约
+  topn: 150             # 获取成交额排名前N的合约
   interval: "1h"       # 主周期K线
   aux_interval: ["5m", "15m", "4h", "d1"]   # 辅助周期K线
   start:  "2024-06-09" # 起始日期 例如"2024-06-01" 默认获取一年
@@ -32,7 +32,7 @@ feature_engineering:
 #  merged_dir: "quant_trade/data/merged"
 #  merged_table_path: "quant_trade/data/merged/merged_table.csv"
   feature_cols_path: "data/merged/feature_cols.txt"
-  topn: 150
+  topn: 120
   mode: train                        # train 或 inference
   scaler_path: scalers/all_features_scaler.json
   btc_symbol: "BTCUSDT"
