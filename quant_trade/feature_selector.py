@@ -326,3 +326,82 @@ if __name__ == "__main__":
         select_features(t)
 
 
+def update_selected_features(
+    df: pd.DataFrame,
+    period: str,
+    target: str,
+    yaml_file: Path | str = Path("utils/selected_features.yaml"),
+    shap_thresh: float = 0.01,
+    ic_thresh: float = 0.01,
+) -> list[str]:
+    """根据最近样本的 SHAP 值和因子 IC 更新特征列表
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        含最新特征数据与目标列的表格。
+    period : str
+        周期名称，如 ``"1h"``、``"4h"``。
+    target : str
+        目标列名。
+    yaml_file : Path or str, default ``"utils/selected_features.yaml"``
+        保存特征列表的 YAML 文件路径。
+    shap_thresh : float, default 0.01
+        相对平均 SHAP 值低于该阈值的特征将被移除。
+    ic_thresh : float, default 0.01
+        绝对因子 IC 低于该阈值的特征将被移除。
+
+    Returns
+    -------
+    list[str]
+        更新后的特征列表。
+    """
+    yaml_path = Path(yaml_file)
+    if not yaml_path.exists():
+        logger.warning("%s 不存在", yaml_path)
+        return []
+
+    config = yaml.safe_load(yaml_path.read_text()) or {}
+    feats = config.get(period, [])
+    if not feats:
+        logger.warning("%s 周期无已选特征", period)
+        return []
+
+    subset = df.dropna(subset=[target])
+    subset = subset.sort_values("open_time").reset_index(drop=True)
+    subset = subset[feats + [target]].dropna()
+    if len(subset) < 10:
+        logger.warning("样本不足，保留原列表")
+        return feats
+
+    X = subset[feats]
+    y = subset[target]
+
+    mdl = lgb.LGBMRegressor(
+        objective="regression",
+        learning_rate=0.05,
+        n_estimators=200,
+        random_state=42,
+    )
+    mdl.fit(X, y)
+
+    explainer = shap.TreeExplainer(mdl)
+    sv = explainer.shap_values(X)
+    if isinstance(sv, list):
+        sv = np.mean([np.abs(s) for s in sv], axis=0)
+    shap_imp = np.abs(sv).mean(0)
+    shap_imp /= shap_imp.sum() or 1.0
+
+    ic_vals = {c: float(X[c].corr(y)) for c in feats}
+    keep = [
+        c
+        for c, imp in zip(feats, shap_imp)
+        if imp >= shap_thresh and abs(ic_vals.get(c, 0.0)) >= ic_thresh
+    ]
+
+    config[period] = keep
+    yaml_path.write_text(yaml.dump(config, allow_unicode=True))
+    logger.info("已更新 %s 的特征列表，共 %s 项", period, len(keep))
+    return keep
+
+
