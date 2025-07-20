@@ -2614,6 +2614,143 @@ class RobustSignalGenerator:
             "funding_conflicts": funding_conflicts,
         }
 
+    def _compute_vote(
+        self,
+        ai_dir: int,
+        short_mom_dir: int,
+        vol_breakout_dir: int,
+        trend_dir: int,
+        confirm_dir: int,
+        ob_dir: int,
+    ) -> tuple[float, float, bool, bool]:
+        """Calculate vote score and confidence."""
+
+        vw = self.vote_weights
+        vote = (
+            vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
+            + vw.get("short_mom", 1) * short_mom_dir
+            + vw.get("vol_breakout", 1) * vol_breakout_dir
+            + vw.get("trend", 1) * trend_dir
+            + vw.get("confirm_15m", 1) * confirm_dir
+            + vw.get("ob", 0) * ob_dir
+        )
+
+        strong_min = self.vote_params["strong_min"]
+        conf_vote = sigmoid_confidence(
+            vote,
+            strong_min,
+            getattr(self, "signal_filters", {}).get("conf_min", 1),
+        )
+        weak_vote = (
+            abs(vote)
+            < getattr(self, "signal_filters", {}).get("min_vote", 0)
+            or conf_vote
+            < getattr(self, "signal_filters", {}).get("confidence_vote", 0)
+        )
+        strong_confirm = abs(vote) >= strong_min
+        return vote, conf_vote, weak_vote, strong_confirm
+
+    def _determine_direction(
+        self,
+        grad_dir: float,
+        regime: str,
+        fs: dict,
+        st_dir: int,
+        vol_breakout_val: float | None,
+        conf_vote: float,
+        weak_vote: bool,
+        fused_score: float,
+        base_th: float,
+        raw_f1h: dict | None,
+        std_1h: dict,
+        ts,
+        symbol,
+    ) -> int:
+        """Determine final trade direction."""
+
+        direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
+        if weak_vote:
+            direction = 0
+
+        if regime == "range":
+            atr_v = (raw_f1h or std_1h).get("atr_pct_1h")
+            bb_w = (raw_f1h or std_1h).get("bb_width_1h")
+            low_vol = False
+            if atr_v is not None and atr_v < 0.005:
+                low_vol = True
+            if bb_w is not None and bb_w < 0.01:
+                low_vol = True
+            if low_vol:
+                direction = 0
+            elif vol_breakout_val is None or vol_breakout_val <= 0 or conf_vote < 0.15:
+                direction = 0
+
+        if self._cooldown > 0:
+            self._cooldown -= 1
+
+        if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
+            flip_th = max(base_th, self.flip_coeff * abs(self._last_score))
+            if abs(fused_score) < flip_th or self._cooldown > 0:
+                direction = self._last_signal
+            else:
+                self._cooldown = 2
+
+        align_count = 0
+        if direction != 0:
+            for p in ("1h", "4h", "d1"):
+                if np.sign(fs[p]["trend"]) == direction:
+                    align_count += 1
+            if st_dir != 0 and st_dir == direction:
+                align_count += 1
+            min_align = self.min_trend_align if regime == "trend" else max(
+                self.min_trend_align - 1, 0
+            )
+            if align_count < min_align:
+                direction = 0
+
+        return direction
+
+    def _apply_position_filters(
+        self,
+        pos_size: float,
+        direction: int,
+        *,
+        weak_vote: bool,
+        funding_conflicts: int,
+        oi_overheat: bool,
+        risk_score: float,
+        logic_score: float,
+        base_th: float,
+        conflict_filter_triggered: bool,
+        zero_reason: str | None,
+    ) -> tuple[float, int, str | None]:
+        """Apply filters to position size and direction."""
+
+        if weak_vote:
+            direction = 0
+            pos_size = 0.0
+            zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
+
+        if funding_conflicts > self.veto_level:
+            direction = 0
+            pos_size = 0.0
+            zero_reason = zero_reason or ZeroReason.FUNDING_CONFLICT.value
+
+        if oi_overheat:
+            pos_size *= 0.5
+
+        pos_map = base_th * 2.0
+        if risk_score > 1 or logic_score < -0.3:
+            pos_map = min(pos_map, 0.5)
+        pos_size = min(pos_size, pos_map)
+
+        if conflict_filter_triggered:
+            pos_size = 0.0
+            direction = 0
+            zero_reason = zero_reason or ZeroReason.CONFLICT_FILTER.value
+
+        return pos_size, direction, zero_reason
+
     def finalize_position(
         self,
         fused_score: float,
@@ -2758,37 +2895,30 @@ class RobustSignalGenerator:
         else:
             ai_dir = 0
 
-        vw = self.vote_weights
-        vote = (
-            vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
-            + vw.get("short_mom", 1) * short_mom_dir
-            + vw.get("vol_breakout", 1) * vol_breakout_dir
-            + vw.get("trend", 1) * trend_dir
-            + vw.get("confirm_15m", 1) * confirm_dir
-            + vw.get("ob", 0) * ob_dir
-        )
-        conflict_filter_triggered = False
-        if (
+        conflict_filter_triggered = (
             std_1h.get("donchian_perc_1h", 0) > 0.7
             and (std_4h or {}).get("donchian_perc_4h", 1) < 0.2
-        ):
-            vote = 0
-            conflict_filter_triggered = True
-        strong_confirm_vote = abs(vote) >= self.vote_params["strong_min"]
+        )
 
-        strong_min = self.vote_params["strong_min"]
-        conf_vote = sigmoid_confidence(
-            vote,
-            strong_min,
-            getattr(self, "signal_filters", {}).get("conf_min", 1),
+        vote, conf_vote, weak_vote, strong_confirm_vote = self._compute_vote(
+            ai_dir,
+            short_mom_dir,
+            vol_breakout_dir,
+            trend_dir,
+            confirm_dir,
+            ob_dir,
         )
-        weak_vote = (
-            abs(vote)
-            < getattr(self, "signal_filters", {}).get("min_vote", 0)
-            or conf_vote
-            < getattr(self, "signal_filters", {}).get("confidence_vote", 0)
-        )
-        if abs(vote) >= strong_min:
+        if conflict_filter_triggered:
+            vote = 0
+            conf_vote = sigmoid_confidence(
+                0,
+                self.vote_params["strong_min"],
+                getattr(self, "signal_filters", {}).get("conf_min", 1),
+            )
+            weak_vote = True
+            strong_confirm_vote = False
+
+        if strong_confirm_vote:
             fused_score *= max(1, conf_vote)
 
         if weak_vote:
@@ -2857,47 +2987,24 @@ class RobustSignalGenerator:
         stdir = int(np.sign(std_d1.get("supertrend_dir_d1", 0))) if std_d1 else 0
         st_sum = st1 + st4 + stdir
         st_dir = int(np.sign(st_sum)) if st_sum != 0 else 0
-        direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
-        if weak_vote:
-            direction = 0
 
-        if regime == "range":
-            atr_v = (raw_f1h or std_1h).get("atr_pct_1h")
-            bb_w = (raw_f1h or std_1h).get("bb_width_1h")
-            low_vol = False
-            if atr_v is not None and atr_v < 0.005:
-                low_vol = True
-            if bb_w is not None and bb_w < 0.01:
-                low_vol = True
-            if low_vol:
-                direction = 0
-            elif vol_breakout_val is None or vol_breakout_val <= 0 or conf_vote < 0.15:
-                direction = 0
-
-        if self._cooldown > 0:
-            self._cooldown -= 1
-
-        if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
-            flip_th = max(base_th, self.flip_coeff * abs(self._last_score))
-            if abs(fused_score) < flip_th or self._cooldown > 0:
-                direction = self._last_signal
-            else:
-                self._cooldown = 2
+        direction = self._determine_direction(
+            grad_dir,
+            regime,
+            fs,
+            st_dir,
+            vol_breakout_val,
+            conf_vote,
+            weak_vote,
+            fused_score,
+            base_th,
+            raw_f1h,
+            std_1h,
+            ts,
+            symbol,
+        )
 
         prev_vote = getattr(self, "_prev_vote", 0)
-
-        align_count = 0
-        if direction != 0:
-            for p in ("1h", "4h", "d1"):
-                if np.sign(fs[p]["trend"]) == direction:
-                    align_count += 1
-            if st_dir != 0 and st_dir == direction:
-                align_count += 1
-            min_align = self.min_trend_align if regime == "trend" else max(
-                self.min_trend_align - 1, 0
-            )
-            if align_count < min_align:
-                direction = 0
 
         base_coeff = self.pos_coeff_range if regime == "range" else self.pos_coeff_trend
         confidence_factor = 1.0
@@ -2932,31 +3039,18 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
-
-        if weak_vote:
-            direction = 0
-            pos_size = 0.0
-            # 多因子投票强度不足，直接过滤
-            zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
-
-        if funding_conflicts > self.veto_level:
-            direction = 0
-            pos_size = 0.0
-            # 资金费率多次冲突，观望
-            zero_reason = zero_reason or ZeroReason.FUNDING_CONFLICT.value
-
-        if risk_info.get("oi_overheat"):
-            pos_size *= 0.5
-
-        pos_map = base_th * 2.0
-        if risk_score > 1 or logic_score < -0.3:
-            pos_map = min(pos_map, 0.5)
-        pos_size = min(pos_size, pos_map)
-        if conflict_filter_triggered:
-            pos_size = 0.0
-            direction = 0
-            # 因子冲突过滤触发
-            zero_reason = zero_reason or ZeroReason.CONFLICT_FILTER.value
+        pos_size, direction, zero_reason = self._apply_position_filters(
+            pos_size,
+            direction,
+            weak_vote=weak_vote,
+            funding_conflicts=funding_conflicts,
+            oi_overheat=risk_info.get("oi_overheat"),
+            risk_score=risk_score,
+            logic_score=logic_score,
+            base_th=base_th,
+            conflict_filter_triggered=conflict_filter_triggered,
+            zero_reason=zero_reason,
+        )
 
         price = (raw_f1h or std_1h).get("close", 0)
         if raw_f4h is not None and "atr_pct_4h" in raw_f4h:
