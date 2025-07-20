@@ -145,9 +145,32 @@ class SignalThresholdParams:
             rev_th_mult=float(get_cfg_value(cfg, "rev_th_mult", cls.rev_th_mult)),
             atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
             funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
-            adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
+        adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
         )
 
+
+@dataclass
+class DynamicThresholdParams:
+    """Parameters controlling ATR, funding and ADX impact on threshold."""
+
+    atr_mult: float = 4.0
+    atr_cap: float = 0.10
+    funding_mult: float = 8.0
+    funding_cap: float = 0.08
+    adx_div: float = 100.0
+    adx_cap: float = 0.04
+
+    @classmethod
+    def from_cfg(cls, cfg: dict | None):
+        cfg = cfg or {}
+        return cls(
+            atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
+            atr_cap=float(get_cfg_value(cfg, "atr_cap", cls.atr_cap)),
+            funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
+            funding_cap=float(get_cfg_value(cfg, "funding_cap", cls.funding_cap)),
+            adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
+            adx_cap=float(get_cfg_value(cfg, "adx_cap", cls.adx_cap)),
+        )
 
 @dataclass
 class RobustSignalGeneratorConfig:
@@ -524,6 +547,7 @@ class RobustSignalGenerator:
         self.signal_threshold_cfg = get_cfg_value(cfg, "signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
             self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
+        self.dynamic_threshold_cfg = get_cfg_value(cfg, "dynamic_threshold", {})
         db_cfg = get_cfg_value(cfg, "delta_boost", {})
         self.core_keys = core_keys or get_cfg_value(db_cfg, "core_keys", self.DEFAULT_CORE_KEYS)
         self.delta_params = delta_params or get_cfg_value(db_cfg, "params", self.DELTA_PARAMS)
@@ -545,6 +569,7 @@ class RobustSignalGenerator:
                 "confirm_15m": 1,
             },
         )
+        self.regime_vote_weights = get_cfg_value(cfg, "regime_vote_weights", {})
 
         filters_cfg = get_cfg_value(cfg, "signal_filters", {})
         # ↓ 放宽阈值，防止信号被过度过滤
@@ -722,6 +747,7 @@ class RobustSignalGenerator:
             "delta_params": self.DELTA_PARAMS.copy(),
             "vote_params": self.VOTE_PARAMS.copy(),
             "vote_weights": {"ob": 4, "short_mom": 2, "ai": 3, "vol_breakout": 1},
+            "regime_vote_weights": {},
             "exit_lag_bars": EXIT_LAG_BARS_DEFAULT,
             "th_window": 60,
             "th_decay": 2.0,
@@ -754,6 +780,7 @@ class RobustSignalGenerator:
             "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
             "rebound_cooldown": 3,
             "last_rebound_ts": 0,
+            "dynamic_th_params": DynamicThresholdParams.from_cfg({}),
         }
         if name in defaults:
             val = defaults[name]
@@ -774,9 +801,6 @@ class RobustSignalGenerator:
                 "low_base": DEFAULT_LOW_BASE,
                 "rev_boost": 0.15,
                 "rev_th_mult": 0.60,
-                "atr_mult": 4.0,
-                "funding_mult": 8.0,
-                "adx_div": 100.0,
             }
             self.signal_params = SignalThresholdParams.from_cfg(self._signal_threshold_cfg)
         return self._signal_threshold_cfg
@@ -785,6 +809,25 @@ class RobustSignalGenerator:
     def signal_threshold_cfg(self, value):
         self._signal_threshold_cfg = value or {}
         self.signal_params = SignalThresholdParams.from_cfg(self._signal_threshold_cfg)
+
+    @property
+    def dynamic_threshold_cfg(self):
+        if not hasattr(self, "_dynamic_threshold_cfg"):
+            self._dynamic_threshold_cfg = {
+                "atr_mult": 4.0,
+                "atr_cap": 0.10,
+                "funding_mult": 8.0,
+                "funding_cap": 0.08,
+                "adx_div": 100.0,
+                "adx_cap": 0.04,
+            }
+            self.dynamic_th_params = DynamicThresholdParams.from_cfg(self._dynamic_threshold_cfg)
+        return self._dynamic_threshold_cfg
+
+    @dynamic_threshold_cfg.setter
+    def dynamic_threshold_cfg(self, value):
+        self._dynamic_threshold_cfg = value or {}
+        self.dynamic_th_params = DynamicThresholdParams.from_cfg(self._dynamic_threshold_cfg)
 
 
     def get_dynamic_oi_threshold(self, pred_vol=None, base=0.5, quantile=0.9):
@@ -982,6 +1025,28 @@ class RobustSignalGenerator:
                 }
             return self.symbol_data[symbol]
 
+    def _update_history(self, cache, period, raw, prev=None):
+        """更新历史缓存
+
+        Parameters
+        ----------
+        cache : dict
+            币种或全局缓存字典。
+        period : str
+            周期名称，如 ``"1h"``。
+        raw : dict
+            原始特征字典，将会写入 ``_raw_history``。
+        prev : dict, optional
+            用于 ``_prev_raw`` 的特征，默认为 ``raw``。
+        """
+
+        if prev is None:
+            prev = raw
+
+        maxlen = 4 if period in ("15m", "1h") else 2
+        cache.setdefault("_raw_history", {}).setdefault(period, deque(maxlen=maxlen)).append(raw)
+        cache.setdefault("_prev_raw", {})[period] = prev
+
     def _normalize_features(self, feats, period: str) -> dict:
         """将 DataFrame/Series 输入转为字典, 并缓存列索引"""
         if isinstance(feats, dict):
@@ -1007,12 +1072,24 @@ class RobustSignalGenerator:
             return {c: row.iat[i] for c, i in idx_map.items()}
         return {}
 
+    def get_feat_value(self, features: dict | None, key: str, default: float = 0.0):
+        """Return ``features[key]`` if available and valid, else ``default``."""
+
+        if not features:
+            return default
+        val = features.get(key, default)
+        if val is None:
+            return default
+        if isinstance(val, (int, float)) and pd.isna(val):
+            return default
+        return val
+
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> float:
         """根据1h MA5 与 MA20 判断并返回分数乘数"""
 
-        sma5 = features.get('sma_5_1h')
-        sma20 = features.get('sma_20_1h')
-        ma_ratio = features.get('ma_ratio_5_20', 1.0)
+        sma5 = self.get_feat_value(features, 'sma_5_1h', None)
+        sma20 = self.get_feat_value(features, 'sma_20_1h', None)
+        ma_ratio = self.get_feat_value(features, 'ma_ratio_5_20', 1.0)
         if sma5 is None or sma20 is None:
             return 1.0
 
@@ -1086,6 +1163,39 @@ class RobustSignalGenerator:
 
         return exit_mult
 
+    def _apply_risk_adjustment(self, pos_size: float, risk_score: float) -> float:
+        """根据风险评分调整仓位大小"""
+        risk_factor = math.exp(-self.risk_scale * risk_score)
+        return pos_size * risk_factor
+
+    def _apply_low_volume_penalty(
+        self,
+        pos_size: float,
+        *,
+        regime: str,
+        vol_ratio: float | None,
+        fused_score: float,
+        base_th: float,
+        consensus_all: bool,
+    ) -> tuple[float, bool]:
+        """在低成交量环境下惩罚仓位, 返回是否触发标记"""
+        low_vol_flag = (
+            regime == "range"
+            and vol_ratio is not None
+            and vol_ratio < self.low_vol_ratio
+            and abs(fused_score) < base_th + 0.02
+            and not consensus_all
+        )
+        if low_vol_flag:
+            pos_size *= 0.5
+        return pos_size, low_vol_flag
+
+    def _apply_vol_prediction_adjustment(self, pos_size: float, vol_p: float | None) -> float:
+        """根据预测波动率对仓位进行修正"""
+        if vol_p is not None:
+            pos_size *= max(0.4, 1 - min(0.6, vol_p))
+        return pos_size
+
     def compute_position_size(
         self,
         *,
@@ -1116,8 +1226,8 @@ class RobustSignalGenerator:
         zero_reason: str | None = None
         low_vol_flag = False
 
-        risk_factor = math.exp(-self.risk_scale * risk_score)
-        pos_size = base_size * sigmoid(confidence_factor) * risk_factor
+        pos_size = base_size * sigmoid(confidence_factor)
+        pos_size = self._apply_risk_adjustment(pos_size, risk_score)
         pos_size *= exit_mult
         pos_size = min(pos_size, self.max_position)
         pos_size *= crowding_factor
@@ -1126,19 +1236,17 @@ class RobustSignalGenerator:
             # 无趋势方向时不做仓位
             zero_reason = ZeroReason.NO_DIRECTION.value
 
-        if (
-            regime == "range"
-            and vol_ratio is not None
-            and vol_ratio < self.low_vol_ratio
-            and abs(fused_score) < base_th + 0.02
-            and not consensus_all
-        ):
-            pos_size *= 0.5
-            low_vol_flag = True
+        pos_size, low_vol_flag = self._apply_low_volume_penalty(
+            pos_size,
+            regime=regime,
+            vol_ratio=vol_ratio,
+            fused_score=fused_score,
+            base_th=base_th,
+            consensus_all=consensus_all,
+        )
 
 
-        if vol_p is not None:
-            pos_size *= max(0.4, 1 - min(0.6, vol_p))
+        pos_size = self._apply_vol_prediction_adjustment(pos_size, vol_p)
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
         min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
@@ -1215,15 +1323,7 @@ class RobustSignalGenerator:
 
         # 去除重复字段，避免两次写入同名特征
         dedup_row = {k: v for k, v in features.items()}
-
-        def safe(key: str, default=0):
-            """如果值缺失或为 NaN，返回 default。"""
-            v = dedup_row.get(key, default)
-            if v is None:
-                return default
-            if isinstance(v, (float, int)) and pd.isna(v):
-                return default
-            return v
+        safe = lambda k, d=0: self.get_feat_value(dedup_row, k, d)
 
         td_score = math.tanh(
             (safe(f"td_sell_count_{period}", 0) - safe(f"td_buy_count_{period}", 0))
@@ -1474,6 +1574,7 @@ class RobustSignalGenerator:
         """Calculate dynamic threshold using provided metrics."""
 
         params = self.signal_params
+        dyn_p = self.dynamic_th_params
         base = params.base_th if base is None else base
         low_base = params.low_base if low_base is None else low_base
 
@@ -1492,7 +1593,7 @@ class RobustSignalGenerator:
             atr_eff += 0.5 * abs(data.atr_4h)
         if data.atr_d1 is not None:
             atr_eff += 0.25 * abs(data.atr_d1)
-        th += min(0.10, atr_eff * params.atr_mult)
+        th += min(dyn_p.atr_cap, atr_eff * dyn_p.atr_mult)
 
         fund_eff = abs(data.funding)
         if data.pred_vol is not None:
@@ -1503,14 +1604,14 @@ class RobustSignalGenerator:
             fund_eff += 0.15 * abs(data.pred_vol_d1)
         if data.vix_proxy is not None:
             fund_eff += 0.25 * abs(data.vix_proxy)
-        th += min(0.08, fund_eff * params.funding_mult)
+        th += min(dyn_p.funding_cap, fund_eff * dyn_p.funding_mult)
 
         adx_eff = abs(data.adx)
         if data.adx_4h is not None:
             adx_eff += 0.5 * abs(data.adx_4h)
         if data.adx_d1 is not None:
             adx_eff += 0.25 * abs(data.adx_d1)
-        th += min(0.04, adx_eff / params.adx_div)
+        th += min(dyn_p.adx_cap, adx_eff / dyn_p.adx_div)
 
         if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
             th = min(th, hist_base)
@@ -2145,6 +2246,47 @@ class RobustSignalGenerator:
             "deltas": deltas,
         }
 
+    def _calc_ai_for_period(self, period: str, feats: dict):
+        """计算单个周期的 AI 相关预测"""
+
+        models_p = self.models.get(period, {})
+
+        if not models_p:
+            return None, None, None, None
+
+        if "cls" in models_p and "up" not in models_p:
+            ai_score = self.get_ai_score_cls(feats, models_p["cls"])
+        else:
+            cal_up = self.calibrators.get(period, {}).get("up")
+            cal_down = self.calibrators.get(period, {}).get("down")
+            if cal_up is None and cal_down is None:
+                ai_score = self.get_ai_score(
+                    feats,
+                    models_p["up"],
+                    models_p["down"],
+                )
+            else:
+                ai_score = self.get_ai_score(
+                    feats,
+                    models_p["up"],
+                    models_p["down"],
+                    cal_up,
+                    cal_down,
+                )
+
+        vol_pred = None
+        rise_pred = None
+        drawdown_pred = None
+
+        if "vol" in models_p:
+            vol_pred = self.get_vol_prediction(feats, models_p["vol"])
+        if "rise" in models_p:
+            rise_pred = self.get_reg_prediction(feats, models_p["rise"])
+        if "drawdown" in models_p:
+            drawdown_pred = self.get_reg_prediction(feats, models_p["drawdown"])
+
+        return ai_score, vol_pred, rise_pred, drawdown_pred
+
     def compute_ai_scores(
         self,
         feats_1h: PeriodFeatures,
@@ -2167,34 +2309,15 @@ class RobustSignalGenerator:
             ("4h", feats_4h.std),
             ("d1", feats_d1.std),
         ]:
-            models_p = self.models.get(p, {})
-            if "cls" in models_p and "up" not in models_p:
-                ai_scores[p] = self.get_ai_score_cls(feats, models_p["cls"])
-            else:
-                cal_up = self.calibrators.get(p, {}).get("up")
-                cal_down = self.calibrators.get(p, {}).get("down")
-                if cal_up is None and cal_down is None:
-                    ai_scores[p] = self.get_ai_score(
-                        feats,
-                        models_p["up"],
-                        models_p["down"],
-                    )
-                else:
-                    ai_scores[p] = self.get_ai_score(
-                        feats,
-                        models_p["up"],
-                        models_p["down"],
-                        cal_up,
-                        cal_down,
-                    )
-            if "vol" in models_p:
-                vol_preds[p] = self.get_vol_prediction(feats, models_p["vol"])
-            if "rise" in models_p:
-                rise_preds[p] = self.get_reg_prediction(feats, models_p["rise"])
-            if "drawdown" in models_p:
-                drawdown_preds[p] = self.get_reg_prediction(
-                    feats, models_p["drawdown"]
-                )
+            ai, vol, rise, drawdown = self._calc_ai_for_period(p, feats)
+            if ai is not None:
+                ai_scores[p] = ai
+            if vol is not None:
+                vol_preds[p] = vol
+            if rise is not None:
+                rise_preds[p] = rise
+            if drawdown is not None:
+                drawdown_preds[p] = drawdown
 
         extreme_reversal = False
         rsi = feats_d1.raw.get("rsi_d1", 50)
@@ -2622,10 +2745,13 @@ class RobustSignalGenerator:
         trend_dir: int,
         confirm_dir: int,
         ob_dir: int,
+        regime: str | None = None,
     ) -> tuple[float, float, bool, bool]:
         """Calculate vote score and confidence."""
-
-        vw = self.vote_weights
+        vw = self.vote_weights.copy()
+        if regime and isinstance(self.regime_vote_weights.get(regime), dict):
+            for k, v in self.regime_vote_weights[regime].items():
+                vw[k] = v
         vote = (
             vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
             + vw.get("short_mom", 1) * short_mom_dir
@@ -2899,6 +3025,7 @@ class RobustSignalGenerator:
             trend_dir,
             confirm_dir,
             ob_dir,
+            regime,
         )
         if conflict_filter_triggered:
             vote = 0
@@ -3094,18 +3221,13 @@ class RobustSignalGenerator:
             self._last_signal = int(np.sign(direction)) if direction else 0
             self._last_score = fused_score
             self._prev_vote = vote
-            cache["_prev_raw"]["15m"] = std_15m
-            cache["_prev_raw"]["1h"] = std_1h
-            cache["_prev_raw"]["4h"] = std_4h
-            cache["_prev_raw"]["d1"] = std_d1
-            for p, raw in [
-                ("15m", raw_f15m),
-                ("1h", raw_f1h),
-                ("4h", raw_f4h),
-                ("d1", raw_fd1),
+            for p, raw, prev in [
+                ("15m", raw_f15m, std_15m),
+                ("1h", raw_f1h, std_1h),
+                ("4h", raw_f4h, std_4h),
+                ("d1", raw_fd1, std_d1),
             ]:
-                maxlen = 4 if p in ("15m", "1h") else 2
-                cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
+                self._update_history(cache, p, raw, prev)
 
         final_details = {
             "ai": {"1h": ai_scores["1h"], "4h": ai_scores["4h"], "d1": ai_scores["d1"]},
@@ -3189,13 +3311,13 @@ class RobustSignalGenerator:
             logging.debug("Fused score NaN, returning 0 signal")
             self._last_score = fused_score
             with self._lock:
-                self._prev_raw["15m"] = std_15m
-                self._prev_raw["1h"] = std_1h
-                self._prev_raw["4h"] = std_4h
-                self._prev_raw["d1"] = std_d1
-                for p, raw in [("15m", raw_f15m), ("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                    maxlen = 4 if p in ("15m", "1h") else 2
-                    self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
+                for p, raw, prev in [
+                    ("15m", raw_f15m, std_15m),
+                    ("1h", raw_f1h, std_1h),
+                    ("4h", raw_f4h, std_4h),
+                    ("d1", raw_fd1, std_d1),
+                ]:
+                    self._update_history(cache, p, raw, prev)
             self._last_signal = 0
             self._cooldown = 0
             result = {
