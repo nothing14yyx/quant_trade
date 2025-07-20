@@ -19,6 +19,11 @@ def test_calc_features_raw_with_cg():
         'cg_price': [1.4, 1.6, 1.8],
         'cg_market_cap': [1000, 1100, 1200],
         'cg_total_volume': [2000, 2200, 2400],
+        'AdrActCnt': [100, 110, 121],
+        'AdrNewCnt': [50, 60, 55],
+        'TxCnt': [10, 12, 12],
+        'CapMrktCurUSD': [1000, 1100, 1200],
+        'CapRealUSD': [800, 900, 1000],
     }, index=times)
 
     feats = calc_features_raw(df, '1h')
@@ -37,6 +42,18 @@ def test_calc_features_raw_with_cg():
 
     assert 'volume_cg_ratio_1h' in feats
     assert feats['volume_cg_ratio_1h'].iloc[0] == pytest.approx(100 / 2000)
+
+    assert 'active_addr_roc_1h' in feats
+    assert feats['active_addr_roc_1h'].iloc[1] == pytest.approx(0.1)
+
+    assert 'new_addr_roc_1h' in feats
+    assert feats['new_addr_roc_1h'].iloc[2] == pytest.approx((55 - 60) / 60)
+
+    assert 'tx_count_roc_1h' in feats
+    assert feats['tx_count_roc_1h'].iloc[1] == pytest.approx(0.2)
+
+    assert 'mvrv_ratio_1h' in feats
+    assert feats['mvrv_ratio_1h'].iloc[0] == pytest.approx(1000 / 800)
 
     new_cols = [
         'hv_7d_1h',
@@ -139,4 +156,28 @@ def test_calc_features_raw_index_sort_unique():
 
     assert feats.index.is_monotonic_increasing
     assert not feats.index.has_duplicates
+
+
+def test_onchain_features_cross_merge():
+    times = pd.date_range('2020-01-01', periods=3, freq='h')
+    df = pd.DataFrame({
+        'open': [1, 2, 3],
+        'high': [2, 3, 4],
+        'low': [0.5, 1.5, 2.5],
+        'close': [1.5, 2.5, 3.5],
+        'volume': [100, 100, 100],
+        'AdrActCnt': [100, 110, 121],
+        'AdrNewCnt': [50, 60, 55],
+        'TxCnt': [10, 12, 12],
+        'CapMrktCurUSD': [1000, 1100, 1200],
+        'CapRealUSD': [800, 900, 1000],
+    }, index=times)
+
+    f1h = calc_features_raw(df, '1h')
+    f4h = calc_features_raw(df, '4h')
+    f1d = calc_features_raw(df, 'd1')
+    merged = calc_cross_features(f1h, f4h, f1d)
+
+    assert 'active_addr_roc_4h' in merged
+    assert 'mvrv_ratio_d1' in merged
 
