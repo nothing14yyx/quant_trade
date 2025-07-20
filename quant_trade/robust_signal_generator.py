@@ -145,9 +145,32 @@ class SignalThresholdParams:
             rev_th_mult=float(get_cfg_value(cfg, "rev_th_mult", cls.rev_th_mult)),
             atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
             funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
-            adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
+        adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
         )
 
+
+@dataclass
+class DynamicThresholdParams:
+    """Parameters controlling ATR, funding and ADX impact on threshold."""
+
+    atr_mult: float = 4.0
+    atr_cap: float = 0.10
+    funding_mult: float = 8.0
+    funding_cap: float = 0.08
+    adx_div: float = 100.0
+    adx_cap: float = 0.04
+
+    @classmethod
+    def from_cfg(cls, cfg: dict | None):
+        cfg = cfg or {}
+        return cls(
+            atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
+            atr_cap=float(get_cfg_value(cfg, "atr_cap", cls.atr_cap)),
+            funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
+            funding_cap=float(get_cfg_value(cfg, "funding_cap", cls.funding_cap)),
+            adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
+            adx_cap=float(get_cfg_value(cfg, "adx_cap", cls.adx_cap)),
+        )
 
 @dataclass
 class RobustSignalGeneratorConfig:
@@ -524,6 +547,7 @@ class RobustSignalGenerator:
         self.signal_threshold_cfg = get_cfg_value(cfg, "signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
             self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
+        self.dynamic_threshold_cfg = get_cfg_value(cfg, "dynamic_threshold", {})
         db_cfg = get_cfg_value(cfg, "delta_boost", {})
         self.core_keys = core_keys or get_cfg_value(db_cfg, "core_keys", self.DEFAULT_CORE_KEYS)
         self.delta_params = delta_params or get_cfg_value(db_cfg, "params", self.DELTA_PARAMS)
@@ -756,6 +780,7 @@ class RobustSignalGenerator:
             "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
             "rebound_cooldown": 3,
             "last_rebound_ts": 0,
+            "dynamic_th_params": DynamicThresholdParams.from_cfg({}),
         }
         if name in defaults:
             val = defaults[name]
@@ -776,9 +801,6 @@ class RobustSignalGenerator:
                 "low_base": DEFAULT_LOW_BASE,
                 "rev_boost": 0.15,
                 "rev_th_mult": 0.60,
-                "atr_mult": 4.0,
-                "funding_mult": 8.0,
-                "adx_div": 100.0,
             }
             self.signal_params = SignalThresholdParams.from_cfg(self._signal_threshold_cfg)
         return self._signal_threshold_cfg
@@ -787,6 +809,25 @@ class RobustSignalGenerator:
     def signal_threshold_cfg(self, value):
         self._signal_threshold_cfg = value or {}
         self.signal_params = SignalThresholdParams.from_cfg(self._signal_threshold_cfg)
+
+    @property
+    def dynamic_threshold_cfg(self):
+        if not hasattr(self, "_dynamic_threshold_cfg"):
+            self._dynamic_threshold_cfg = {
+                "atr_mult": 4.0,
+                "atr_cap": 0.10,
+                "funding_mult": 8.0,
+                "funding_cap": 0.08,
+                "adx_div": 100.0,
+                "adx_cap": 0.04,
+            }
+            self.dynamic_th_params = DynamicThresholdParams.from_cfg(self._dynamic_threshold_cfg)
+        return self._dynamic_threshold_cfg
+
+    @dynamic_threshold_cfg.setter
+    def dynamic_threshold_cfg(self, value):
+        self._dynamic_threshold_cfg = value or {}
+        self.dynamic_th_params = DynamicThresholdParams.from_cfg(self._dynamic_threshold_cfg)
 
 
     def get_dynamic_oi_threshold(self, pred_vol=None, base=0.5, quantile=0.9):
@@ -1476,6 +1517,7 @@ class RobustSignalGenerator:
         """Calculate dynamic threshold using provided metrics."""
 
         params = self.signal_params
+        dyn_p = self.dynamic_th_params
         base = params.base_th if base is None else base
         low_base = params.low_base if low_base is None else low_base
 
@@ -1494,7 +1536,7 @@ class RobustSignalGenerator:
             atr_eff += 0.5 * abs(data.atr_4h)
         if data.atr_d1 is not None:
             atr_eff += 0.25 * abs(data.atr_d1)
-        th += min(0.10, atr_eff * params.atr_mult)
+        th += min(dyn_p.atr_cap, atr_eff * dyn_p.atr_mult)
 
         fund_eff = abs(data.funding)
         if data.pred_vol is not None:
@@ -1505,14 +1547,14 @@ class RobustSignalGenerator:
             fund_eff += 0.15 * abs(data.pred_vol_d1)
         if data.vix_proxy is not None:
             fund_eff += 0.25 * abs(data.vix_proxy)
-        th += min(0.08, fund_eff * params.funding_mult)
+        th += min(dyn_p.funding_cap, fund_eff * dyn_p.funding_mult)
 
         adx_eff = abs(data.adx)
         if data.adx_4h is not None:
             adx_eff += 0.5 * abs(data.adx_4h)
         if data.adx_d1 is not None:
             adx_eff += 0.25 * abs(data.adx_d1)
-        th += min(0.04, adx_eff / params.adx_div)
+        th += min(dyn_p.adx_cap, adx_eff / dyn_p.adx_div)
 
         if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
             th = min(th, hist_base)

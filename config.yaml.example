@@ -14,6 +14,13 @@ signal_threshold:
   base_th: 0.08
   quantile: 0.80
   rev_boost: 0.15  # detect_reversal 命中时加分
+dynamic_threshold:
+  atr_mult: 4.0
+  atr_cap: 0.10
+  funding_mult: 8.0
+  funding_cap: 0.08
+  adx_div: 100.0
+  adx_cap: 0.04
 
 risk_adjust_threshold: 0.03  # 得分绝对值低于该值不会入场
 veto_conflict_count: 2       # funding 冲突达到该数即放弃信号

@@ -23,6 +23,7 @@
 -   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.80`，数值越高代表触发门槛越严格。
 -   `compute_dynamic_threshold` 会依据最近 `history_scores` 计算分位数，并结合 `atr_4h`、`adx_4h`、`atr_d1`、`adx_d1` 与 `pred_vol`、`vix_proxy` 等指标自适应调整门槛，`regime` 与 `reversal` 还能微调阈值和 `rev_boost`，参数统一封装在 `DynamicThresholdInput` 中。
 -   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
+-   新增 `dynamic_threshold` 配置项，可自定义 ATR、ADX 与 funding 对阈值的影响系数及上限。
 -   新增 `risk_budget_threshold` 函数，可依据历史波动率或换手率分布计算风险阈值：
 
 ```python
@@ -135,6 +136,14 @@ signal_threshold:
 ```
 这会使阈值更快反应最新波动，从而在行情活跃时给出更多交易机会。
 `rev_boost` 则决定在检测到潜在反转时额外加成的得分，数值越大越易触发交易。
+`dynamic_threshold` 区块则控制 ATR、ADX 与 funding 对阈值的加成比例和上限，
+如需放宽限制可在其中调整:
+
+```yaml
+dynamic_threshold:
+  atr_mult: 3.0
+  atr_cap: 0.15
+```
 
 ## 数据库初始化
 
