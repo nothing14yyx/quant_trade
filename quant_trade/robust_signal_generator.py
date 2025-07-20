@@ -984,6 +984,28 @@ class RobustSignalGenerator:
                 }
             return self.symbol_data[symbol]
 
+    def _update_history(self, cache, period, raw, prev=None):
+        """更新历史缓存
+
+        Parameters
+        ----------
+        cache : dict
+            币种或全局缓存字典。
+        period : str
+            周期名称，如 ``"1h"``。
+        raw : dict
+            原始特征字典，将会写入 ``_raw_history``。
+        prev : dict, optional
+            用于 ``_prev_raw`` 的特征，默认为 ``raw``。
+        """
+
+        if prev is None:
+            prev = raw
+
+        maxlen = 4 if period in ("15m", "1h") else 2
+        cache.setdefault("_raw_history", {}).setdefault(period, deque(maxlen=maxlen)).append(raw)
+        cache.setdefault("_prev_raw", {})[period] = prev
+
     def _normalize_features(self, feats, period: str) -> dict:
         """将 DataFrame/Series 输入转为字典, 并缓存列索引"""
         if isinstance(feats, dict):
@@ -3100,18 +3122,13 @@ class RobustSignalGenerator:
             self._last_signal = int(np.sign(direction)) if direction else 0
             self._last_score = fused_score
             self._prev_vote = vote
-            cache["_prev_raw"]["15m"] = std_15m
-            cache["_prev_raw"]["1h"] = std_1h
-            cache["_prev_raw"]["4h"] = std_4h
-            cache["_prev_raw"]["d1"] = std_d1
-            for p, raw in [
-                ("15m", raw_f15m),
-                ("1h", raw_f1h),
-                ("4h", raw_f4h),
-                ("d1", raw_fd1),
+            for p, raw, prev in [
+                ("15m", raw_f15m, std_15m),
+                ("1h", raw_f1h, std_1h),
+                ("4h", raw_f4h, std_4h),
+                ("d1", raw_fd1, std_d1),
             ]:
-                maxlen = 4 if p in ("15m", "1h") else 2
-                cache["_raw_history"].setdefault(p, deque(maxlen=maxlen)).append(raw)
+                self._update_history(cache, p, raw, prev)
 
         final_details = {
             "ai": {"1h": ai_scores["1h"], "4h": ai_scores["4h"], "d1": ai_scores["d1"]},
@@ -3195,13 +3212,13 @@ class RobustSignalGenerator:
             logging.debug("Fused score NaN, returning 0 signal")
             self._last_score = fused_score
             with self._lock:
-                self._prev_raw["15m"] = std_15m
-                self._prev_raw["1h"] = std_1h
-                self._prev_raw["4h"] = std_4h
-                self._prev_raw["d1"] = std_d1
-                for p, raw in [("15m", raw_f15m), ("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-                    maxlen = 4 if p in ("15m", "1h") else 2
-                    self._raw_history.setdefault(p, deque(maxlen=maxlen)).append(raw)
+                for p, raw, prev in [
+                    ("15m", raw_f15m, std_15m),
+                    ("1h", raw_f1h, std_1h),
+                    ("4h", raw_f4h, std_4h),
+                    ("d1", raw_fd1, std_d1),
+                ]:
+                    self._update_history(cache, p, raw, prev)
             self._last_signal = 0
             self._cooldown = 0
             result = {
