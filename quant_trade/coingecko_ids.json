@@ -277,5 +277,15 @@
   "DIAUSDT": "dia-data",
   "BBUSDT": "bouncebit",
   "DYMUSDT": "dymension",
-  "GASUSDT": "gas"
+  "GASUSDT": "gas",
+  "PUFFERUSDT": "puffer-finance",
+  "HOTUSDT": "holotoken",
+  "ACHUSDT": "alchemy-pay",
+  "NEOUSDT": "neo",
+  "KDAUSDT": "kadena",
+  "THETAUSDT": "theta-token",
+  "XVGUSDT": "verge",
+  "SNXUSDT": "havven",
+  "GRTUSDT": "the-graph",
+  "SXPUSDT": "swipe"
 }
