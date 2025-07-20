@@ -642,6 +642,19 @@ class FeatureEngineer:
         if drop_cols:
             out.drop(columns=drop_cols, inplace=True)
 
+        # remove coinmetrics-derived features when cm_onchain_metrics data is limited
+        cm_prefixes = (
+            "active_addr_roc_",
+            "new_addr_roc_",
+            "tx_count_roc_",
+            "mvrv_ratio_",
+        )
+        cm_feat_cols = [c for c in out.columns if c.startswith(cm_prefixes)]
+        cm_flag_cols = [f"{c}_isnan" for c in cm_feat_cols if f"{c}_isnan" in out.columns]
+        drop_cols = cm_feat_cols + cm_flag_cols
+        if drop_cols:
+            out.drop(columns=drop_cols, inplace=True)
+
         if out.shape[1] > 0:
             return out
         return None
