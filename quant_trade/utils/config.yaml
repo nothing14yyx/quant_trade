@@ -370,6 +370,12 @@ vote_weights:
   trend: 1
   confirm_15m: 1
 
+regime_vote_weights:
+  trend:
+    trend: 2
+  range:
+    vol_breakout: 2
+
 # === 调参选项 ===
 sentiment_alpha: 0.5
 cap_positive_scale: 0.85

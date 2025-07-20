@@ -545,6 +545,7 @@ class RobustSignalGenerator:
                 "confirm_15m": 1,
             },
         )
+        self.regime_vote_weights = get_cfg_value(cfg, "regime_vote_weights", {})
 
         filters_cfg = get_cfg_value(cfg, "signal_filters", {})
         # ↓ 放宽阈值，防止信号被过度过滤
@@ -722,6 +723,7 @@ class RobustSignalGenerator:
             "delta_params": self.DELTA_PARAMS.copy(),
             "vote_params": self.VOTE_PARAMS.copy(),
             "vote_weights": {"ob": 4, "short_mom": 2, "ai": 3, "vol_breakout": 1},
+            "regime_vote_weights": {},
             "exit_lag_bars": EXIT_LAG_BARS_DEFAULT,
             "th_window": 60,
             "th_decay": 2.0,
@@ -2622,10 +2624,13 @@ class RobustSignalGenerator:
         trend_dir: int,
         confirm_dir: int,
         ob_dir: int,
+        regime: str | None = None,
     ) -> tuple[float, float, bool, bool]:
         """Calculate vote score and confidence."""
-
-        vw = self.vote_weights
+        vw = self.vote_weights.copy()
+        if regime and isinstance(self.regime_vote_weights.get(regime), dict):
+            for k, v in self.regime_vote_weights[regime].items():
+                vw[k] = v
         vote = (
             vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
             + vw.get("short_mom", 1) * short_mom_dir
@@ -2899,6 +2904,7 @@ class RobustSignalGenerator:
             trend_dir,
             confirm_dir,
             ob_dir,
+            regime,
         )
         if conflict_filter_triggered:
             vote = 0
