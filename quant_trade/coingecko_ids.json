@@ -275,5 +275,7 @@
   "ACXUSDT": "across-protocol",
   "HEIUSDT": "heima",
   "DIAUSDT": "dia-data",
-  "BBUSDT": "bouncebit"
+  "BBUSDT": "bouncebit",
+  "DYMUSDT": "dymension",
+  "GASUSDT": "gas"
 }
