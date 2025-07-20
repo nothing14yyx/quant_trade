@@ -38,7 +38,6 @@ def test_main_handles_none(monkeypatch, caplog):
     monkeypatch.setattr(gsdb, "load_symbol_categories", lambda *a, **k: {})
     monkeypatch.setattr(gsdb, "prepare_all_features", lambda *a, **k: ({}, {}, {}, {}, {}, {}))
     monkeypatch.setattr(gsdb, "RobustSignalGenerator", lambda *a, **k: DummySG())
-    monkeypatch.setattr(gsdb, "collect_feature_cols", lambda *a, **k: [])
 
     with caplog.at_level(logging.INFO):
         gsdb.main("AAA")

@@ -5,6 +5,7 @@ import json
 import math
 import logging
 import time
+import asyncio
 from datetime import datetime, timedelta, UTC
 import pandas as pd
 import numpy as np
@@ -12,13 +13,13 @@ import numpy as np
 from quant_trade.data_loader import DataLoader
 from quant_trade.feature_engineering import FeatureEngineer
 from quant_trade.utils.db import load_config, connect_mysql
-from quant_trade.generate_signal_from_db import (
-    load_scaler_params_from_json,
-    prepare_all_features,
-    load_global_metrics,
-    load_latest_open_interest,
-    load_order_book_imbalance,
+from quant_trade.utils.robust_scaler import load_scaler_params_from_json
+from quant_trade.feature_loader import (
     load_symbol_categories,
+    prepare_all_features_async,
+    load_global_metrics_async,
+    load_latest_open_interest_async,
+    load_order_book_imbalance_async,
 )
 from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
@@ -200,18 +201,16 @@ class Scheduler:
 
     def generate_signals(self, symbols):
         logging.info("generating signals for %s symbols", len(symbols))
-        global_metrics = load_global_metrics(self.engine)
-        results = []
-        now = datetime.now(UTC).replace(second=0, microsecond=0)
-        for sym in symbols:
+
+        async def process(sym: str):
             try:
-                feats = prepare_all_features(self.engine, sym, self.scaler_params)
+                feats = await prepare_all_features_async(self.engine, sym, self.scaler_params)
                 if feats is None:
                     logging.debug("skip %s - insufficient data", sym)
-                    continue
+                    return None
                 feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = feats
-                oi = load_latest_open_interest(self.engine, sym)
-                order_imb = load_order_book_imbalance(self.engine, sym)
+                oi = await load_latest_open_interest_async(self.engine, sym)
+                order_imb = await load_order_book_imbalance_async(self.engine, sym)
                 sig = self.sg.generate_signal(
                     feats1h,
                     feats4h,
@@ -226,14 +225,14 @@ class Scheduler:
                 )
                 if sig is None:
                     logging.debug("skip %s – signal generator returned None", sym)
-                    continue
-                raw1h = {k: _to_builtin(v) for k, v in raw1h.items()}
-                raw4h = {k: _to_builtin(v) for k, v in raw4h.items()}
-                rawd1 = {k: _to_builtin(v) for k, v in rawd1.items()}
+                    return None
+                raw1h_b = {k: _to_builtin(v) for k, v in raw1h.items()}
+                raw4h_b = {k: _to_builtin(v) for k, v in raw4h.items()}
+                rawd1_b = {k: _to_builtin(v) for k, v in rawd1.items()}
                 data = {
                     "symbol": sym,
                     "time": now,
-                    "price": raw1h.get("close"),
+                    "price": raw1h_b.get("close"),
                     "signal": sig.get("signal"),
                     "score": sig.get("score"),
                     "pos": sig.get("position_size"),
@@ -241,17 +240,35 @@ class Scheduler:
                     "stop_loss": sig.get("stop_loss"),
                     "indicators": safe_json_dumps(
                         {
-                            "feat_1h": raw1h,
-                            "feat_4h": raw4h,
-                            "feat_d1": rawd1,
+                            "feat_1h": raw1h_b,
+                            "feat_4h": raw4h_b,
+                            "feat_d1": rawd1_b,
                             "details": sig.get("details"),
                         },
                     ),
                 }
-                data = {k: _to_builtin(v) for k, v in data.items()}
-                results.append(data)
-            except Exception as e:
-                logging.exception("signal for %s failed: %s", sym, e)
+                return {k: _to_builtin(v) for k, v in data.items()}
+            except Exception as exc:
+                logging.exception("signal for %s failed: %s", sym, exc)
+                return None
+
+        async def runner():
+            nonlocal results
+            global_metrics_local = await load_global_metrics_async(self.engine)
+            nonlocal global_metrics
+            global_metrics = global_metrics_local
+            now_local = datetime.now(UTC).replace(second=0, microsecond=0)
+            nonlocal now
+            now = now_local
+            tasks = [process(s) for s in symbols]
+            gathered = await asyncio.gather(*tasks)
+            results.extend([r for r in gathered if r])
+
+        results: list[dict] = []
+        global_metrics = None
+        now = None
+        asyncio.run(runner())
+
         if not results:
             return
         with self.engine.begin() as conn:
@@ -264,7 +281,6 @@ class Scheduler:
                 results,
             )
         logging.info("[generate_signals] wrote %s rows to live_full_data", len(results))
-        # filter out entries without a trading signal before ranking
         filtered = [r for r in results if r.get("signal")]
         filtered.sort(key=lambda x: abs(x.get("score") or 0), reverse=True)
         top10 = filtered[:10]
