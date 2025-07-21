@@ -25,6 +25,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from optimize_params import optimize_params
 from sqlalchemy import text
 
 
@@ -100,6 +101,14 @@ class Scheduler:
         self.ic_update_interval = cfg.get("ic_update_interval_hours", 24)
         self.next_ic_update = datetime.now(UTC)
         self.monitor_enabled = cfg.get("monitor_enabled", False)
+
+        opt_cfg = cfg.get("optimizer", {})
+        self.optimize_interval = opt_cfg.get("interval_hours", 24)
+        self.optimize_rows = opt_cfg.get("rows", 50000)
+        self.optimize_trials = opt_cfg.get("trials", 30)
+        self.optimize_method = opt_cfg.get("method", "optuna")
+        self.next_param_opt = datetime.now(UTC) + timedelta(hours=self.optimize_interval)
+
 
     def initial_sync(self):
         """启动时检查并更新所有关键数据，然后生成一次交易信号"""
@@ -211,6 +220,24 @@ class Scheduler:
             return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         return (now + timedelta(hours=self.ic_update_interval)).replace(minute=0, second=0, microsecond=0)
 
+    def search_and_reload_params(self):
+        """重新搜索最佳参数并加载配置."""
+        logging.info("searching best parameters via %s", self.optimize_method)
+        try:
+            optimize_params(
+                rows=self.optimize_rows,
+                trials=self.optimize_trials,
+                method=self.optimize_method,
+            )
+            self.cfg = load_config()
+            rsg_cfg = RobustSignalGeneratorConfig.from_cfg(self.cfg)
+            self.sg.stop_weight_update_thread()
+            self.sg = RobustSignalGenerator(rsg_cfg)
+            categories = load_symbol_categories(self.engine)
+            self.sg.set_symbol_categories(categories)
+        except Exception as e:
+            logging.exception("search_and_reload_params failed: %s", e)
+
     def generate_signals(self, symbols):
         logging.info("generating signals for %s symbols", len(symbols))
 
@@ -225,16 +252,33 @@ class Scheduler:
                 feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = feats
                 oi = await load_latest_open_interest_async(self.engine, sym)
                 order_imb = await load_order_book_imbalance_async(self.engine, sym)
+
+                sig = await asyncio.to_thread(
+                    self.sg.generate_signal,
+                    feats1h,
+                    feats4h,
+                    featsd1,
+                    None,
+                    None,
+                    raw1h,
+                    raw4h,
+                    rawd1,
+                    global_metrics=global_metrics,
+                    open_interest=oi,
+                    order_book_imbalance=order_imb,
+                    symbol=sym,
+                )
+
+                if sig is None:
+                    logging.debug("skip %s – signal generator returned None", sym)
+                    return None
+
                 return {
                     "symbol": sym,
-                    "f1h": feats1h,
-                    "f4h": feats4h,
-                    "fd1": featsd1,
+                    "signal": sig,
                     "raw1h": raw1h,
                     "raw4h": raw4h,
                     "rawd1": rawd1,
-                    "oi": oi,
-                    "ob": order_imb,
                 }
             except Exception as exc:
                 logging.exception("signal for %s failed: %s", sym, exc)
@@ -260,25 +304,8 @@ class Scheduler:
         if not data:
             return
 
-        feats1h_list = [d["f1h"] for d in data]
-        feats4h_list = [d["f4h"] for d in data]
-        featsd1_list = [d["fd1"] for d in data]
-        oi_list = [d["oi"] for d in data]
-        ob_list = [d["ob"] for d in data]
-        syms = [d["symbol"] for d in data]
-        raws1h = [d["raw1h"] for d in data]
-        raws4h = [d["raw4h"] for d in data]
-        rawsd1 = [d["rawd1"] for d in data]
-
-        sigs = self.sg.generate_signal_batch(
-            feats1h_list,
-            feats4h_list,
-            featsd1_list,
-            global_metrics=global_metrics,
-            open_interest=oi_list,
-            order_book_imbalance=ob_list,
-            symbols=syms,
-        )
+        scores = [d["signal"].get("score") for d in data]
+        weights = self.sg.risk_manager.optimize_weights(scores, max_weight=0.3)
 
         results: list[dict] = []
         monitor_rows: list[dict] = []
@@ -286,17 +313,29 @@ class Scheduler:
             if sig is None:
                 logging.debug("skip %s – signal generator returned None", sym)
                 continue
+
+        for item, weight in zip(data, weights):
+            sig = item["signal"]
+            sym = item["symbol"]
+            raw1h = item["raw1h"]
+            raw4h = item["raw4h"]
+            rawd1 = item["rawd1"]
+
             raw1h_b = {k: _to_builtin(v) for k, v in raw1h.items()}
             raw4h_b = {k: _to_builtin(v) for k, v in raw4h.items()}
             rawd1_b = {k: _to_builtin(v) for k, v in rawd1.items()}
+
+            direction = sig.get("signal") or 0
+            pos = weight * direction
+
             results.append(
                 {
                     "symbol": sym,
                     "time": now,
                     "price": raw1h_b.get("close"),
-                    "signal": sig.get("signal"),
+                    "signal": direction,
                     "score": sig.get("score"),
-                    "pos": sig.get("position_size"),
+                    "pos": pos,
                     "take_profit": sig.get("take_profit"),
                     "stop_loss": sig.get("stop_loss"),
                     "indicators": safe_json_dumps(
@@ -374,6 +413,9 @@ class Scheduler:
 
     def dispatch_tasks(self):
         now = datetime.now(UTC)
+        if hasattr(self, "next_param_opt") and now >= self.next_param_opt:
+            self.safe_call(self.search_and_reload_params)
+            self.next_param_opt = now + timedelta(hours=self.optimize_interval)
         if now >= self.next_symbols_refresh:
             self.symbols = self.dl.get_top_symbols(self.topn)
             self.next_symbols_refresh = now + timedelta(hours=1)
