@@ -171,6 +171,20 @@ class DataLoader:
                 self._sentiment_cache = pd.read_sql(q, self.engine, parse_dates=["open_time"])
             return self._sentiment_cache
 
+    # ───────────────────────────── 社交情绪 ─────────────────────────────
+    def update_social_sentiment(self) -> None:
+        """Fetch social sentiment scores and store into database."""
+        from .social_sentiment_loader import SocialSentimentLoader
+
+        last = pd.read_sql(
+            "SELECT MAX(date) AS d FROM social_sentiment",
+            self.engine,
+            parse_dates=["d"],
+        )
+        since = (last["d"].iloc[0].date() + dt.timedelta(days=1)) if not last.empty and pd.notnull(last["d"].iloc[0]) else dt.date.today() - dt.timedelta(days=7)
+        loader = SocialSentimentLoader(self.engine, retries=self.retries, backoff=self.backoff)
+        loader.update_scores(since)
+
     # ───────────────────────────── Funding Rate ──────────────────────────
     FUNDING_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
 
