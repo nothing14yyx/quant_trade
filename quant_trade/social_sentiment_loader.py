@@ -24,7 +24,7 @@ class SocialSentimentLoader:
         self,
         engine,
         api_key: str = "",
-        plan: str = "free",
+        plan: str = "developer",
         retries: int = 3,
         backoff: float = 1.0,
     ) -> None:
