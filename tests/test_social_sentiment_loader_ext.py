@@ -42,6 +42,34 @@ def test_fetch_scores(monkeypatch):
     assert val2 == 1
 
 
+def test_neutral_score(monkeypatch):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    loader = SocialSentimentLoader(engine, api_key='')
+
+    pages = [
+        {
+            'data': [
+                {'published_at': '2024-06-01T01:00:00Z', 'sentiment': 'neutral'},
+            ],
+            'next_url': None,
+        },
+    ]
+    idx = 0
+
+    def fake_fetch(self, page=1):
+        nonlocal idx
+        res = pages[idx]
+        idx += 1
+        return res
+
+    monkeypatch.setattr(SocialSentimentLoader, '_fetch_posts', fake_fetch)
+
+    df = loader.fetch_scores(dt.date(2024, 5, 31))
+    assert len(df) == 1
+    val = df.loc[df['date'] == pd.Timestamp('2024-06-01'), 'score'].iloc[0]
+    assert val == 0
+
+
 def test_update_scores_writes(monkeypatch):
     engine = sqlalchemy.create_engine('sqlite:///:memory:')
     with engine.begin() as conn:
