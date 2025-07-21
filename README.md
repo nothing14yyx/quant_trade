@@ -31,6 +31,8 @@ from quant_trade.robust_signal_generator import risk_budget_threshold
 vol_hist = [0.01, 0.02, 0.05, 0.03]
 th = risk_budget_threshold(vol_hist, quantile=0.9)
 ```
+-   早期兼容函数 `robust_signal_generator()` 已移除，请直接调用
+    `RobustSignalGenerator.generate_signal()`。
 -   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
     帮助更准确地衡量趋势和动量强度。
     其中 `rsi_1h_mul_vol_ma_ratio_4h` 仅归入 `volume` 因子，不再在 `momentum` 中重复计分。

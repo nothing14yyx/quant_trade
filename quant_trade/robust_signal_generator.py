@@ -222,28 +222,6 @@ class RobustSignalGeneratorConfig:
         )
 
 
-def robust_signal_generator(model, *args, **kwargs):
-    """Deprecated helper for backward compatibility.
-
-    Args:
-        model: ``RobustSignalGenerator`` 实例.
-
-    Returns:
-        调用 ``generate_signal`` 的结果或 ``None``。
-
-    Raises:
-        DeprecationWarning: 使用时会提示弃用。
-    """
-    warnings.warn(
-        "robust_signal_generator() 已弃用，请直接复用 RobustSignalGenerator 实例",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        return model.generate_signal(*args, **kwargs)
-    except (ValueError, KeyError, TypeError) as e:
-        logger.info("generate_signal failed: %s", e)
-        return None
 
 
 def softmax(x):

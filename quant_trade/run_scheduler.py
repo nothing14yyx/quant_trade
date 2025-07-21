@@ -24,7 +24,6 @@ from quant_trade.feature_loader import (
 from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
-    robust_signal_generator,
 )
 from sqlalchemy import text
 
