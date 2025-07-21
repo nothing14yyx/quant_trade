@@ -37,6 +37,11 @@ CREATE TABLE sentiment (
     fg_index               DOUBLE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE social_sentiment (
+    date  DATE NOT NULL PRIMARY KEY,
+    score DOUBLE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Order book snapshots (top 10 levels)
 CREATE TABLE order_book (
     symbol    VARCHAR(20)  NOT NULL,
@@ -411,6 +416,8 @@ CREATE TABLE `features` (
     `td_sell_count_1h` DOUBLE,
     `td_sell_count_4h` DOUBLE,
     `td_sell_count_d1` DOUBLE,
+    `social_sentiment_1h` DOUBLE,
+    `social_sentiment_4h` DOUBLE,
     `active_addr_roc_1h_isnan` TINYINT,
     `active_addr_roc_4h_isnan` TINYINT,
     `active_addr_roc_d1_isnan` TINYINT,
@@ -694,6 +701,8 @@ CREATE TABLE `features` (
     `td_sell_count_1h_isnan` TINYINT,
     `td_sell_count_4h_isnan` TINYINT,
     `td_sell_count_d1_isnan` TINYINT,
+    `social_sentiment_1h_isnan` TINYINT,
+    `social_sentiment_4h_isnan` TINYINT,
     PRIMARY KEY (`symbol`, `open_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

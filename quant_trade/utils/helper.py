@@ -362,6 +362,9 @@ def calc_features_raw(
         assign_safe(feats, "fg_index", fg)
         # 额外提供按日粒度的情绪指标，便于多周期因子引用
         assign_safe(feats, "fg_index_d1", fg)
+    if "social_sentiment" in df:
+        ss = df["social_sentiment"].astype(float).ffill()
+        assign_safe(feats, "social_sentiment", ss)
     if "funding_rate" in df:
         assign_safe(feats, "funding_rate", df["funding_rate"].astype(float).ffill())
         _check_index("fr_ema")
