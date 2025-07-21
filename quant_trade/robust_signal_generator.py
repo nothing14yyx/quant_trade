@@ -3858,6 +3858,14 @@ class RobustSignalGenerator:
         risk_info["consensus_4d1"] = consensus_4d1
         risk_info["local_details"] = local_details
 
+        smoothed = smooth_series(
+            cache.get("history_scores", []),
+            window=self.flip_confirm_bars,
+            alpha=getattr(self, "smooth_alpha", 0.2),
+        )
+        if smoothed:
+            risk_info["fused_score"] = smoothed[-1]
+
         result = self._calc_position_and_sl_tp(
             risk_info["fused_score"],
             risk_info,
