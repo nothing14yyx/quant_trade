@@ -187,7 +187,9 @@ class DataLoader:
         since = (last["d"].iloc[0].date() + dt.timedelta(days=1)) if not last.empty and pd.notnull(last["d"].iloc[0]) else dt.date.today() - dt.timedelta(days=7)
         loader = SocialSentimentLoader(
             self.engine,
-            api_key=self.ss_cfg.get("api_key", ""),
+            api_key=os.getenv(
+                "CRYPTOPANIC_API_KEY", self.ss_cfg.get("api_key", "")
+            ),
             plan=self.ss_cfg.get("plan", "free"),
             public=self.ss_cfg.get("public", True),
             currencies=self.ss_cfg.get("currencies"),
