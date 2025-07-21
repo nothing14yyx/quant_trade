@@ -24,12 +24,12 @@ class SocialSentimentLoader:
         self,
         engine,
         api_key: str = "",
-        plan: str = "developer",
-        public: bool = True,
-        currencies: list[str] | str | None = None,
+        plan: str = "free",
         retries: int = 3,
         backoff: float = 1.0,
         *,
+        public: bool | None = True,
+        currencies: str | list[str] | None = None,
         regions: str | list[str] | None = "en",
         filter: str | None = None,
         kind: str | None = "news",
@@ -37,8 +37,6 @@ class SocialSentimentLoader:
     ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY", "")
-        self.public = public
-        self.currencies = currencies
         self.retries = retries
         self.backoff = backoff
         self.API_URL = self.API_URL.format(plan=plan)
@@ -57,16 +55,28 @@ class SocialSentimentLoader:
             else:
                 params = {
                     "auth_token": self.api_key,
-
                     "public": str(self.public).lower(),
-                    "kind": "news",
                     "page_size": 100,
                 }
+                if self.kind:
+                    params["kind"] = self.kind
                 if self.currencies:
                     if isinstance(self.currencies, (list, tuple, set)):
                         params["currencies"] = ",".join(self.currencies)
                     else:
                         params["currencies"] = str(self.currencies)
+
+                if self.regions:
+                    if isinstance(self.regions, (list, tuple, set)):
+                        params["regions"] = ",".join(self.regions)
+                    else:
+                        params["regions"] = str(self.regions)
+
+                if self.filter:
+                    params["filter"] = self.filter
+
+                if self.following:
+                    params["following"] = str(self.following).lower()
 
                 if not isinstance(page, str):
                     params["page"] = page
