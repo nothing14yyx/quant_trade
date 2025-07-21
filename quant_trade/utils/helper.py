@@ -789,6 +789,48 @@ def calc_features_raw(
             cap_mkt / cap_real.replace(0, np.nan),
         )
 
+    if "FeeTotUSD" in df:
+        fee_tot = pd.to_numeric(df["FeeTotUSD"], errors="coerce")
+        assign_safe(feats, f"fee_tot_roc_{period}", fee_tot.pct_change(fill_method=None))
+
+    if "RevHashUSD" in df:
+        rev_hash = pd.to_numeric(df["RevHashUSD"], errors="coerce")
+        assign_safe(feats, f"rev_hash_roc_{period}", rev_hash.pct_change(fill_method=None))
+
+    if "IssTotUSD" in df:
+        iss_tot = pd.to_numeric(df["IssTotUSD"], errors="coerce")
+        assign_safe(feats, f"iss_tot_roc_{period}", iss_tot.pct_change(fill_method=None))
+
+    if "SplyCur" in df:
+        sply_cur = pd.to_numeric(df["SplyCur"], errors="coerce")
+        assign_safe(feats, f"sply_cur_roc_{period}", sply_cur.pct_change(fill_method=None))
+
+    if "SplyAct1Yr" in df:
+        sply_act = pd.to_numeric(df["SplyAct1Yr"], errors="coerce")
+        assign_safe(feats, f"sply_act_1yr_roc_{period}", sply_act.pct_change(fill_method=None))
+        if "SplyCur" in df:
+            assign_safe(feats, f"sply_act_pct_{period}", sply_act / sply_cur.replace(0, np.nan))
+
+    if "HashRate" in df:
+        hash_rate = pd.to_numeric(df["HashRate"], errors="coerce")
+        assign_safe(feats, f"hash_rate_roc_{period}", hash_rate.pct_change(fill_method=None))
+
+    if "DiffMean" in df:
+        diff_mean = pd.to_numeric(df["DiffMean"], errors="coerce")
+        assign_safe(feats, f"diff_mean_roc_{period}", diff_mean.pct_change(fill_method=None))
+
+    if "HashRate" in df and "DiffMean" in df:
+        assign_safe(feats, f"hashrate_difficulty_ratio_{period}", hash_rate / diff_mean.replace(0, np.nan))
+
+    if "FeeTotUSD" in df and "RevHashUSD" in df:
+        assign_safe(feats, f"fee_rev_ratio_{period}", fee_tot / rev_hash.replace(0, np.nan))
+
+    if "FeeTotUSD" in df and "IssTotUSD" in df:
+        assign_safe(feats, f"fee_iss_ratio_{period}", fee_tot / iss_tot.replace(0, np.nan))
+
+    if "IssTotUSD" in df and "RevHashUSD" in df:
+        assign_safe(feats, f"iss_rev_ratio_{period}", iss_tot / rev_hash.replace(0, np.nan))
+
     if symbol is not None:
         null_ratio = feats.isnull().all(axis=1).mean()
         if null_ratio > 0.5:
