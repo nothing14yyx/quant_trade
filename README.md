@@ -67,6 +67,17 @@ ic_scores:
 默认情况下，项目会使用 CoinGecko 提供的公共 API，额度为每月 1 万次，
 并限制每分钟最多 30 次调用。如有需要可在 `coingecko.api_key` 中配置你的公开密钥。
 
+### SocialSentimentLoader 示例
+
+```python
+from quant_trade.social_sentiment_loader import SocialSentimentLoader
+
+loader = SocialSentimentLoader(engine, api_key="YOUR_TOKEN", plan="free")
+loader.update_scores(dt.date(2024, 6, 1))
+```
+
+其中 `plan` 对应 CryptoPanic 的账户级别，可选 `free` 或 `developer` 等值，会自动拼接不同的请求路径。
+
 为减少搜索次数，`DataLoader` 会在初始化时读取 `coingecko_ids.json` 缓存，并在获得新的币种 id 后写回该文件。
 `update_cg_market_data` 会先查询 `cg_market_data` 表，找出各币种的最后时间点，
 若表为空则自动回补过去一年的记录，否则从最后时间的次日开始拉取缺失区间，
