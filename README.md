@@ -3,6 +3,8 @@
 该仓库包含一个量化交易的数据处理与信号生成框架，主要组件包括：
 
 - **DataLoader**：从币安接口同步行情、资金费率及情绪指数，并可按日拉取 CoinGecko 的市值与板块数据。
+- **SocialSentimentLoader**：抓取 CryptoPanic 新闻情绪并汇总日得分。
+- **CoinMetricsLoader**：批量获取更多链上指标。
 - **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子；同时加入 HV_7d/14d/30d、KC 宽度变化率、Ichimoku 基准线、VWAP、随机指标等新指标，并支持买卖比、资金流量比、成交量密度、价差百分比及 BTC/ETH 短期相关性。
   另外新增 `sma_5_*`、`sma_20_*` 均线及其交叉比值 `ma_ratio_5_20`，用于衡量短中期趋势变化。
 -   `merge_features` 新增 `batch_size` 参数，可在内存有限时按币种分批写入：
@@ -24,6 +26,7 @@
 -   `compute_dynamic_threshold` 会依据最近 `history_scores` 计算分位数，并结合 `atr_4h`、`adx_4h`、`atr_d1`、`adx_d1` 与 `pred_vol`、`vix_proxy` 等指标自适应调整门槛，`regime` 与 `reversal` 还能微调阈值和 `rev_boost`，参数统一封装在 `DynamicThresholdInput` 中。
 -   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
 -   新增 `dynamic_threshold` 配置项，可自定义 ATR、ADX 与 funding 对阈值的影响系数及上限。
+-   新增 `smooth_window`、`smooth_alpha` 与 `smooth_limit` 参数，用于平滑最近得分，减少噪声影响。
 -   新增 `risk_budget_threshold` 函数，可依据历史波动率或换手率分布计算风险阈值：
 
 ```python
@@ -60,6 +63,7 @@ ic_scores:
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置，
 其中 `api_key`、`api_secret`、`COINGECKO_API_KEY` 与 MySQL `password` 均支持通过环境变量传入。
 
+新增 `social_sentiment` 和 `coinmetrics` 区块，可配置情绪接口密钥及额外链上指标。
 默认情况下，项目会使用 CoinGecko 提供的公共 API，额度为每月 1 万次，
 并限制每分钟最多 30 次调用。如有需要可在 `coingecko.api_key` 中配置你的公开密钥。
 
