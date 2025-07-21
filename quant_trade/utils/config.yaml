@@ -356,6 +356,13 @@ model_params:
 
 history_window: 355
 
+optimizer:
+  method: optuna         # 搜索算法，可选 optuna 或 ga
+  interval_hours: 24     # 多久重新搜索一次
+  rows: 50000            # 回测读取的最近行数
+  trials: 30             # 搜索迭代次数
+
+
 # Δ-boost 配置：关键指标与参数
 delta_boost:
   core_keys:
