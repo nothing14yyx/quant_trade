@@ -1,0 +1,54 @@
+# 示例配置文件，仅展示关键字段
+binance:
+  api_key: "${BINANCE_API_KEY}"
+  api_secret: "${BINANCE_API_SECRET}"
+
+social_sentiment:
+  plan: "developer"           # free 或 developer
+  api_key: "${CRYPTOPANIC_API_KEY}"
+  public: true
+  currencies: "BTC,ETH"
+  regions: "en"
+  filter: "rising"
+  kind: "news"
+  following: false
+coinmetrics:
+  api_key: "${COINMETRICS_API_KEY}"
+  metrics:
+    - AdrActCnt
+    - AdrNewCnt
+    - SplyCur
+    - FeesUSD
+    - TxTfrCnt
+mysql:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "${MYSQL_PASSWORD}"
+  database: "quant_trading"
+
+signal_threshold:
+  base_th: 0.08
+  quantile: 0.80
+  rev_boost: 0.15  # detect_reversal 命中时加分
+dynamic_threshold:
+  atr_mult: 4.0
+  atr_cap: 0.10
+  funding_mult: 8.0
+  funding_cap: 0.08
+  adx_div: 100.0
+  adx_cap: 0.04
+  smooth_window: 20
+  smooth_alpha: 0.2
+  smooth_limit: 1.0
+
+risk_adjust_threshold: 0.03  # 得分绝对值低于该值不会入场
+veto_conflict_count: 2       # funding 冲突达到该数即放弃信号
+min_trend_align: 2           # 趋势方向至少有 N 个周期一致
+veto_level: 0.9
+
+optimizer:
+  method: optuna         # 搜索算法，可选 optuna 或 ga
+  interval_hours: 24     # 多久重新搜索一次
+  rows: 50000            # 回测读取的最近行数
+  trials: 30             # 搜索迭代次数
