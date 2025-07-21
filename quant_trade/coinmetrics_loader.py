@@ -42,12 +42,16 @@ class CoinMetricsLoader:
     def _asset_code(self, symbol: str) -> str:
         return re.sub("USDT$", "", symbol).lower()
 
-    def update_cm_metrics(self, symbols: List[str]) -> None:
-        """按日拉取指定币种的链上指标并保存"""
+    def update_cm_metrics(self, symbols: List[str], batch_size: int = 10) -> None:
+        """按日拉取指定币种的链上指标并保存
+
+        参数:
+            symbols: 币种列表
+            batch_size: 每次请求包含的指标数, 避免超出 API 限制
+        """
         if not symbols or not self.metrics:
             return
         today = dt.date.today().isoformat()
-        metrics_str = ",".join(self.metrics)
         headers = self._headers()
 
         stmt = text(
@@ -67,36 +71,40 @@ class CoinMetricsLoader:
             if start > today:
                 continue
 
-            params = {
-                "assets": asset,
-                "metrics": metrics_str,
-                "start_time": start,
-                "end_time": today,
-                "page_size": 1000,
-            }
-            self.rate_limiter.acquire()
-            data = _safe_retry(
-                lambda: requests.get(self.BASE_URL, params=params, headers=headers, timeout=10).json(),
-                retries=self.retries,
-                backoff=self.backoff,
-            )
             rows: List[Dict[str, object]] = []
-            for item in data.get("data", []):
-                ts = pd.to_datetime(item["time"]).to_pydatetime().replace(tzinfo=None)
-                for m in self.metrics:
-                    val = item.get(m)
-                    if val is None:
-                        continue
-                    try:
-                        val = float(val)
-                    except (TypeError, ValueError):
-                        continue
-                    rows.append({
-                        "symbol": sym,
-                        "timestamp": ts,
-                        "metric": m,
-                        "value": val,
-                    })
+            for i in range(0, len(self.metrics), batch_size):
+                batch = self.metrics[i : i + batch_size]
+                params = {
+                    "assets": asset,
+                    "metrics": ",".join(batch),
+                    "start_time": start,
+                    "end_time": today,
+                    "page_size": 1000,
+                }
+                self.rate_limiter.acquire()
+                data = _safe_retry(
+                    lambda: requests.get(self.BASE_URL, params=params, headers=headers, timeout=10).json(),
+                    retries=self.retries,
+                    backoff=self.backoff,
+                )
+                for item in data.get("data", []):
+                    ts = (
+                        pd.to_datetime(item["time"]).to_pydatetime().replace(tzinfo=None)
+                    )
+                    for m in batch:
+                        val = item.get(m)
+                        if val is None:
+                            continue
+                        try:
+                            val = float(val)
+                        except (TypeError, ValueError):
+                            continue
+                        rows.append({
+                            "symbol": sym,
+                            "timestamp": ts,
+                            "metric": m,
+                            "value": val,
+                        })
             if rows:
                 with self.engine.begin() as conn:
                     conn.execute(
