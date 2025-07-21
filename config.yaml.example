@@ -21,6 +21,9 @@ dynamic_threshold:
   funding_cap: 0.08
   adx_div: 100.0
   adx_cap: 0.04
+  smooth_window: 20
+  smooth_alpha: 0.2
+  smooth_limit: 1.0
 
 risk_adjust_threshold: 0.03  # 得分绝对值低于该值不会入场
 veto_conflict_count: 2       # funding 冲突达到该数即放弃信号

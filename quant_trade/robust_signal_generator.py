@@ -246,6 +246,21 @@ def smooth_score(history_scores, window: int = 3) -> float:
     return float(np.nanmean(arr))
 
 
+def smooth_series(history_scores, window: int = 10, alpha: float = 0.2):
+    """Return exponentially smoothed series of last ``window`` scores."""
+    if not history_scores:
+        return []
+    arr = np.asarray(list(history_scores)[-window:], dtype=float)
+    if arr.size == 0:
+        return []
+    ema = arr[0]
+    smoothed = [ema]
+    for val in arr[1:]:
+        ema = alpha * val + (1 - alpha) * ema
+        smoothed.append(ema)
+    return smoothed
+
+
 def weighted_quantile(values, q, sample_weight=None):
     """Return the weighted quantile of *values* at quantile *q*."""
     values = np.asarray(values, dtype=float)
@@ -292,9 +307,14 @@ class PeriodFeatures:
 
 def _calc_history_base(history, base, quantile, window, decay, limit=None):
     """Helper to compute threshold base from history with optional decay."""
-    if not history:
+    if history is None:
         return base
-    arr = np.asarray(list(history)[-window:], dtype=float)
+    if isinstance(history, np.ndarray):
+        arr = history[-window:].astype(float)
+    else:
+        if len(history) == 0:
+            return base
+        arr = np.asarray(list(history)[-window:], dtype=float)
     arr = np.abs(arr)
     if arr.size == 0:
         return base
@@ -540,6 +560,10 @@ class RobustSignalGenerator:
         if "low_base" not in self.signal_threshold_cfg:
             self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
         self.dynamic_threshold_cfg = get_cfg_value(cfg, "dynamic_threshold", {})
+        dyn_cfg = self.dynamic_threshold_cfg
+        self.smooth_window = get_cfg_value(dyn_cfg, "smooth_window", 20)
+        self.smooth_alpha = get_cfg_value(dyn_cfg, "smooth_alpha", 0.2)
+        self.smooth_limit = get_cfg_value(dyn_cfg, "smooth_limit", 1.0)
         db_cfg = get_cfg_value(cfg, "delta_boost", {})
         self.core_keys = core_keys or get_cfg_value(db_cfg, "core_keys", self.DEFAULT_CORE_KEYS)
         self.delta_params = delta_params or get_cfg_value(db_cfg, "params", self.DELTA_PARAMS)
@@ -744,6 +768,9 @@ class RobustSignalGenerator:
             "exit_lag_bars": EXIT_LAG_BARS_DEFAULT,
             "th_window": 60,
             "th_decay": 2.0,
+            "smooth_window": 20,
+            "smooth_alpha": 0.2,
+            "smooth_limit": 1.0,
             "risk_manager": RiskManager(),
             "all_scores_list": deque(maxlen=500),
             "_equity_drawdown": 0.0,
@@ -815,6 +842,9 @@ class RobustSignalGenerator:
                 "funding_cap": 0.08,
                 "adx_div": 100.0,
                 "adx_cap": 0.04,
+                "smooth_window": 20,
+                "smooth_alpha": 0.2,
+                "smooth_limit": 1.0,
             }
             self.dynamic_th_params = DynamicThresholdParams.from_cfg(self._dynamic_threshold_cfg)
         return self._dynamic_threshold_cfg
@@ -1598,14 +1628,25 @@ class RobustSignalGenerator:
         base = params.base_th if base is None else base
         low_base = params.low_base if low_base is None else low_base
 
-        hist_base = _calc_history_base(
-            history_scores,
-            base,
-            params.quantile,
-            self.th_window,
-            self.th_decay,
-            0.12,
-        ) if history_scores is not None else base
+        if history_scores is not None:
+            scores = smooth_series(
+                history_scores,
+                window=getattr(self, "smooth_window", 20),
+                alpha=getattr(self, "smooth_alpha", 0.2),
+            )
+            limit = getattr(self, "smooth_limit", 1.0)
+            if limit is not None:
+                scores = np.clip(scores, -limit, limit)
+            hist_base = _calc_history_base(
+                scores,
+                base,
+                params.quantile,
+                self.th_window,
+                self.th_decay,
+                0.12,
+            )
+        else:
+            hist_base = base
 
         th = hist_base
         atr_eff = abs(data.atr)
