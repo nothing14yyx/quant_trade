@@ -197,8 +197,6 @@ feature_cols:
       - atr_pct_ratio_1h_4h
       - vol_ratio_1h_4h
       - social_sentiment_4h
-      - social_sentiment_4h
-
     drawdown:
       - atr_pct_4h
       - hv_7d_4h
