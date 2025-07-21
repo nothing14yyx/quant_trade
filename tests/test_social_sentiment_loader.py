@@ -23,7 +23,21 @@ def test_update_social_sentiment(monkeypatch):
 
     df = pd.DataFrame({'date': [pd.Timestamp('2020-01-01')], 'score': [0.5]})
 
-    def fake_init(self, engine, api_key='', plan='free', public=True, currencies=None, retries=3, backoff=1.0):
+    def fake_init(
+        self,
+        engine,
+        api_key="",
+        plan="free",
+        retries=3,
+        backoff=1.0,
+        *,
+        public=True,
+        currencies=None,
+        regions="en",
+        filter=None,
+        kind="news",
+        following=False,
+    ):
         self.engine = engine
         self.retries = retries
         self.backoff = backoff
@@ -146,7 +160,21 @@ social_sentiment:
 
     captured = {}
 
-    def fake_init(self, engine, api_key='', plan='free', public=True, currencies=None, retries=3, backoff=1.0):
+    def fake_init(
+        self,
+        engine,
+        api_key="",
+        plan="free",
+        retries=3,
+        backoff=1.0,
+        *,
+        public=True,
+        currencies=None,
+        regions="en",
+        filter=None,
+        kind="news",
+        following=False,
+    ):
         captured.update(
             {
                 "api_key": api_key,
@@ -170,3 +198,64 @@ social_sentiment:
         "public": False,
         "currencies": ["btc", "eth"],
     }
+
+
+def test_social_sentiment_env_override(tmp_path, monkeypatch):
+    cfg_path = tmp_path / "cfg.yml"
+    cfg_path.write_text(
+        """
+mysql:
+  host: localhost
+  user: root
+  password: ''
+  database: test
+social_sentiment:
+  api_key: "${CRYPTOPANIC_API_KEY}"
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("CRYPTOPANIC_API_KEY", "ENV")
+    monkeypatch.setattr(
+        data_loader, "create_engine", lambda *a, **k: sqlalchemy.create_engine("sqlite:///:memory:")
+    )
+    class DummyClient:
+        def __init__(self, api_key=None, api_secret=None):
+            self.session = SimpleNamespace(proxies={})
+
+    monkeypatch.setattr(data_loader, "Client", DummyClient)
+    dl = DataLoader(config_path=cfg_path)
+
+    with dl.engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE social_sentiment (date TEXT PRIMARY KEY, score REAL)"
+        )
+
+    captured = {}
+
+    def fake_init(
+        self,
+        engine,
+        api_key="",
+        plan="free",
+        retries=3,
+        backoff=1.0,
+        *,
+        public=True,
+        currencies=None,
+        regions="en",
+        filter=None,
+        kind="news",
+        following=False,
+    ):
+        captured["api_key"] = api_key
+        self.engine = engine
+        self.retries = retries
+        self.backoff = backoff
+
+    monkeypatch.setattr(SocialSentimentLoader, "__init__", fake_init)
+    monkeypatch.setattr(SocialSentimentLoader, "update_scores", lambda self, since: None)
+
+    dl.update_social_sentiment()
+
+    assert captured["api_key"] == "ENV"
