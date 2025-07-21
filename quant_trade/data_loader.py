@@ -931,6 +931,10 @@ class DataLoader:
             self.update_cm_metrics(symbols)
         except Exception as e:
             logger.exception("[coinmetrics] err: %s", e)
+        try:
+            self.update_social_sentiment()
+        except Exception as e:
+            logger.exception("[social sentiment] err: %s", e)
         # 2. 更新 funding rate / open interest（并发）
         logger.info("[sync] funding/openInterest … (%s)", len(symbols))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
