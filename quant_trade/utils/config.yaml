@@ -19,6 +19,12 @@ coinmetrics:
     - FeeTotUSD
     - SplyCur
 
+market_phase:
+  metrics:
+    - AdrActCnt
+    - CapMrktCurUSD
+    - FeeTotUSD
+
 mysql:
   host: "localhost"
   port: 3306
