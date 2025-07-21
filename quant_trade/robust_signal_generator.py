@@ -704,6 +704,9 @@ class RobustSignalGenerator:
         # 记录ETH Dominance历史，供市场偏好判断
         self.eth_dom_history = deque(maxlen=history_window)
 
+        # 记录每次信号的因子贡献分解结果
+        self.factor_breakdown_history = deque(maxlen=history_window)
+
         # 币种与板块的映射，用于板块热度修正
         self.symbol_categories = {k.upper(): v for k, v in (symbol_categories or {}).items()}
         # 各币种独立缓存
@@ -749,6 +752,7 @@ class RobustSignalGenerator:
             "oi_change_history": deque(maxlen=3000),
             "btc_dom_history": deque(maxlen=3000),
             "eth_dom_history": deque(maxlen=3000),
+            "factor_breakdown_history": deque(maxlen=3000),
             "ic_history": {k: deque(maxlen=3000) for k in getattr(self, "base_weights", {})},
             "_lock": threading.RLock(),
             "_prev_raw": {p: None for p in ("1h", "4h", "d1")},
@@ -1867,7 +1871,16 @@ class RobustSignalGenerator:
             "sentiment",
             "funding",
         ]
+
         return {k: float(v) for k, v in zip(keys, sv)}
+
+    def _save_factor_breakdown(self, fb: dict, symbol: str | None, ts=None) -> None:
+        """保存因子贡献分解结果到内部历史队列"""
+        if ts is None:
+            ts = time.time()
+        entry = {"time": ts, "symbol": symbol}
+        entry.update(fb)
+        self.factor_breakdown_history.append(entry)
 
     def consensus_check(self, s1, s2, s3, min_agree=2):
         # 多周期方向共振（如调研建议），可加全分歧减弱等逻辑
@@ -3098,6 +3111,7 @@ class RobustSignalGenerator:
         """
         base_th = risk_info["base_th"]
         factor_breakdown = self._compute_factor_breakdown(ai_scores, fs)
+        self._save_factor_breakdown(factor_breakdown, symbol, ts)
         if not risk_info.get("crowding_adjusted"):
             fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
                 fused_score,
@@ -3482,6 +3496,8 @@ class RobustSignalGenerator:
                     self._update_history(cache, p, raw, prev)
             self._last_signal = 0
             self._cooldown = 0
+            fb_nan = self._compute_factor_breakdown(ai_scores, fs)
+            self._save_factor_breakdown(fb_nan, None)
             result = {
                 "signal": 0,
                 "score": float("nan"),
@@ -3514,7 +3530,7 @@ class RobustSignalGenerator:
                     "confirm_15m": confirm_15m,
                     "note": "fused_score was NaN",
                 },
-                "factor_breakdown": self._compute_factor_breakdown(ai_scores, fs),
+                "factor_breakdown": fb_nan,
             }
             return result, 0, True
 
