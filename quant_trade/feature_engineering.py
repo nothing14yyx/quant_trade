@@ -16,7 +16,7 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, bindparam
 from sklearn.metrics import mutual_info_score
 
 # 不再 import calc_features_full，而改为：
@@ -212,6 +212,9 @@ class FeatureEngineer:
         else:
             self.feature_cols_all = []
 
+        cm_cfg = self.cfg.get("coinmetrics", {})
+        self.cm_metrics: List[str] = cm_cfg.get("metrics", [])
+
     @staticmethod
     def add_up_down_targets(
         df: pd.DataFrame,
@@ -369,13 +372,19 @@ class FeatureEngineer:
 
         # merge cm_onchain_metrics
         try:
-            q = (
-                "SELECT timestamp, metric, value FROM cm_onchain_metrics "
-                "WHERE symbol=:sym AND metric IN "
-                "('AdrActCnt','AdrNewCnt','TxCnt','CapMrktCurUSD','CapRealUSD') "
-                "ORDER BY timestamp"
-            )
-            cm_df = pd.read_sql(text(q), self.engine, params={"sym": symbol}, parse_dates=["timestamp"])
+            if self.cm_metrics:
+                q = text(
+                    "SELECT timestamp, metric, value FROM cm_onchain_metrics "
+                    "WHERE symbol=:sym AND metric IN :metrics ORDER BY timestamp"
+                ).bindparams(bindparam("metrics", expanding=True))
+                cm_df = pd.read_sql(
+                    q,
+                    self.engine,
+                    params={"sym": symbol, "metrics": self.cm_metrics},
+                    parse_dates=["timestamp"],
+                )
+            else:
+                cm_df = None
         except Exception:  # pragma: no cover - optional table
             cm_df = None
 
@@ -392,11 +401,8 @@ class FeatureEngineer:
                 direction="backward",
             )
         else:
-            out["AdrActCnt"] = None
-            out["AdrNewCnt"] = None
-            out["TxCnt"] = None
-            out["CapMrktCurUSD"] = None
-            out["CapRealUSD"] = None
+            for m in self.cm_metrics:
+                out[m] = None
 
         # merge social sentiment
         try:
@@ -664,7 +670,7 @@ class FeatureEngineer:
         if len(na_cols):
             out.drop(columns=na_cols, inplace=True)
 
-        raw_cols = ["AdrActCnt", "AdrNewCnt", "TxCnt", "CapMrktCurUSD", "CapRealUSD"]
+        raw_cols = list(self.cm_metrics)
         drop_cols = [c for c in raw_cols if c in out.columns]
         if drop_cols:
             out.drop(columns=drop_cols, inplace=True)
