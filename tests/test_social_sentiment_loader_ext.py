@@ -11,17 +11,17 @@ def test_fetch_scores(monkeypatch):
 
     pages = [
         {
-            'results': [
+            'data': [
                 {'published_at': '2024-06-01T01:00:00Z', 'sentiment': 'positive'},
                 {'published_at': '2024-06-01T02:00:00Z', 'sentiment': 'negative'},
             ],
-            'next': True,
+            'next_url': True,
         },
         {
-            'results': [
+            'data': [
                 {'published_at': '2024-05-31T03:00:00Z', 'sentiment': 'bullish'},
             ],
-            'next': None,
+            'next_url': None,
         },
     ]
     idx = 0
