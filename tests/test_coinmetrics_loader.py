@@ -10,7 +10,7 @@ def make_loader(engine):
     loader = CoinMetricsLoader.__new__(CoinMetricsLoader)
     loader.engine = engine
     loader.api_key = ''
-    loader.metrics = ['AdrActCnt', 'AdrNewCnt']
+    loader.metrics = ['AdrActCnt', 'AdrNewCnt', 'SplyCur', 'FeesUSD']
     loader.retries = 1
     loader.backoff = 0
     loader.rate_limiter = type('RL', (), {'acquire': lambda self: None})()
@@ -25,8 +25,10 @@ def test_update_cm_metrics(monkeypatch):
         )
     loader = make_loader(engine)
 
+    calls = []
+
     def fake_get(url, params=None, headers=None, timeout=10):
-        assert params['metrics'] == 'AdrActCnt,AdrNewCnt'
+        calls.append(params['metrics'])
         class R:
             def json(self):
                 return {
@@ -34,19 +36,23 @@ def test_update_cm_metrics(monkeypatch):
                         'asset': 'btc',
                         'time': '2024-06-01T00:00:00Z',
                         'AdrActCnt': '10',
-                        'AdrNewCnt': '5'
+                        'AdrNewCnt': '5',
+                        'SplyCur': '100',
+                        'FeesUSD': '2'
                     }]
                 }
         return R()
 
     monkeypatch.setattr(requests, 'get', fake_get)
 
-    loader.update_cm_metrics(['BTCUSDT'])
+    loader.update_cm_metrics(['BTCUSDT'], batch_size=2)
+
+    assert calls == ['AdrActCnt,AdrNewCnt', 'SplyCur,FeesUSD']
 
     df = pd.read_sql('cm_onchain_metrics', engine)
-    assert len(df) == 2
-    assert set(df['metric']) == {'AdrActCnt', 'AdrNewCnt'}
-    assert df['value'].sum() == 15
+    assert len(df) == 4
+    assert set(df['metric']) == {'AdrActCnt', 'AdrNewCnt', 'SplyCur', 'FeesUSD'}
+    assert df['value'].sum() == 117
 
 
 def make_dl(engine):
@@ -71,7 +77,8 @@ def test_data_loader_update_cm_metrics(monkeypatch):
                         'asset': 'btc',
                         'time': '2024-06-02T00:00:00Z',
                         'AdrActCnt': '1',
-                        'AdrNewCnt': '2'
+                        'AdrNewCnt': '2',
+                        'SplyCur': '3'
                     }]
                 }
         return R()
@@ -81,6 +88,6 @@ def test_data_loader_update_cm_metrics(monkeypatch):
     dl.update_cm_metrics(['BTCUSDT'])
 
     df = pd.read_sql('cm_onchain_metrics', engine)
-    assert len(df) == 2
-    assert set(df['metric']) == {'AdrActCnt', 'AdrNewCnt'}
-    assert df['value'].sum() == 3
+    assert len(df) == 3
+    assert set(df['metric']) == {'AdrActCnt', 'AdrNewCnt', 'SplyCur'}
+    assert df['value'].sum() == 6
