@@ -12,15 +12,27 @@ from .data_loader import _safe_retry
 
 
 class SocialSentimentLoader:
-    """Fetch social sentiment data from CryptoPanic or similar API."""
+    """基于 CryptoPanic v2 API 抓取新闻情绪并汇总日得分。
 
-    API_URL = "https://cryptopanic.com/api/free/v2/posts/"
+    需提供 ``plan`` 与 ``auth_token``，常见查询参数包括 ``kind``、``page``、
+    ``public`` 和 ``page_size``。
+    """
 
-    def __init__(self, engine, api_key: str = "", retries: int = 3, backoff: float = 1.0) -> None:
+    API_URL = "https://cryptopanic.com/api/{plan}/v2/posts/"
+
+    def __init__(
+        self,
+        engine,
+        api_key: str = "",
+        plan: str = "free",
+        retries: int = 3,
+        backoff: float = 1.0,
+    ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY", "")
         self.retries = retries
         self.backoff = backoff
+        self.API_URL = self.API_URL.format(plan=plan)
 
     def _fetch_posts(self, page: int | str = 1) -> dict:
         """Fetch a page of posts, ``page`` may be int or next_url."""
@@ -31,13 +43,20 @@ class SocialSentimentLoader:
                 params = {
                     "auth_token": self.api_key,
                     "public": "true",
+                    "kind": "news",
+                    "page_size": 100,
                 }
                 if not isinstance(page, str):
                     params["page"] = page
                 r = requests.get(self.API_URL, params=params, timeout=10)
-            r.raise_for_status()
+            try:
+                r.raise_for_status()
+            except requests.HTTPError as e:
+                if r.status_code in (401, 403):
+                    raise RuntimeError("Token/套餐无效") from e
+                raise
             rem = int(r.headers.get("X-RateLimit-Remaining", "10"))
-            if rem < 5:
+            if rem < 10:
                 time.sleep(60)
             return r.json()
 
