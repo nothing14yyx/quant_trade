@@ -61,7 +61,11 @@ ic_scores:
 这样 `RobustSignalGenerator` 在融合多周期分数时将更侧重 1h 模型。
 
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置，
-其中 `api_key`、`api_secret`、`COINGECKO_API_KEY` 与 MySQL `password` 均支持通过环境变量传入。
+其中 `api_key`、`api_secret`、`COINGECKO_API_KEY`、`CRYPTOPANIC_API_KEY` 与 MySQL `password` 均可通过环境变量设置。例如：
+
+```bash
+export CRYPTOPANIC_API_KEY="your_token"
+```
 
 新增 `social_sentiment` 和 `coinmetrics` 区块，可配置情绪接口密钥及额外链上指标。
 其中 `social_sentiment` 现支持更多查询选项：
