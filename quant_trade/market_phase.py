@@ -8,16 +8,25 @@ def detect_market_phase(engine) -> str:
     返回值为 "bull"、"bear" 或 "range"。
     """
     q = text(
-        "SELECT timestamp, active_addresses, sopr "
-        "FROM cm_onchain_metrics ORDER BY timestamp DESC LIMIT 60"
+        "SELECT timestamp, metric, value "
+        "FROM cm_onchain_metrics "
+        "WHERE metric IN ('AdrActCnt','Sopr') "
+        "ORDER BY timestamp DESC LIMIT 120"
     )
     df = pd.read_sql(q, engine, parse_dates=["timestamp"])
     if df.empty:
         return "range"
 
-    df = df.sort_values("timestamp")
-    aa = df["active_addresses"].astype(float)
-    sopr = df["sopr"].astype(float)
+    df = (
+        df.pivot(index="timestamp", columns="metric", values="value")
+        .reset_index()
+        .sort_values("timestamp")
+    )
+    if df.empty:
+        return "range"
+
+    aa = df["AdrActCnt"].astype(float)
+    sopr = df["Sopr"].astype(float)
     aa_ma = aa.rolling(window=30, min_periods=1).mean().iloc[-1]
     sopr_ma = sopr.rolling(window=30, min_periods=1).mean().iloc[-1]
     cur_aa = aa.iloc[-1]
