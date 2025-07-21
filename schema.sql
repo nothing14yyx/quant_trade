@@ -732,6 +732,14 @@ CREATE TABLE `live_top10_signals` (
     PRIMARY KEY (`symbol`, `time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE `live_monitor_data` (
+    `symbol` VARCHAR(24) NOT NULL,
+    `time` DATETIME NOT NULL,
+    `factor_breakdown` JSON,
+    `ic_scores` JSON,
+    PRIMARY KEY (`symbol`, `time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 
 TRUNCATE TABLE klines;
 TRUNCATE TABLE sentiment;
@@ -744,6 +752,7 @@ TRUNCATE TABLE cg_coin_categories;
 TRUNCATE TABLE features;
 TRUNCATE TABLE live_full_data;
 TRUNCATE TABLE live_top10_signals;
+TRUNCATE TABLE live_monitor_data;
 
 DELETE FROM cg_coin_categories WHERE symbol = 'HUSDT';
 

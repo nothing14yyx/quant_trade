@@ -9,23 +9,26 @@ import asyncio
 from datetime import datetime, timedelta, UTC
 import pandas as pd
 import numpy as np
-
-from quant_trade.data_loader import DataLoader
-from quant_trade.feature_engineering import FeatureEngineer
 from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.utils.robust_scaler import load_scaler_params_from_json
-from quant_trade.feature_loader import (
-    load_symbol_categories,
-    prepare_all_features_async,
-    load_global_metrics_async,
-    load_latest_open_interest_async,
-    load_order_book_imbalance_async,
-)
+try:  # Optional heavy imports for runtime use; tests can monkeypatch these
+    from quant_trade.feature_loader import (
+        load_symbol_categories,
+        prepare_all_features_async,
+        load_global_metrics_async,
+        load_latest_open_interest_async,
+        load_order_book_imbalance_async,
+    )
+except Exception:  # pragma: no cover - allow import without dependencies
+    load_symbol_categories = None
+    prepare_all_features_async = None
+    load_global_metrics_async = None
+    load_latest_open_interest_async = None
+    load_order_book_imbalance_async = None
 from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
-from optimize_params import optimize_params
 from sqlalchemy import text
 
 
@@ -76,6 +79,9 @@ def safe_json_dumps(obj, *args, **kwargs):
 
 class Scheduler:
     def __init__(self) -> None:
+        from quant_trade.data_loader import DataLoader
+        from quant_trade.feature_engineering import FeatureEngineer
+
         cfg = load_config()
         self.cfg = cfg
         self.dl = DataLoader()
@@ -224,6 +230,8 @@ class Scheduler:
         """重新搜索最佳参数并加载配置."""
         logging.info("searching best parameters via %s", self.optimize_method)
         try:
+            from optimize_params import optimize_params
+
             optimize_params(
                 rows=self.optimize_rows,
                 trials=self.optimize_trials,
@@ -309,10 +317,6 @@ class Scheduler:
 
         results: list[dict] = []
         monitor_rows: list[dict] = []
-        for sym, sig, raw1h, raw4h, rawd1 in zip(syms, sigs, raws1h, raws4h, rawsd1):
-            if sig is None:
-                logging.debug("skip %s – signal generator returned None", sym)
-                continue
 
         for item, weight in zip(data, weights):
             sig = item["signal"]
@@ -320,6 +324,10 @@ class Scheduler:
             raw1h = item["raw1h"]
             raw4h = item["raw4h"]
             rawd1 = item["rawd1"]
+
+            if sig is None:
+                logging.debug("skip %s – signal generator returned None", sym)
+                continue
 
             raw1h_b = {k: _to_builtin(v) for k, v in raw1h.items()}
             raw4h_b = {k: _to_builtin(v) for k, v in raw4h.items()}
