@@ -1,5 +1,7 @@
 import pandas as pd
 import sqlalchemy
+from types import SimpleNamespace
+from quant_trade import run_scheduler
 
 from quant_trade.data_loader import DataLoader
 from quant_trade.social_sentiment_loader import SocialSentimentLoader
@@ -62,3 +64,44 @@ def test_social_sentiment_features():
     assert 'social_sentiment_4h' in merged
     expected = pd.Series(range(5)).rolling(4, min_periods=1).mean()
     assert merged['social_sentiment_4h'].reset_index(drop=True).equals(expected)
+
+
+def test_sync_all_calls_social_sentiment(monkeypatch):
+    dl = DataLoader.__new__(DataLoader)
+    dl.main_iv = '1h'
+    dl.aux_ivs = []
+    dl.get_top_symbols = lambda: []
+    dl.update_sentiment = lambda: None
+    dl.update_cg_global_metrics = lambda: None
+    dl.update_cg_market_data = lambda symbols: None
+    dl.update_cg_coin_categories = lambda symbols: None
+    dl.update_cg_category_stats = lambda: None
+    dl.update_cm_metrics = lambda symbols: None
+    dl.update_funding_rate = lambda sym: None
+    dl.update_open_interest = lambda sym: None
+    dl.incremental_update_klines = lambda sym, iv: None
+    called = []
+    dl.update_social_sentiment = lambda: called.append(True)
+
+    dl.sync_all(max_workers=1)
+    assert called == [True]
+
+
+def test_scheduler_update_daily_data_calls_social_sentiment():
+    called = []
+    sched = SimpleNamespace(
+        dl=SimpleNamespace(
+            update_sentiment=lambda: None,
+            update_cg_global_metrics=lambda: None,
+            update_cg_market_data=lambda s: None,
+            update_cg_coin_categories=lambda s: None,
+            update_cg_category_stats=lambda: None,
+            update_cm_metrics=lambda s: None,
+            update_social_sentiment=lambda: called.append(True),
+        ),
+        sg=SimpleNamespace(update_market_phase=lambda e: None),
+        engine=None,
+    )
+
+    run_scheduler.Scheduler.update_daily_data(sched, [])
+    assert called == [True]
