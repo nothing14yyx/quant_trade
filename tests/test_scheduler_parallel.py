@@ -21,10 +21,11 @@ def test_generate_signals_parallel(monkeypatch):
     sched = SimpleNamespace(
         engine=engine,
         sg=SimpleNamespace(
-            generate_signal_batch=lambda f1, f4, fd, **k: [
-                {"signal": 1, "score": i + 1} for i in range(len(f1))
-            ],
+            generate_signal=lambda *a, **k: {"signal": 1, "score": 1 if k.get("symbol") == "A" else 2},
             diagnose=lambda: {},
+            risk_manager=SimpleNamespace(
+                optimize_weights=lambda scores, **k: [1 / len(scores)] * len(scores)
+            ),
         ),
         scaler_params=None,
     )
