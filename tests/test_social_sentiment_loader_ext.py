@@ -11,17 +11,17 @@ def test_fetch_scores(monkeypatch):
 
     pages = [
         {
-            'results': [
+            'data': [
                 {'published_at': '2024-06-01T01:00:00Z', 'sentiment': 'positive'},
                 {'published_at': '2024-06-01T02:00:00Z', 'sentiment': 'negative'},
             ],
-            'next': True,
+            'next_url': True,
         },
         {
-            'results': [
+            'data': [
                 {'published_at': '2024-05-31T03:00:00Z', 'sentiment': 'bullish'},
             ],
-            'next': None,
+            'next_url': None,
         },
     ]
     idx = 0
@@ -40,6 +40,34 @@ def test_fetch_scores(monkeypatch):
     val2 = df.loc[df['date'] == pd.Timestamp('2024-05-31'), 'score'].iloc[0]
     assert val1 == 0
     assert val2 == 1
+
+
+def test_neutral_score(monkeypatch):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    loader = SocialSentimentLoader(engine, api_key='')
+
+    pages = [
+        {
+            'data': [
+                {'published_at': '2024-06-01T01:00:00Z', 'sentiment': 'neutral'},
+            ],
+            'next_url': None,
+        },
+    ]
+    idx = 0
+
+    def fake_fetch(self, page=1):
+        nonlocal idx
+        res = pages[idx]
+        idx += 1
+        return res
+
+    monkeypatch.setattr(SocialSentimentLoader, '_fetch_posts', fake_fetch)
+
+    df = loader.fetch_scores(dt.date(2024, 5, 31))
+    assert len(df) == 1
+    val = df.loc[df['date'] == pd.Timestamp('2024-06-01'), 'score'].iloc[0]
+    assert val == 0
 
 
 def test_update_scores_writes(monkeypatch):
