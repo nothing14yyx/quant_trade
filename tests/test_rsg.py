@@ -3,7 +3,7 @@ from collections import deque
 import threading
 import numpy as np
 
-from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import RobustSignalGenerator, DynamicThresholdInput
 
 
 def make_rsg():
@@ -50,7 +50,12 @@ def make_rsg():
     rsg.crowding_limit = 1.1
     rsg.max_position = 0.3
     rsg.risk_scale = 1.0
+    rsg.smooth_window = 20
+    rsg.smooth_alpha = 0.2
+    rsg.smooth_limit = 1.0
     rsg.flip_confirm_bars = 3
+    rsg.cfg = {'signal_threshold': {'base_th': 0.12, 'quantile': 0.8}}
+    rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
     return rsg
 
 
@@ -185,3 +190,28 @@ def test_ma_cross_logic_symmetric():
         'sma_20_1h_prev': 10,
     }
     assert rsg.ma_cross_logic(feats, feats['sma_20_1h_prev']) == pytest.approx(1.0)
+
+
+def test_dynamic_threshold_smoothing():
+    rsg = make_rsg()
+    rsg.history_scores.extend([0.05, 0.05, 0.05, 0.05, 0.5])
+    rsg.smooth_window = 5
+    rsg.smooth_alpha = 0.5
+    rsg.smooth_limit = 1.0
+    rsg.th_decay = 0
+    th_sm, _ = rsg.compute_dynamic_threshold(
+        DynamicThresholdInput(atr=0, adx=0),
+        history_scores=rsg.history_scores,
+        base=0.05,
+    )
+    rsg2 = make_rsg()
+    rsg2.history_scores.extend([0.05, 0.05, 0.05, 0.05, 0.5])
+    rsg2.smooth_window = 1
+    rsg2.smooth_alpha = 1.0
+    rsg2.th_decay = 0
+    th_raw, _ = rsg2.compute_dynamic_threshold(
+        DynamicThresholdInput(atr=0, adx=0),
+        history_scores=rsg2.history_scores,
+        base=0.05,
+    )
+    assert th_sm < th_raw

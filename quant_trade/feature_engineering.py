@@ -78,6 +78,12 @@ def calc_cross_features(
         # 确保 open_time 为 datetime 类型，避免与 Timedelta 运算时报错
         df["open_time"] = pd.to_datetime(df["open_time"], errors="coerce")
 
+    if "social_sentiment" in f1h.columns:
+        ss = f1h["social_sentiment"].astype(float)
+        f1h["social_sentiment_1h"] = ss
+        f1h["social_sentiment_4h"] = ss.rolling(4, min_periods=1).mean()
+        f1h = f1h.drop(columns=["social_sentiment"])
+
     f1h = f1h.rename(columns={"close": "close_1h"})
     f4h = f4h.rename(columns={"close": "close_4h"})
     f1d = f1d.rename(columns={"close": "close_d1"})
@@ -391,6 +397,27 @@ class FeatureEngineer:
             out["TxCnt"] = None
             out["CapMrktCurUSD"] = None
             out["CapRealUSD"] = None
+
+        # merge social sentiment
+        try:
+            s_df = pd.read_sql(
+                "SELECT date, score FROM social_sentiment ORDER BY date",
+                self.engine,
+                parse_dates=["date"],
+            )
+        except Exception:  # pragma: no cover - optional table
+            s_df = None
+
+        if s_df is not None and not s_df.empty:
+            s_df = s_df.rename(columns={"date": "open_time", "score": "social_sentiment"})
+            out = pd.merge_asof(
+                out.sort_values("open_time"),
+                s_df.sort_values("open_time"),
+                on="open_time",
+                direction="backward",
+            )
+        else:
+            out["social_sentiment"] = None
 
         return out.set_index("open_time").sort_index()
 
