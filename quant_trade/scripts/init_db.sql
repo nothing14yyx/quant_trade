@@ -63,6 +63,14 @@ CREATE TABLE IF NOT EXISTS cg_category_stats (
     updated_at DATETIME
 );
 
+CREATE TABLE IF NOT EXISTS cm_onchain_metrics (
+    symbol VARCHAR(20),
+    timestamp DATETIME,
+    metric VARCHAR(64),
+    value DOUBLE,
+    PRIMARY KEY(symbol, timestamp, metric)
+);
+
 CREATE TABLE IF NOT EXISTS klines (
     symbol VARCHAR(20),
     `interval` VARCHAR(10),
