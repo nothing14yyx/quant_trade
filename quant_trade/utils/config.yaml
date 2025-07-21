@@ -11,12 +11,12 @@ coingecko:
 coinmetrics:
   api_key: "${COINMETRICS_API_KEY}"
   metrics:
-    - AdrActCnt
-    - TxCnt
-    - CapMrktCurUSD
-    - SplyCur
-    - SplyAdrBal1Cnt
-    - FeesUSD
+    - AdrActCnt        # 活跃地址数
+    - TxCnt            # 交易笔数
+    - CapMrktCurUSD    # 流通市值（USD）
+    - SplyCur          # 当前流通供应
+    - TxTfrValAdjUSD   # 调整后链上转账金额（USD）
+    - IssTotNtv        # 当日新增发行量（原生计）
 
 mysql:
   host: "localhost"
