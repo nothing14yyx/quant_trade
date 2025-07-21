@@ -49,7 +49,7 @@ class SocialSentimentLoader:
         page: int | str = 1
         while True:
             data = self._fetch_posts(page)
-            posts = data.get("data") or data.get("results", [])
+            posts = data.get("data", [])
             if not posts:
                 break
             for item in posts:
@@ -60,7 +60,7 @@ class SocialSentimentLoader:
                     break
                 sentiment = str(item.get("sentiment", "")).lower()
                 rows.append({"timestamp": ts, "sentiment": sentiment})
-            next_url = data.get("next_url") or data.get("next")
+            next_url = data.get("next_url")
             if not next_url or ts.date() < since:
                 break
             page = next_url
@@ -77,6 +77,7 @@ class SocialSentimentLoader:
             "negative": -1.0,
             "bearish": -1.0,
             "mild_bearish": -0.5,
+            "neutral": 0.0,
         }
         df["score"] = df["sentiment"].map(mapping).fillna(0.0)
         out = df.groupby("date")["score"].mean().reset_index()
