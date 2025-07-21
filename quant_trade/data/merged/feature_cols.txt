@@ -609,3 +609,8 @@ willr_4h
 willr_4h_isnan
 willr_d1
 willr_d1_isnan
+open
+high
+low
+close
+volume
