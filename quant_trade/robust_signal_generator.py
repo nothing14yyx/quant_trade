@@ -290,6 +290,8 @@ class DynamicThresholdInput:
 
     atr: float
     adx: float
+    bb_width_chg: float | None = None
+    channel_pos: float | None = None
     funding: float = 0.0
     atr_4h: float | None = None
     adx_4h: float | None = None
@@ -877,13 +879,21 @@ class RobustSignalGenerator:
             return "range"
         return "unknown"
 
-    def detect_market_regime(self, adx1, adx4, adxd):
-        """简易市场状态判别：根据平均ADX判断震荡或趋势"""
+    def detect_market_regime(self, adx1, adx4, adxd, bb_width_chg=None, channel_pos=None):
+        """根据多周期 ADX 平均值以及布林带宽度变化等判断市场状态"""
         adx_arr = np.array([adx1, adx4, adxd], dtype=float)
         adx_arr = adx_arr[~np.isnan(adx_arr)]
         if adx_arr.size == 0:
+            avg_adx = None
+        else:
+            avg_adx = adx_arr.mean()
+
+        regime = self.classify_regime(avg_adx, bb_width_chg, channel_pos)
+        if regime != "unknown":
+            return regime
+
+        if avg_adx is None:
             return "range"
-        avg_adx = adx_arr.mean()
         return "trend" if avg_adx >= 25 else "range"
 
     def get_ic_period_weights(self, ic_scores):
@@ -1648,6 +1658,13 @@ class RobustSignalGenerator:
         if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
             th = min(th, hist_base)
 
+        if data.regime is None:
+            data.regime = self.classify_regime(
+                data.adx,
+                data.bb_width_chg,
+                data.channel_pos,
+            )
+
         if data.reversal:
             th *= params.rev_th_mult
 
@@ -1671,6 +1688,8 @@ class RobustSignalGenerator:
         adx_4h=None,
         atr_d1=None,
         adx_d1=None,
+        bb_width_chg=None,
+        channel_pos=None,
         pred_vol=None,
         pred_vol_4h=None,
         pred_vol_d1=None,
@@ -1684,6 +1703,8 @@ class RobustSignalGenerator:
         data = DynamicThresholdInput(
             atr=atr,
             adx=adx,
+            bb_width_chg=bb_width_chg,
+            channel_pos=channel_pos,
             funding=funding,
             atr_4h=atr_4h,
             adx_4h=adx_4h,
@@ -2745,7 +2766,15 @@ class RobustSignalGenerator:
         if vix_p is None and open_interest is not None:
             vix_p = open_interest.get("vix_proxy")
 
-        regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
+        bb_chg = raw_f1h.get("bb_width_chg_1h") if raw_f1h else None
+        channel_pos = raw_f1h.get("channel_pos_1h") if raw_f1h else None
+        regime = self.detect_market_regime(
+            adx_1h,
+            adx_4h or 0,
+            adx_d1 or 0,
+            bb_chg,
+            channel_pos,
+        )
         if std_d1.get("break_support_d1", 0) > 0 and std_d1.get("rsi_d1", 50) < 30:
             regime = "range"
             rev_dir = 1
@@ -2758,6 +2787,8 @@ class RobustSignalGenerator:
             adx_4h=adx_4h,
             atr_d1=atr_d1,
             adx_d1=adx_d1,
+            bb_width_chg=bb_chg,
+            channel_pos=channel_pos,
             pred_vol=vol_preds.get("1h"),
             pred_vol_4h=vol_preds.get("4h"),
             pred_vol_d1=vol_preds.get("d1"),
