@@ -78,6 +78,9 @@ class DataLoader:
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
 
+        # Social sentiment config
+        self.ss_cfg = cfg.get("social_sentiment", {})
+
         # Binance client
         bin_cfg = cfg.get("binance", {})
         self.client = Client(
@@ -182,7 +185,15 @@ class DataLoader:
             parse_dates=["d"],
         )
         since = (last["d"].iloc[0].date() + dt.timedelta(days=1)) if not last.empty and pd.notnull(last["d"].iloc[0]) else dt.date.today() - dt.timedelta(days=7)
-        loader = SocialSentimentLoader(self.engine, retries=self.retries, backoff=self.backoff)
+        loader = SocialSentimentLoader(
+            self.engine,
+            api_key=self.ss_cfg.get("api_key", ""),
+            plan=self.ss_cfg.get("plan", "free"),
+            public=self.ss_cfg.get("public", True),
+            currencies=self.ss_cfg.get("currencies"),
+            retries=self.retries,
+            backoff=self.backoff,
+        )
         loader.update_scores(since)
 
     # ───────────────────────────── Funding Rate ──────────────────────────
