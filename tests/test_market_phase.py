@@ -18,18 +18,13 @@ def test_detect_market_phase():
     engine = sqlalchemy.create_engine("sqlite:///:memory:")
     data = []
     for i in range(39):
-        data.append({
-            "symbol": "BTCUSDT",
-            "timestamp": i,
-            "metric": "AdrActCnt",
-            "value": 100,
-        })
-        data.append({
-            "symbol": "BTCUSDT",
-            "timestamp": i,
-            "metric": "CapMrktCurUSD",
-            "value": 1000,
-        })
+        for m, v in [
+            ("AdrActCnt", 100),
+            ("CapMrktCurUSD", 1000),
+            ("SplyAdrBal1Cnt", 50),
+            ("FeesUSD", 1),
+        ]:
+            data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
     data.append({
         "symbol": "BTCUSDT",
         "timestamp": 39,
@@ -41,6 +36,18 @@ def test_detect_market_phase():
         "timestamp": 39,
         "metric": "CapMrktCurUSD",
         "value": 2000,
+    })
+    data.append({
+        "symbol": "BTCUSDT",
+        "timestamp": 39,
+        "metric": "SplyAdrBal1Cnt",
+        "value": 60,
+    })
+    data.append({
+        "symbol": "BTCUSDT",
+        "timestamp": 39,
+        "metric": "FeesUSD",
+        "value": 2,
     })
     _setup(engine, data)
     phase = detect_market_phase(engine)
@@ -51,18 +58,13 @@ def test_phase_threshold_adjustment():
     engine = sqlalchemy.create_engine("sqlite:///:memory:")
     data = []
     for i in range(39):
-        data.append({
-            "symbol": "BTCUSDT",
-            "timestamp": i,
-            "metric": "AdrActCnt",
-            "value": 100,
-        })
-        data.append({
-            "symbol": "BTCUSDT",
-            "timestamp": i,
-            "metric": "CapMrktCurUSD",
-            "value": 1000,
-        })
+        for m, v in [
+            ("AdrActCnt", 100),
+            ("CapMrktCurUSD", 1000),
+            ("SplyAdrBal1Cnt", 50),
+            ("FeesUSD", 1),
+        ]:
+            data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
     data.append({
         "symbol": "BTCUSDT",
         "timestamp": 39,
@@ -74,6 +76,18 @@ def test_phase_threshold_adjustment():
         "timestamp": 39,
         "metric": "CapMrktCurUSD",
         "value": 2000,
+    })
+    data.append({
+        "symbol": "BTCUSDT",
+        "timestamp": 39,
+        "metric": "SplyAdrBal1Cnt",
+        "value": 60,
+    })
+    data.append({
+        "symbol": "BTCUSDT",
+        "timestamp": 39,
+        "metric": "FeesUSD",
+        "value": 2,
     })
     _setup(engine, data)
 
