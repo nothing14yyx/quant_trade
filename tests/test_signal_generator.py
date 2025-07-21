@@ -675,6 +675,27 @@ def test_dynamic_threshold_regime():
     assert rb_r > rb
 
 
+def test_dynamic_threshold_auto_regime():
+    rsg = make_dummy_rsg()
+    th_trend, _ = rsg.compute_dynamic_threshold(
+        DynamicThresholdInput(
+            atr=0.02,
+            adx=25,
+            bb_width_chg=0.1,
+            channel_pos=0.8,
+        )
+    )
+    th_range, _ = rsg.compute_dynamic_threshold(
+        DynamicThresholdInput(
+            atr=0.02,
+            adx=15,
+            bb_width_chg=-0.1,
+            channel_pos=0.2,
+        )
+    )
+    assert th_trend > th_range
+
+
 def test_dynamic_threshold_reversal():
     rsg = make_dummy_rsg()
     th, _ = rsg.compute_dynamic_threshold(

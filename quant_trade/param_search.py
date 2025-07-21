@@ -104,10 +104,13 @@ def run_single_backtest(
             low_base=None,
             reversal=False,
             history_scores=None,
+            **kwargs,
         ):
             data = DynamicThresholdInput(
                 atr=atr,
                 adx=adx,
+                bb_width_chg=kwargs.get("bb_width_chg"),
+                channel_pos=kwargs.get("channel_pos"),
                 funding=funding,
                 atr_4h=atr_4h,
                 adx_4h=adx_4h,
