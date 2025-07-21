@@ -25,11 +25,15 @@ class SocialSentimentLoader:
         engine,
         api_key: str = "",
         plan: str = "free",
+        public: bool = True,
+        currencies: list[str] | str | None = None,
         retries: int = 3,
         backoff: float = 1.0,
     ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY", "")
+        self.public = public
+        self.currencies = currencies
         self.retries = retries
         self.backoff = backoff
         self.API_URL = self.API_URL.format(plan=plan)
@@ -42,10 +46,15 @@ class SocialSentimentLoader:
             else:
                 params = {
                     "auth_token": self.api_key,
-                    "public": "true",
+                    "public": str(self.public).lower(),
                     "kind": "news",
                     "page_size": 100,
                 }
+                if self.currencies:
+                    if isinstance(self.currencies, (list, tuple, set)):
+                        params["currencies"] = ",".join(self.currencies)
+                    else:
+                        params["currencies"] = str(self.currencies)
                 if not isinstance(page, str):
                     params["page"] = page
                 r = requests.get(self.API_URL, params=params, timeout=10)
