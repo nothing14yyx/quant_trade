@@ -21,8 +21,7 @@ def test_detect_market_phase():
         for m, v in [
             ("AdrActCnt", 100),
             ("CapMrktCurUSD", 1000),
-            ("SplyAdrBal1Cnt", 50),
-            ("FeesUSD", 1),
+            ("FeeTotUSD", 1),
         ]:
             data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
     data.append({
@@ -40,13 +39,7 @@ def test_detect_market_phase():
     data.append({
         "symbol": "BTCUSDT",
         "timestamp": 39,
-        "metric": "SplyAdrBal1Cnt",
-        "value": 60,
-    })
-    data.append({
-        "symbol": "BTCUSDT",
-        "timestamp": 39,
-        "metric": "FeesUSD",
+        "metric": "FeeTotUSD",
         "value": 2,
     })
     _setup(engine, data)
@@ -61,8 +54,7 @@ def test_phase_threshold_adjustment():
         for m, v in [
             ("AdrActCnt", 100),
             ("CapMrktCurUSD", 1000),
-            ("SplyAdrBal1Cnt", 50),
-            ("FeesUSD", 1),
+            ("FeeTotUSD", 1),
         ]:
             data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
     data.append({
@@ -80,13 +72,7 @@ def test_phase_threshold_adjustment():
     data.append({
         "symbol": "BTCUSDT",
         "timestamp": 39,
-        "metric": "SplyAdrBal1Cnt",
-        "value": 60,
-    })
-    data.append({
-        "symbol": "BTCUSDT",
-        "timestamp": 39,
-        "metric": "FeesUSD",
+        "metric": "FeeTotUSD",
         "value": 2,
     })
     _setup(engine, data)
