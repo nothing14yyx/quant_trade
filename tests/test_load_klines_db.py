@@ -37,6 +37,7 @@ def test_load_klines_db_cm_metrics():
     fe.engine = engine
     fe.btc_symbol = 'BTCUSDT'
     fe.eth_symbol = 'ETHUSDT'
+    fe.cm_metrics = metrics
     fe._kl_cache = {}
     fe._load_klines_raw = lambda symbol, interval: kl_df
 
