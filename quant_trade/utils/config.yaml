@@ -9,7 +9,7 @@ coingecko:
   api_key: "${COINGECKO_API_KEY}"  # 可为空或填写公共 API 密钥
 
 social_sentiment:
-  plan: "free"                # free 或 developer
+  plan: "developer"                # free 或 developer
   api_key: "${CRYPTOPANIC_API_KEY}"
 
 coinmetrics:
