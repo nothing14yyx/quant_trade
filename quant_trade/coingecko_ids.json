@@ -288,5 +288,8 @@
   "SNXUSDT": "havven",
   "GRTUSDT": "the-graph",
   "SXPUSDT": "swipe",
-  "MANTAUSDT": "manta-network"
+  "MANTAUSDT": "manta-network",
+  "SWELLUSDT": "swell-network",
+  "MINAUSDT": "mina-protocol",
+  "AGTUSDT": "aiville-governance-token"
 }
