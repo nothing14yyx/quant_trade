@@ -111,6 +111,8 @@ class Scheduler:
         # 启动时同步资金费率
         self.safe_call(self.update_funding_rates, self.symbols)
         self.safe_call(self.update_daily_data, self.symbols)
+        # 根据最新链上指标更新市场阶段参数
+        self.sg.update_market_phase(self.engine)
         self.safe_call(self.update_ic_scores_from_db)
         self.safe_call(self.generate_signals, self.symbols)
         self.next_ic_update = self._calc_next_ic_update(datetime.now(UTC))
@@ -163,6 +165,8 @@ class Scheduler:
             self.dl.update_cm_metrics(symbols)
         except Exception as e:
             logging.exception("update coinmetrics failed: %s", e)
+        # 更新市场阶段，便于根据新数据调整阈值
+        self.sg.update_market_phase(self.engine)
 
     def update_features(self):
         """重新计算特征并写入数据库"""
