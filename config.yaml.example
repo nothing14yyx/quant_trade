@@ -4,6 +4,7 @@ binance:
   api_secret: "${BINANCE_API_SECRET}"
 
 social_sentiment:
+  plan: "free"                # free 或 developer
   api_key: "${CRYPTOPANIC_API_KEY}"
 coinmetrics:
   api_key: "${COINMETRICS_API_KEY}"
