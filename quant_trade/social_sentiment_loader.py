@@ -29,6 +29,13 @@ class SocialSentimentLoader:
         currencies: list[str] | str | None = None,
         retries: int = 3,
         backoff: float = 1.0,
+        *,
+        public: bool | None = True,
+        currencies: str | list[str] | None = None,
+        regions: str | list[str] | None = "en",
+        filter: str | None = None,
+        kind: str | None = "news",
+        following: bool = False,
     ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY", "")
@@ -37,6 +44,12 @@ class SocialSentimentLoader:
         self.retries = retries
         self.backoff = backoff
         self.API_URL = self.API_URL.format(plan=plan)
+        self.public = public
+        self.currencies = currencies
+        self.regions = regions
+        self.filter = filter
+        self.kind = kind
+        self.following = following
 
     def _fetch_posts(self, page: int | str = 1) -> dict:
         """Fetch a page of posts, ``page`` may be int or next_url."""
@@ -46,6 +59,7 @@ class SocialSentimentLoader:
             else:
                 params = {
                     "auth_token": self.api_key,
+
                     "public": str(self.public).lower(),
                     "kind": "news",
                     "page_size": 100,
@@ -55,6 +69,7 @@ class SocialSentimentLoader:
                         params["currencies"] = ",".join(self.currencies)
                     else:
                         params["currencies"] = str(self.currencies)
+
                 if not isinstance(page, str):
                     params["page"] = page
                 r = requests.get(self.API_URL, params=params, timeout=10)

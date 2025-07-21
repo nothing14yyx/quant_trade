@@ -1,6 +1,7 @@
 import pandas as pd
 import sqlalchemy
 import datetime as dt
+import requests
 
 from quant_trade.social_sentiment_loader import SocialSentimentLoader
 
@@ -86,3 +87,43 @@ def test_update_scores_writes(monkeypatch):
     out = pd.read_sql('social_sentiment', engine, parse_dates=['date'])
     assert len(out) == 1
     assert out.iloc[0]['score'] == 0.2
+
+
+def test_fetch_posts_params(monkeypatch):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    calls = []
+
+    def fake_get(url, params=None, timeout=10):
+        calls.append(params)
+        class R:
+            status_code = 200
+            headers = {"X-RateLimit-Remaining": "10"}
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return {}
+        return R()
+
+    monkeypatch.setattr(requests, 'get', fake_get)
+
+    loader = SocialSentimentLoader(
+        engine,
+        api_key='',
+        public=False,
+        currencies=['BTC', 'ETH'],
+        regions=['en', 'zh'],
+        filter='hot',
+        kind='media',
+        following=True,
+    )
+
+    loader._fetch_posts(2)
+
+    params = calls[0]
+    assert params['public'] == 'false'
+    assert params['currencies'] == 'BTC,ETH'
+    assert params['regions'] == 'en,zh'
+    assert params['filter'] == 'hot'
+    assert params['kind'] == 'media'
+    assert params['following'] == 'true'
+    assert params['page'] == 2
