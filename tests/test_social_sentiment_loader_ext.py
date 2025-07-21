@@ -1,9 +1,15 @@
+import importlib
 import pandas as pd
 import sqlalchemy
 import datetime as dt
 import requests
 
+from quant_trade import social_sentiment_loader
 from quant_trade.social_sentiment_loader import SocialSentimentLoader
+
+
+def test_module_importable():
+    importlib.reload(social_sentiment_loader)
 
 
 def test_fetch_scores(monkeypatch):
