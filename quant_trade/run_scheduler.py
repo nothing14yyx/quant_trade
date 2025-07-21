@@ -208,32 +208,80 @@ class Scheduler:
 
         async def process(sym: str):
             try:
-                feats = await prepare_all_features_async(self.engine, sym, self.scaler_params)
+                feats = await prepare_all_features_async(
+                    self.engine, sym, self.scaler_params
+                )
                 if feats is None:
                     logging.debug("skip %s - insufficient data", sym)
                     return None
                 feats1h, feats4h, featsd1, raw1h, raw4h, rawd1 = feats
                 oi = await load_latest_open_interest_async(self.engine, sym)
                 order_imb = await load_order_book_imbalance_async(self.engine, sym)
-                sig = self.sg.generate_signal(
-                    feats1h,
-                    feats4h,
-                    featsd1,
-                    raw_features_1h=raw1h,
-                    raw_features_4h=raw4h,
-                    raw_features_d1=rawd1,
-                    global_metrics=global_metrics,
-                    open_interest=oi,
-                    order_book_imbalance=order_imb,
-                    symbol=sym,
-                )
-                if sig is None:
-                    logging.debug("skip %s – signal generator returned None", sym)
-                    return None
-                raw1h_b = {k: _to_builtin(v) for k, v in raw1h.items()}
-                raw4h_b = {k: _to_builtin(v) for k, v in raw4h.items()}
-                rawd1_b = {k: _to_builtin(v) for k, v in rawd1.items()}
-                data = {
+                return {
+                    "symbol": sym,
+                    "f1h": feats1h,
+                    "f4h": feats4h,
+                    "fd1": featsd1,
+                    "raw1h": raw1h,
+                    "raw4h": raw4h,
+                    "rawd1": rawd1,
+                    "oi": oi,
+                    "ob": order_imb,
+                }
+            except Exception as exc:
+                logging.exception("signal for %s failed: %s", sym, exc)
+                return None
+
+        async def runner():
+            nonlocal data
+            global_metrics_local = await load_global_metrics_async(self.engine)
+            nonlocal global_metrics
+            global_metrics = global_metrics_local
+            now_local = datetime.now(UTC).replace(second=0, microsecond=0)
+            nonlocal now
+            now = now_local
+            tasks = [process(s) for s in symbols]
+            gathered = await asyncio.gather(*tasks)
+            data.extend([r for r in gathered if r])
+
+        data: list[dict] = []
+        global_metrics = None
+        now = None
+        asyncio.run(runner())
+
+        if not data:
+            return
+
+        feats1h_list = [d["f1h"] for d in data]
+        feats4h_list = [d["f4h"] for d in data]
+        featsd1_list = [d["fd1"] for d in data]
+        oi_list = [d["oi"] for d in data]
+        ob_list = [d["ob"] for d in data]
+        syms = [d["symbol"] for d in data]
+        raws1h = [d["raw1h"] for d in data]
+        raws4h = [d["raw4h"] for d in data]
+        rawsd1 = [d["rawd1"] for d in data]
+
+        sigs = self.sg.generate_signal_batch(
+            feats1h_list,
+            feats4h_list,
+            featsd1_list,
+            global_metrics=global_metrics,
+            open_interest=oi_list,
+            order_book_imbalance=ob_list,
+            symbols=syms,
+        )
+
+        results: list[dict] = []
+        for sym, sig, raw1h, raw4h, rawd1 in zip(syms, sigs, raws1h, raws4h, rawsd1):
+            if sig is None:
+                logging.debug("skip %s – signal generator returned None", sym)
+                continue
+            raw1h_b = {k: _to_builtin(v) for k, v in raw1h.items()}
+            raw4h_b = {k: _to_builtin(v) for k, v in raw4h.items()}
+            rawd1_b = {k: _to_builtin(v) for k, v in rawd1.items()}
+            results.append(
+                {
                     "symbol": sym,
                     "time": now,
                     "price": raw1h_b.get("close"),
@@ -251,30 +299,10 @@ class Scheduler:
                         },
                     ),
                 }
-                return {k: _to_builtin(v) for k, v in data.items()}
-            except Exception as exc:
-                logging.exception("signal for %s failed: %s", sym, exc)
-                return None
+            )
 
-        async def runner():
-            nonlocal results
-            global_metrics_local = await load_global_metrics_async(self.engine)
-            nonlocal global_metrics
-            global_metrics = global_metrics_local
-            now_local = datetime.now(UTC).replace(second=0, microsecond=0)
-            nonlocal now
-            now = now_local
-            tasks = [process(s) for s in symbols]
-            gathered = await asyncio.gather(*tasks)
-            results.extend([r for r in gathered if r])
+        logging.info("[diagnose] %s", self.sg.diagnose())
 
-        results: list[dict] = []
-        global_metrics = None
-        now = None
-        asyncio.run(runner())
-
-        if not results:
-            return
         with self.engine.begin() as conn:
             conn.execute(
                 text(
@@ -282,7 +310,7 @@ class Scheduler:
                     "(`symbol`,`time`,`price`,`signal`,`score`,`pos`,`take_profit`,`stop_loss`,`indicators`) "
                     "VALUES (:symbol,:time,:price,:signal,:score,:pos,:take_profit,:stop_loss,:indicators)"
                 ),
-                results,
+                [ {k: _to_builtin(v) for k, v in r.items()} for r in results ],
             )
         logging.info("[generate_signals] wrote %s rows to live_full_data", len(results))
         filtered = [r for r in results if r.get("signal")]

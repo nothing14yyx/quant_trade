@@ -3847,6 +3847,11 @@ class RobustSignalGenerator:
         """Return diagnostics of the last ``generate_signal`` call."""
         return getattr(self, "_diagnostic", {}).copy()
 
+    # Public wrapper for diagnostics
+    def diagnose(self):
+        """Get diagnostics of the most recent signal generation."""
+        return self._diagnose()
+
     def generate_signal_batch(
         self,
         feats_1h_list,

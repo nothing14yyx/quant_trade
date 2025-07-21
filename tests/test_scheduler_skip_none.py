@@ -20,7 +20,10 @@ def test_generate_signals_skip_none(monkeypatch):
 
     sched = SimpleNamespace(
         engine=engine,
-        sg=SimpleNamespace(generate_signal=lambda *a, **k: None),
+        sg=SimpleNamespace(
+            generate_signal_batch=lambda *a, **k: [None],
+            diagnose=lambda: {},
+        ),
         scaler_params=None,
     )
 
