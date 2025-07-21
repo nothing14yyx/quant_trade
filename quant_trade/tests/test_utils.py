@@ -42,6 +42,9 @@ def make_dummy_rsg():
     rsg.max_position = 0.3
     rsg.risk_scale = 1.0
     rsg.cycle_weight = {'strong': 1.0, 'weak': 1.0, 'opposite': 1.0}
+    rsg.smooth_window = 20
+    rsg.smooth_alpha = 0.2
+    rsg.smooth_limit = 1.0
     rsg.cfg = {
         'signal_threshold': {
             'mode': 'sigmoid',
