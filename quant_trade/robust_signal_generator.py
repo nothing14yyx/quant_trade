@@ -2801,7 +2801,25 @@ class RobustSignalGenerator:
         )
 
         fused_score *= 1 - self.risk_adjust_factor * risk_score
-        if abs(fused_score) < self.risk_adjust_threshold:
+        # 根据历史波动或换手率动态调整风控阈值
+        with self._lock:
+            atr_hist = [
+                r.get("atr_pct_1h")
+                for r in cache.get("_raw_history", {}).get("1h", [])
+                if r.get("atr_pct_1h") is not None
+            ]
+            oi_hist = list(cache.get("oi_change_history", []))
+        hist = [abs(v) for v in atr_hist if v is not None]
+        if not hist:
+            hist = [abs(v) for v in oi_hist if v is not None]
+        dyn_risk_th = risk_budget_threshold(
+            hist, quantile=self.signal_params.quantile
+        ) if hist else float("nan")
+        risk_th = self.risk_adjust_threshold
+        if not math.isnan(dyn_risk_th):
+            risk_th = max(risk_th, dyn_risk_th)
+
+        if abs(fused_score) < risk_th:
             return None
 
         if (
@@ -2820,6 +2838,7 @@ class RobustSignalGenerator:
             "risk_score": risk_score,
             "crowding_factor": crowding_factor,
             "crowding_adjusted": True,
+            "risk_th": risk_th,
             "base_th": base_th,
             "rev_boost": rev_boost,
             "regime": regime,
