@@ -27,12 +27,25 @@ class SocialSentimentLoader:
         plan: str = "free",
         retries: int = 3,
         backoff: float = 1.0,
+        *,
+        public: bool | None = True,
+        currencies: str | list[str] | None = None,
+        regions: str | list[str] | None = "en",
+        filter: str | None = None,
+        kind: str | None = "news",
+        following: bool = False,
     ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY", "")
         self.retries = retries
         self.backoff = backoff
         self.API_URL = self.API_URL.format(plan=plan)
+        self.public = public
+        self.currencies = currencies
+        self.regions = regions
+        self.filter = filter
+        self.kind = kind
+        self.following = following
 
     def _fetch_posts(self, page: int | str = 1) -> dict:
         """Fetch a page of posts, ``page`` may be int or next_url."""
@@ -42,10 +55,26 @@ class SocialSentimentLoader:
             else:
                 params = {
                     "auth_token": self.api_key,
-                    "public": "true",
-                    "kind": "news",
                     "page_size": 100,
                 }
+                if self.public is not None:
+                    params["public"] = str(self.public).lower()
+                if self.kind:
+                    params["kind"] = self.kind
+                if self.currencies:
+                    if isinstance(self.currencies, (list, tuple)):
+                        params["currencies"] = ",".join(self.currencies)
+                    else:
+                        params["currencies"] = self.currencies
+                if self.regions:
+                    if isinstance(self.regions, (list, tuple)):
+                        params["regions"] = ",".join(self.regions)
+                    else:
+                        params["regions"] = self.regions
+                if self.filter:
+                    params["filter"] = self.filter
+                if self.following:
+                    params["following"] = "true"
                 if not isinstance(page, str):
                     params["page"] = page
                 r = requests.get(self.API_URL, params=params, timeout=10)
