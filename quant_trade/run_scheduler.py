@@ -25,6 +25,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from optimize_params import optimize_params
 from sqlalchemy import text
 
 
@@ -99,6 +100,12 @@ class Scheduler:
         self.ic_update_limit = cfg.get("ic_update_rows", 1000)
         self.ic_update_interval = cfg.get("ic_update_interval_hours", 24)
         self.next_ic_update = datetime.now(UTC)
+        opt_cfg = cfg.get("optimizer", {})
+        self.optimize_interval = opt_cfg.get("interval_hours", 24)
+        self.optimize_rows = opt_cfg.get("rows", 50000)
+        self.optimize_trials = opt_cfg.get("trials", 30)
+        self.optimize_method = opt_cfg.get("method", "optuna")
+        self.next_param_opt = datetime.now(UTC) + timedelta(hours=self.optimize_interval)
 
     def initial_sync(self):
         """启动时检查并更新所有关键数据，然后生成一次交易信号"""
@@ -209,6 +216,24 @@ class Scheduler:
         if self.ic_update_interval == 24:
             return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         return (now + timedelta(hours=self.ic_update_interval)).replace(minute=0, second=0, microsecond=0)
+
+    def search_and_reload_params(self):
+        """重新搜索最佳参数并加载配置."""
+        logging.info("searching best parameters via %s", self.optimize_method)
+        try:
+            optimize_params(
+                rows=self.optimize_rows,
+                trials=self.optimize_trials,
+                method=self.optimize_method,
+            )
+            self.cfg = load_config()
+            rsg_cfg = RobustSignalGeneratorConfig.from_cfg(self.cfg)
+            self.sg.stop_weight_update_thread()
+            self.sg = RobustSignalGenerator(rsg_cfg)
+            categories = load_symbol_categories(self.engine)
+            self.sg.set_symbol_categories(categories)
+        except Exception as e:
+            logging.exception("search_and_reload_params failed: %s", e)
 
     def generate_signals(self, symbols):
         logging.info("generating signals for %s symbols", len(symbols))
@@ -345,6 +370,9 @@ class Scheduler:
 
     def dispatch_tasks(self):
         now = datetime.now(UTC)
+        if hasattr(self, "next_param_opt") and now >= self.next_param_opt:
+            self.safe_call(self.search_and_reload_params)
+            self.next_param_opt = now + timedelta(hours=self.optimize_interval)
         if now >= self.next_symbols_refresh:
             self.symbols = self.dl.get_top_symbols(self.topn)
             self.next_symbols_refresh = now + timedelta(hours=1)
