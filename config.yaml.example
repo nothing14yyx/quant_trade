@@ -4,8 +4,14 @@ binance:
   api_secret: "${BINANCE_API_SECRET}"
 
 social_sentiment:
-  plan: "free"                # free 或 developer
+  plan: "developer"           # free 或 developer
   api_key: "${CRYPTOPANIC_API_KEY}"
+  public: true
+  currencies: "BTC,ETH"
+  regions: "en"
+  filter: "rising"
+  kind: "news"
+  following: false
 coinmetrics:
   api_key: "${COINMETRICS_API_KEY}"
   metrics:
