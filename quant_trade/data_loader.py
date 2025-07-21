@@ -25,7 +25,7 @@ from quant_trade.utils.ratelimiter import RateLimiter  # 你的限速器
 from quant_trade.utils.helper import calc_order_book_features
 
 logger = logging.getLogger(__name__)
-# logger.setLevel(logging.WARNING)
+logger.setLevel(logging.WARNING)
 
 
 def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
@@ -977,6 +977,6 @@ class DataLoader:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
     dl = DataLoader()
     dl.sync_all(max_workers=5)
