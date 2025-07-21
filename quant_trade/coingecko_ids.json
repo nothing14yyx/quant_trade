@@ -293,5 +293,6 @@
   "MINAUSDT": "mina-protocol",
   "AGTUSDT": "aiville-governance-token",
   "BIGTIMEUSDT": "big-time",
-  "DRIFTUSDT": "drift-protocol"
+  "DRIFTUSDT": "drift-protocol",
+  "TAUSDT": "staked-ether"
 }

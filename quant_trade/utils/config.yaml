@@ -502,3 +502,9 @@ tp_sl:
 # 调度器设置
 scheduler:
   topn: 100         # run_scheduler 监控的币种数量
+
+optimizer:
+  method: optuna         # 搜索算法，可选 optuna 或 ga
+  interval_hours: 24     # 多久重新搜索一次
+  rows: 50000            # 回测读取的最近行数
+  trials: 30             # 搜索迭代次数
