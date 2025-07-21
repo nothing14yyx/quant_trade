@@ -91,7 +91,6 @@ feature_cols:
       - long_upper_shadow_1h
       - day_of_week
       - hour_of_day
-      - social_sentiment_1h
       - vol_breakout_1h
       - ma_ratio_1h_d1
       - donchian_delta_1h
@@ -112,7 +111,6 @@ feature_cols:
       - hv_30d_1h
       - donchian_delta_1h
       - atr_pct_ratio_1h_4h
-      - social_sentiment_1h
 
     rise:
       - atr_pct_1h
@@ -127,7 +125,6 @@ feature_cols:
       - hour_of_day
       - macd_hist_diff_1h_d1
       - atr_pct_ratio_1h_4h
-      - social_sentiment_1h
 
     drawdown:
       - atr_pct_1h
@@ -142,7 +139,6 @@ feature_cols:
       - vol_breakout_1h
       - hv_14d_1h
       - atr_pct_ratio_1h_4h
-      - social_sentiment_1h
 
   4h:
     cls:
@@ -152,7 +148,6 @@ feature_cols:
       - long_upper_shadow_4h
       - day_of_week
       - hour_of_day
-      - social_sentiment_4h
       - rsi_diff_4h_d1
       - atr_pct_ratio_1h_4h
       - donchian_delta_4h
@@ -174,7 +169,6 @@ feature_cols:
       - vol_ratio_4h_d1
       - atr_pct_ratio_1h_4h
       - hour_of_day
-      - social_sentiment_4h
 
     rise:
       - atr_pct_4h
@@ -189,8 +183,6 @@ feature_cols:
       - day_of_week
       - atr_pct_ratio_1h_4h
       - vol_ratio_1h_4h
-      - social_sentiment_4h
-      - social_sentiment_4h
 
     drawdown:
       - atr_pct_4h
