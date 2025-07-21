@@ -99,6 +99,7 @@ class Scheduler:
         self.ic_update_limit = cfg.get("ic_update_rows", 1000)
         self.ic_update_interval = cfg.get("ic_update_interval_hours", 24)
         self.next_ic_update = datetime.now(UTC)
+        self.monitor_enabled = cfg.get("monitor_enabled", False)
 
     def initial_sync(self):
         """启动时检查并更新所有关键数据，然后生成一次交易信号"""
@@ -280,6 +281,7 @@ class Scheduler:
         )
 
         results: list[dict] = []
+        monitor_rows: list[dict] = []
         for sym, sig, raw1h, raw4h, rawd1 in zip(syms, sigs, raws1h, raws4h, rawsd1):
             if sig is None:
                 logging.debug("skip %s – signal generator returned None", sym)
@@ -305,6 +307,14 @@ class Scheduler:
                             "details": sig.get("details"),
                         },
                     ),
+                }
+            )
+            monitor_rows.append(
+                {
+                    "symbol": sym,
+                    "time": now,
+                    "factor_breakdown": safe_json_dumps(sig.get("factor_breakdown")),
+                    "ic_scores": safe_json_dumps(getattr(self.sg, "ic_scores", {})),
                 }
             )
 
@@ -336,6 +346,25 @@ class Scheduler:
             logging.info(
                 "[generate_signals] wrote %s rows to live_top10_signals", len(top10)
             )
+
+        if getattr(self, "monitor_enabled", False) and monitor_rows:
+            self.write_monitor_data(monitor_rows)
+
+    def write_monitor_data(self, rows):
+        """将监控数据写入数据库"""
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "REPLACE INTO live_monitor_data "
+                        "(`symbol`,`time`,`factor_breakdown`,`ic_scores`) "
+                        "VALUES (:symbol,:time,:factor_breakdown,:ic_scores)"
+                    ),
+                    rows,
+                )
+            logging.info("[monitor] wrote %s rows", len(rows))
+        except Exception as e:
+            logging.exception("write_monitor_data failed: %s", e)
 
     def schedule_next(self):
         next_run = (datetime.now(UTC) + timedelta(minutes=1)).replace(
