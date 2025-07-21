@@ -222,28 +222,6 @@ class RobustSignalGeneratorConfig:
         )
 
 
-def robust_signal_generator(model, *args, **kwargs):
-    """Deprecated helper for backward compatibility.
-
-    Args:
-        model: ``RobustSignalGenerator`` 实例.
-
-    Returns:
-        调用 ``generate_signal`` 的结果或 ``None``。
-
-    Raises:
-        DeprecationWarning: 使用时会提示弃用。
-    """
-    warnings.warn(
-        "robust_signal_generator() 已弃用，请直接复用 RobustSignalGenerator 实例",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        return model.generate_signal(*args, **kwargs)
-    except (ValueError, KeyError, TypeError) as e:
-        logger.info("generate_signal failed: %s", e)
-        return None
 
 
 def softmax(x):
@@ -290,6 +268,8 @@ class DynamicThresholdInput:
 
     atr: float
     adx: float
+    bb_width_chg: float | None = None
+    channel_pos: float | None = None
     funding: float = 0.0
     atr_4h: float | None = None
     adx_4h: float | None = None
@@ -877,13 +857,21 @@ class RobustSignalGenerator:
             return "range"
         return "unknown"
 
-    def detect_market_regime(self, adx1, adx4, adxd):
-        """简易市场状态判别：根据平均ADX判断震荡或趋势"""
+    def detect_market_regime(self, adx1, adx4, adxd, bb_width_chg=None, channel_pos=None):
+        """根据多周期 ADX 平均值以及布林带宽度变化等判断市场状态"""
         adx_arr = np.array([adx1, adx4, adxd], dtype=float)
         adx_arr = adx_arr[~np.isnan(adx_arr)]
         if adx_arr.size == 0:
+            avg_adx = None
+        else:
+            avg_adx = adx_arr.mean()
+
+        regime = self.classify_regime(avg_adx, bb_width_chg, channel_pos)
+        if regime != "unknown":
+            return regime
+
+        if avg_adx is None:
             return "range"
-        avg_adx = adx_arr.mean()
         return "trend" if avg_adx >= 25 else "range"
 
     def get_ic_period_weights(self, ic_scores):
@@ -1648,6 +1636,13 @@ class RobustSignalGenerator:
         if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
             th = min(th, hist_base)
 
+        if data.regime is None:
+            data.regime = self.classify_regime(
+                data.adx,
+                data.bb_width_chg,
+                data.channel_pos,
+            )
+
         if data.reversal:
             th *= params.rev_th_mult
 
@@ -1671,6 +1666,8 @@ class RobustSignalGenerator:
         adx_4h=None,
         atr_d1=None,
         adx_d1=None,
+        bb_width_chg=None,
+        channel_pos=None,
         pred_vol=None,
         pred_vol_4h=None,
         pred_vol_d1=None,
@@ -1684,6 +1681,8 @@ class RobustSignalGenerator:
         data = DynamicThresholdInput(
             atr=atr,
             adx=adx,
+            bb_width_chg=bb_width_chg,
+            channel_pos=channel_pos,
             funding=funding,
             atr_4h=atr_4h,
             adx_4h=adx_4h,
@@ -2745,7 +2744,15 @@ class RobustSignalGenerator:
         if vix_p is None and open_interest is not None:
             vix_p = open_interest.get("vix_proxy")
 
-        regime = self.detect_market_regime(adx_1h, adx_4h or 0, adx_d1 or 0)
+        bb_chg = raw_f1h.get("bb_width_chg_1h") if raw_f1h else None
+        channel_pos = raw_f1h.get("channel_pos_1h") if raw_f1h else None
+        regime = self.detect_market_regime(
+            adx_1h,
+            adx_4h or 0,
+            adx_d1 or 0,
+            bb_chg,
+            channel_pos,
+        )
         if std_d1.get("break_support_d1", 0) > 0 and std_d1.get("rsi_d1", 50) < 30:
             regime = "range"
             rev_dir = 1
@@ -2758,6 +2765,8 @@ class RobustSignalGenerator:
             adx_4h=adx_4h,
             atr_d1=atr_d1,
             adx_d1=adx_d1,
+            bb_width_chg=bb_chg,
+            channel_pos=channel_pos,
             pred_vol=vol_preds.get("1h"),
             pred_vol_4h=vol_preds.get("4h"),
             pred_vol_d1=vol_preds.get("d1"),
@@ -2801,7 +2810,25 @@ class RobustSignalGenerator:
         )
 
         fused_score *= 1 - self.risk_adjust_factor * risk_score
-        if abs(fused_score) < self.risk_adjust_threshold:
+        # 根据历史波动或换手率动态调整风控阈值
+        with self._lock:
+            atr_hist = [
+                r.get("atr_pct_1h")
+                for r in cache.get("_raw_history", {}).get("1h", [])
+                if r.get("atr_pct_1h") is not None
+            ]
+            oi_hist = list(cache.get("oi_change_history", []))
+        hist = [abs(v) for v in atr_hist if v is not None]
+        if not hist:
+            hist = [abs(v) for v in oi_hist if v is not None]
+        dyn_risk_th = risk_budget_threshold(
+            hist, quantile=self.signal_params.quantile
+        ) if hist else float("nan")
+        risk_th = self.risk_adjust_threshold
+        if not math.isnan(dyn_risk_th):
+            risk_th = max(risk_th, dyn_risk_th)
+
+        if abs(fused_score) < risk_th:
             return None
 
         if (
@@ -2820,6 +2847,7 @@ class RobustSignalGenerator:
             "risk_score": risk_score,
             "crowding_factor": crowding_factor,
             "crowding_adjusted": True,
+            "risk_th": risk_th,
             "base_th": base_th,
             "rev_boost": rev_boost,
             "regime": regime,
@@ -3846,6 +3874,11 @@ class RobustSignalGenerator:
     def _diagnose(self):
         """Return diagnostics of the last ``generate_signal`` call."""
         return getattr(self, "_diagnostic", {}).copy()
+
+    # Public wrapper for diagnostics
+    def diagnose(self):
+        """Get diagnostics of the most recent signal generation."""
+        return self._diagnose()
 
     def generate_signal_batch(
         self,

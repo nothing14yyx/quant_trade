@@ -32,13 +32,13 @@ def make_rsg():
 
 def test_detect_market_regime():
     rsg = make_rsg()
-    assert rsg.detect_market_regime(30, 20, 25) == "trend"
-    assert rsg.detect_market_regime(10, 15, 20) == "range"
+    assert rsg.detect_market_regime(30, 20, 25, 0.1, 0.6) == "trend"
+    assert rsg.detect_market_regime(10, 15, 20, -0.1, 0.2) == "range"
 
 
 def test_detect_market_regime_all_nan():
     rsg = make_rsg()
-    assert rsg.detect_market_regime(np.nan, np.nan, np.nan) == "range"
+    assert rsg.detect_market_regime(np.nan, np.nan, np.nan, None, None) == "range"
 
 
 def test_get_ic_period_weights():
