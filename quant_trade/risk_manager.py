@@ -34,3 +34,29 @@ class RiskManager:
 
         risk = float(np.quantile(values, quantile))
         return min(risk, self.cap)
+
+    def optimize_weights(
+        self, scores: list[float], *, total: float = 1.0, max_weight: float | None = None
+    ) -> list[float]:
+        """根据多币种得分优化资金权重。
+
+        Args:
+            scores: 各币种的信号得分列表。
+            total: 权重总和上限，默认 1.0 表示满仓。
+            max_weight: 单币种权重上限，``None`` 表示不限制。
+
+        Returns:
+            与 ``scores`` 等长的权重列表。
+        """
+
+        if not scores:
+            return []
+
+        arr = np.abs(np.asarray(scores, dtype=float))
+        if arr.sum() == 0:
+            return [0.0] * len(scores)
+
+        weights = arr / arr.sum() * total
+        if max_weight is not None:
+            weights = np.minimum(weights, max_weight)
+        return weights.tolist()
