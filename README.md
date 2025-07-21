@@ -64,6 +64,10 @@ ic_scores:
 其中 `api_key`、`api_secret`、`COINGECKO_API_KEY` 与 MySQL `password` 均支持通过环境变量传入。
 
 新增 `social_sentiment` 和 `coinmetrics` 区块，可配置情绪接口密钥及额外链上指标。
+其中 `social_sentiment` 现支持更多查询选项：
+`public` 控制是否仅抓取公开帖子，`currencies` 指定关注的币种列表，
+`regions` 代表语言区域，`filter` 可筛选热门趋势，`kind` 设置新闻类别，
+`following` 表示是否只查看关注账号。
 默认情况下，项目会使用 CoinGecko 提供的公共 API，额度为每月 1 万次，
 并限制每分钟最多 30 次调用。如有需要可在 `coingecko.api_key` 中配置你的公开密钥。
 
@@ -72,11 +76,21 @@ ic_scores:
 ```python
 from quant_trade.social_sentiment_loader import SocialSentimentLoader
 
-loader = SocialSentimentLoader(engine, api_key="YOUR_TOKEN", plan="free")
+loader = SocialSentimentLoader(
+    engine,
+    api_key="YOUR_TOKEN",
+    plan="developer",
+    public=True,
+    currencies="BTC,ETH",
+    regions="en",
+    filter="rising",
+    kind="news",
+    following=False,
+)
 loader.update_scores(dt.date(2024, 6, 1))
 ```
 
-其中 `plan` 对应 CryptoPanic 的账户级别，可选 `free` 或 `developer` 等值，会自动拼接不同的请求路径。
+其中 `plan` 对应 CryptoPanic 的账户级别，可选 `free` 或 `developer` 等值，会自动拼接不同的请求路径。其余参数与配置文件中的同名字段含义一致，可用于限定抓取范围和筛选条件。
 
 为减少搜索次数，`DataLoader` 会在初始化时读取 `coingecko_ids.json` 缓存，并在获得新的币种 id 后写回该文件。
 `update_cg_market_data` 会先查询 `cg_market_data` 表，找出各币种的最后时间点，
