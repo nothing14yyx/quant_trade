@@ -18,8 +18,13 @@ coinmetrics:
     - AdrActCnt
     - AdrNewCnt
     - SplyCur
-    - FeesUSD
+    - FeeTotUSD
     - TxTfrCnt
+market_phase:
+  metrics:
+    - AdrActCnt
+    - CapMrktCurUSD
+    - FeeTotUSD
 mysql:
   host: "localhost"
   port: 3306
