@@ -291,5 +291,7 @@
   "MANTAUSDT": "manta-network",
   "SWELLUSDT": "swell-network",
   "MINAUSDT": "mina-protocol",
-  "AGTUSDT": "aiville-governance-token"
+  "AGTUSDT": "aiville-governance-token",
+  "BIGTIMEUSDT": "big-time",
+  "DRIFTUSDT": "drift-protocol"
 }
