@@ -190,7 +190,7 @@ class DataLoader:
             api_key=os.getenv(
                 "CRYPTOPANIC_API_KEY", self.ss_cfg.get("api_key", "")
             ),
-            plan=self.ss_cfg.get("plan", "free"),
+            plan=self.ss_cfg.get("plan", "developer"),
             public=self.ss_cfg.get("public", True),
             currencies=self.ss_cfg.get("currencies"),
             retries=self.retries,
