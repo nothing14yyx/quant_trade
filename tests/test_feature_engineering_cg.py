@@ -24,6 +24,13 @@ def test_calc_features_raw_with_cg():
         'TxCnt': [10, 12, 12],
         'CapMrktCurUSD': [1000, 1100, 1200],
         'CapRealUSD': [800, 900, 1000],
+        'FeeTotUSD': [1.0, 1.1, 0.9],
+        'RevHashUSD': [10.0, 11.0, 9.0],
+        'IssTotUSD': [5.0, 4.0, 6.0],
+        'SplyCur': [100.0, 101.0, 102.0],
+        'SplyAct1Yr': [80.0, 81.0, 82.0],
+        'HashRate': [50.0, 55.0, 60.0],
+        'DiffMean': [10.0, 11.0, 10.0],
     }, index=times)
 
     feats = calc_features_raw(df, '1h')
@@ -54,6 +61,31 @@ def test_calc_features_raw_with_cg():
 
     assert 'mvrv_ratio_1h' in feats
     assert feats['mvrv_ratio_1h'].iloc[0] == pytest.approx(1000 / 800)
+
+    assert 'fee_tot_roc_1h' in feats
+    assert feats['fee_tot_roc_1h'].iloc[1] == pytest.approx(0.1)
+    assert 'rev_hash_roc_1h' in feats
+    assert feats['rev_hash_roc_1h'].iloc[1] == pytest.approx(0.1)
+    assert 'iss_tot_roc_1h' in feats
+    assert feats['iss_tot_roc_1h'].iloc[1] == pytest.approx(-0.2)
+    assert 'fee_rev_ratio_1h' in feats
+    assert feats['fee_rev_ratio_1h'].iloc[0] == pytest.approx(0.1)
+    assert 'fee_iss_ratio_1h' in feats
+    assert feats['fee_iss_ratio_1h'].iloc[0] == pytest.approx(0.2)
+    assert 'iss_rev_ratio_1h' in feats
+    assert feats['iss_rev_ratio_1h'].iloc[0] == pytest.approx(0.5)
+    assert 'sply_cur_roc_1h' in feats
+    assert feats['sply_cur_roc_1h'].iloc[1] == pytest.approx(0.01)
+    assert 'sply_act_1yr_roc_1h' in feats
+    assert feats['sply_act_1yr_roc_1h'].iloc[1] == pytest.approx(0.0125)
+    assert 'sply_act_pct_1h' in feats
+    assert feats['sply_act_pct_1h'].iloc[0] == pytest.approx(0.8)
+    assert 'hash_rate_roc_1h' in feats
+    assert feats['hash_rate_roc_1h'].iloc[1] == pytest.approx(0.1)
+    assert 'diff_mean_roc_1h' in feats
+    assert feats['diff_mean_roc_1h'].iloc[1] == pytest.approx(0.1)
+    assert 'hashrate_difficulty_ratio_1h' in feats
+    assert feats['hashrate_difficulty_ratio_1h'].iloc[0] == pytest.approx(5.0)
 
     new_cols = [
         'hv_7d_1h',
