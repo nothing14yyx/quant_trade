@@ -25,6 +25,8 @@ class SocialSentimentLoader:
         engine,
         api_key: str = "",
         plan: str = "free",
+        public: bool = True,
+        currencies: list[str] | str | None = None,
         retries: int = 3,
         backoff: float = 1.0,
         *,
@@ -37,6 +39,8 @@ class SocialSentimentLoader:
     ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY", "")
+        self.public = public
+        self.currencies = currencies
         self.retries = retries
         self.backoff = backoff
         self.API_URL = self.API_URL.format(plan=plan)
@@ -55,26 +59,17 @@ class SocialSentimentLoader:
             else:
                 params = {
                     "auth_token": self.api_key,
+
+                    "public": str(self.public).lower(),
+                    "kind": "news",
                     "page_size": 100,
                 }
-                if self.public is not None:
-                    params["public"] = str(self.public).lower()
-                if self.kind:
-                    params["kind"] = self.kind
                 if self.currencies:
-                    if isinstance(self.currencies, (list, tuple)):
+                    if isinstance(self.currencies, (list, tuple, set)):
                         params["currencies"] = ",".join(self.currencies)
                     else:
-                        params["currencies"] = self.currencies
-                if self.regions:
-                    if isinstance(self.regions, (list, tuple)):
-                        params["regions"] = ",".join(self.regions)
-                    else:
-                        params["regions"] = self.regions
-                if self.filter:
-                    params["filter"] = self.filter
-                if self.following:
-                    params["following"] = "true"
+                        params["currencies"] = str(self.currencies)
+
                 if not isinstance(page, str):
                     params["page"] = page
                 r = requests.get(self.API_URL, params=params, timeout=10)
