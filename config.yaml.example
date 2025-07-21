@@ -3,6 +3,16 @@ binance:
   api_key: "${BINANCE_API_KEY}"
   api_secret: "${BINANCE_API_SECRET}"
 
+social_sentiment:
+  api_key: "${CRYPTOPANIC_API_KEY}"
+coinmetrics:
+  api_key: "${COINMETRICS_API_KEY}"
+  metrics:
+    - AdrActCnt
+    - AdrNewCnt
+    - SplyCur
+    - FeesUSD
+    - TxTfrCnt
 mysql:
   host: "localhost"
   port: 3306
