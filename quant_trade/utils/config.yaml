@@ -15,9 +15,9 @@ coinmetrics:
     - AdrNewCnt
     - TxCnt
     - CapMrktCurUSD
+    - CapRealUSD
+    - FeeTotUSD
     - SplyCur
-    - SplyAdrBal1Cnt
-    - FeesUSD
 
 mysql:
   host: "localhost"

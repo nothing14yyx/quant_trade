@@ -751,7 +751,7 @@ def calc_features_raw(
         )
 
     # ======== CM 链上指标 ========
-    if "AdrActCnt" in df:
+    if "AdrActCnt" in df and df["AdrActCnt"].notna().any():
         active = pd.to_numeric(df["AdrActCnt"], errors="coerce")
         assign_safe(
             feats,
@@ -759,7 +759,7 @@ def calc_features_raw(
             active.pct_change(fill_method=None),
         )
 
-    if "AdrNewCnt" in df:
+    if "AdrNewCnt" in df and df["AdrNewCnt"].notna().any():
         new_addr = pd.to_numeric(df["AdrNewCnt"], errors="coerce")
         assign_safe(
             feats,
@@ -767,7 +767,7 @@ def calc_features_raw(
             new_addr.pct_change(fill_method=None),
         )
 
-    if "TxCnt" in df:
+    if "TxCnt" in df and df["TxCnt"].notna().any():
         tx_cnt = pd.to_numeric(df["TxCnt"], errors="coerce")
         assign_safe(
             feats,
@@ -775,7 +775,12 @@ def calc_features_raw(
             tx_cnt.pct_change(fill_method=None),
         )
 
-    if "CapMrktCurUSD" in df and "CapRealUSD" in df:
+    if (
+        "CapMrktCurUSD" in df
+        and df["CapMrktCurUSD"].notna().any()
+        and "CapRealUSD" in df
+        and df["CapRealUSD"].notna().any()
+    ):
         cap_mkt = pd.to_numeric(df["CapMrktCurUSD"], errors="coerce")
         cap_real = pd.to_numeric(df["CapRealUSD"], errors="coerce")
         assign_safe(
