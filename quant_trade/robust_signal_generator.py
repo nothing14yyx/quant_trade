@@ -147,7 +147,7 @@ class SignalThresholdParams:
             rev_th_mult=float(get_cfg_value(cfg, "rev_th_mult", cls.rev_th_mult)),
             atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
             funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
-        adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
+            adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
         )
 
 
