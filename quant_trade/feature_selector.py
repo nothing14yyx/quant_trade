@@ -314,7 +314,7 @@ def select_features(
 
         yaml_out[period] = final_feats
 
-    out_path = Path(f"utils/selected_features_{target.replace('target_', '')}.yaml")
+    out_path = Path("selected_features") / f"selected_features_{target.replace('target_', '')}.yaml"
     out_path.write_text(yaml.dump(yaml_out, allow_unicode=True))
     logger.info("\n✅ 已写入 %s", out_path.resolve())
 
@@ -330,7 +330,7 @@ def update_selected_features(
     df: pd.DataFrame,
     period: str,
     target: str,
-    yaml_file: Path | str = Path("utils/selected_features.yaml"),
+    yaml_file: Path | str = Path("selected_features/selected_features.yaml"),
     shap_thresh: float = 0.01,
     ic_thresh: float = 0.01,
 ) -> list[str]:
@@ -344,7 +344,7 @@ def update_selected_features(
         周期名称，如 ``"1h"``、``"4h"``。
     target : str
         目标列名。
-    yaml_file : Path or str, default ``"utils/selected_features.yaml"``
+    yaml_file : Path or str, default ``"selected_features/selected_features.yaml"``
         保存特征列表的 YAML 文件路径。
     shap_thresh : float, default 0.01
         相对平均 SHAP 值低于该阈值的特征将被移除。
