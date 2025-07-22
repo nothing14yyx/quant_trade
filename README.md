@@ -5,6 +5,8 @@
 - **DataLoader**：从币安接口同步行情、资金费率及情绪指数，并可按日拉取 CoinGecko 的市值与板块数据。
 - **SocialSentimentLoader**：抓取 CryptoPanic 新闻情绪并汇总日得分。
 - **CoinMetricsLoader**：批量获取更多链上指标。
+  新增 `community_metrics(asset)` 用于查询社区版可用指标，
+  `update_cm_metrics(community_only=True)` 可仅抓取这些指标。
 - **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子；同时加入 HV_7d/14d/30d、KC 宽度变化率、Ichimoku 基准线、VWAP、随机指标等新指标，并支持买卖比、资金流量比、成交量密度、价差百分比及 BTC/ETH 短期相关性。
   另外新增 `sma_5_*`、`sma_20_*` 均线及其交叉比值 `ma_ratio_5_20`，用于衡量短中期趋势变化。
 -   `merge_features` 新增 `batch_size` 参数，可在内存有限时按币种分批写入：

@@ -116,3 +116,40 @@ def test_update_cm_metrics_api_error(monkeypatch, caplog):
     assert 'invalid metric' in caplog.text
     df = pd.read_sql('cm_onchain_metrics', engine)
     assert df.empty
+
+
+def test_update_cm_metrics_community_filter(monkeypatch):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            'CREATE TABLE cm_onchain_metrics (symbol TEXT, timestamp TEXT, metric TEXT, value REAL, PRIMARY KEY(symbol, timestamp, metric))'
+        )
+    loader = make_loader(engine)
+
+    monkeypatch.setattr(loader, 'community_metrics', lambda asset: ['AdrActCnt', 'SplyCur'])
+
+    calls = []
+
+    def fake_get(url, params=None, headers=None, timeout=10):
+        calls.append(params['metrics'])
+        class R:
+            def json(self):
+                return {
+                    'data': [{
+                        'asset': 'btc',
+                        'time': '2024-06-03T00:00:00Z',
+                        'AdrActCnt': '10',
+                        'SplyCur': '100'
+                    }]
+                }
+        return R()
+
+    monkeypatch.setattr(requests, 'get', fake_get)
+
+    loader.update_cm_metrics(['BTCUSDT'], batch_size=2, community_only=True)
+
+    assert calls == ['AdrActCnt,SplyCur']
+
+    df = pd.read_sql('cm_onchain_metrics', engine)
+    assert len(df) == 2
+    assert set(df['metric']) == {'AdrActCnt', 'SplyCur'}

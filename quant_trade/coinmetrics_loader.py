@@ -24,6 +24,7 @@ class CoinMetricsLoader:
     """使用 CoinMetrics Community API 获取链上指标"""
 
     BASE_URL = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+    CATALOG_URL = "https://community-api.coinmetrics.io/v4/catalog/assets"
 
     def __init__(self, engine, api_key: str = "", metrics: Optional[List[str]] = None,
                  rate_limit: int = 5, period: float = 1.0,
@@ -42,7 +43,28 @@ class CoinMetricsLoader:
     def _asset_code(self, symbol: str) -> str:
         return re.sub("USDT$", "", symbol).lower()
 
-    def update_cm_metrics(self, symbols: List[str], batch_size: int = 10) -> None:
+    def community_metrics(self, asset: str) -> List[str]:
+        """返回该资产可免费访问的指标列表"""
+        params = {"assets": asset}
+        headers = self._headers()
+        data = _safe_retry(
+            lambda: requests.get(
+                self.CATALOG_URL, params=params, headers=headers, timeout=10
+            ).json(),
+            retries=self.retries,
+            backoff=self.backoff,
+        )
+        metrics = []
+        for item in data.get("data", []):
+            for m in item.get("metrics", []):
+                freqs = m.get("frequencies", [])
+                if any(f.get("community") for f in freqs):
+                    metrics.append(m.get("metric"))
+        return metrics
+
+    def update_cm_metrics(
+        self, symbols: List[str], batch_size: int = 10, community_only: bool = False
+    ) -> None:
         """按日拉取指定币种的链上指标并保存
 
         参数:
@@ -63,6 +85,16 @@ class CoinMetricsLoader:
 
         for sym in symbols:
             asset = self._asset_code(sym)
+            metrics = self.metrics
+            if community_only:
+                try:
+                    cm_list = self.community_metrics(asset)
+                except Exception as exc:
+                    logger.warning("[coinmetrics] %s catalog error: %s", sym, exc)
+                    cm_list = []
+                metrics = [m for m in metrics if m in cm_list]
+            if not metrics:
+                continue
             last_ts = last_map.get(sym)
             if last_ts is None or pd.isna(last_ts):
                 start = (dt.date.today() - dt.timedelta(days=30)).isoformat()
@@ -72,8 +104,8 @@ class CoinMetricsLoader:
                 continue
 
             rows: List[Dict[str, object]] = []
-            for i in range(0, len(self.metrics), batch_size):
-                batch = self.metrics[i : i + batch_size]
+            for i in range(0, len(metrics), batch_size):
+                batch = metrics[i : i + batch_size]
                 params = {
                     "assets": asset,
                     "metrics": ",".join(batch),
