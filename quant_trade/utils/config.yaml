@@ -10,6 +10,7 @@ coingecko:
 
 coinmetrics:
   api_key: "${COINMETRICS_API_KEY}"
+  community_only: true
   metrics:
     - AdrActCnt
     - AdrNewCnt
