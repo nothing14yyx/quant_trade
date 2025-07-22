@@ -421,6 +421,12 @@ CREATE TABLE `features` (
     `td_sell_count_d1` DOUBLE,
     `social_sentiment_1h` DOUBLE,
     `social_sentiment_4h` DOUBLE,
+    `rsi_bull_div_1h` DOUBLE,
+    `rsi_bull_div_4h` DOUBLE,
+    `rsi_bull_div_d1` DOUBLE,
+    `rsi_bear_div_1h` DOUBLE,
+    `rsi_bear_div_4h` DOUBLE,
+    `rsi_bear_div_d1` DOUBLE,
     `active_addr_roc_1h_isnan` TINYINT,
     `active_addr_roc_4h_isnan` TINYINT,
     `active_addr_roc_d1_isnan` TINYINT,
@@ -709,6 +715,12 @@ CREATE TABLE `features` (
     `td_sell_count_d1_isnan` TINYINT,
     `social_sentiment_1h_isnan` TINYINT,
     `social_sentiment_4h_isnan` TINYINT,
+    `rsi_bull_div_1h_isnan` TINYINT,
+    `rsi_bull_div_4h_isnan` TINYINT,
+    `rsi_bull_div_d1_isnan` TINYINT,
+    `rsi_bear_div_1h_isnan` TINYINT,
+    `rsi_bear_div_4h_isnan` TINYINT,
+    `rsi_bear_div_d1_isnan` TINYINT,
     PRIMARY KEY (`symbol`, `open_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
