@@ -180,10 +180,7 @@ class Scheduler:
             self.dl.update_cm_metrics(symbols)
         except Exception as e:
             logging.exception("update coinmetrics failed: %s", e)
-        try:
-            self.dl.update_social_sentiment()
-        except Exception as e:
-            logging.exception("update social sentiment failed: %s", e)
+        # self.dl.update_social_sentiment()  # disabled
         # 更新市场阶段，便于根据新数据调整阈值
         self.sg.update_market_phase(self.engine)
 
