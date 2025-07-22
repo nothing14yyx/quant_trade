@@ -163,7 +163,9 @@ dynamic_threshold:
 
 执行 `mysql < scripts/init_db.sql` 即可创建所需表格。
 自 v2.4 起已移除 `depth_snapshot` 表，旧用户可直接删除该表后再运行脚本。
-若数据库已存在 `features` 表，可执行 `mysql < scripts/migrate_add_feature_columns.sql` 补充最新版字段。
+自 v2.8 起 `merge_features(save_to_db=True)` 写入时将保持 `features` 表结构，
+如需在首次运行前创建或补充字段，可执行
+`mysql < scripts/migrate_add_feature_columns.sql`。
 
 通过 `python param_search.py --rows 10000`(可选) 调整信号权重。
 参数搜索默认按时间拆分为训练集和验证集，可通过 `--test-ratio` 调整验证集比例。
