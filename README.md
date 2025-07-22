@@ -77,6 +77,22 @@ export CRYPTOPANIC_API_KEY="your_token"
 默认情况下，项目会使用 CoinGecko 提供的公共 API，额度为每月 1 万次，
 并限制每分钟最多 30 次调用。如有需要可在 `coingecko.api_key` 中配置你的公开密钥。
 
+### CoinMetrics 社区 API 限制
+
+CoinMetrics 提供的社区版接口无需 API key，但只能访问部分公开链上指标，且
+对同一 IP 每 6 秒最多接受 10 次请求。项目中 `CoinMetricsLoader` 默认
+`rate_limit=5`，以免触发限速。若想调整抓取指标，请在
+`utils/config.yaml` 的 `coinmetrics.metrics` 中填写 `community_metrics()`
+返回的名称，避免使用未开放的字段。
+
+```python
+from quant_trade.utils import community_metrics
+
+print(community_metrics()[:5])
+```
+
+该函数会实时查询官方目录，方便检查当前可用指标。
+
 ### SocialSentimentLoader 示例
 
 ```python
