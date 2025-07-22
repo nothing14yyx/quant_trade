@@ -59,6 +59,7 @@ def test_update_cm_metrics(monkeypatch):
 def make_dl(engine):
     dl = DataLoader.__new__(DataLoader)
     dl.cm_loader = make_loader(engine)
+    dl.cm_community_only = True
     return dl
 
 
@@ -85,8 +86,20 @@ def test_data_loader_update_cm_metrics(monkeypatch):
         return R()
 
     monkeypatch.setattr(requests, 'get', fake_get)
+    monkeypatch.setattr(dl.cm_loader, 'community_metrics', lambda asset: ['AdrActCnt', 'AdrNewCnt', 'SplyCur'])
+
+    captured = {}
+    orig = dl.cm_loader.update_cm_metrics
+
+    def wrapper(symbols, batch_size=10, community_only=False):
+        captured['community_only'] = community_only
+        return orig(symbols, batch_size=batch_size, community_only=community_only)
+
+    monkeypatch.setattr(dl.cm_loader, 'update_cm_metrics', wrapper)
 
     dl.update_cm_metrics(['BTCUSDT'])
+
+    assert captured['community_only'] is True
 
     df = pd.read_sql('cm_onchain_metrics', engine)
     assert len(df) == 3
