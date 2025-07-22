@@ -561,6 +561,20 @@ class FeatureEngineer:
                 df.to_sql("features", self.engine, if_exists="replace", index=False)
                 logger.info("✅ 已创建并写入 MySQL 表 `features`")
             else:
+                existing_cols = {c["name"] for c in inspector.get_columns("features")}
+                missing = [c for c in df.columns if c not in existing_cols]
+                for col in missing:
+                    dtype = df[col].dtype
+                    if pd.api.types.is_float_dtype(dtype):
+                        sql_type = "DOUBLE"
+                    elif pd.api.types.is_integer_dtype(dtype):
+                        sql_type = "BIGINT"
+                    elif pd.api.types.is_datetime64_any_dtype(dtype):
+                        sql_type = "DATETIME"
+                    else:
+                        sql_type = "TEXT"
+                    with self.engine.begin() as conn:
+                        conn.execute(text(f"ALTER TABLE features ADD COLUMN `{col}` {sql_type}"))
                 df.to_sql("features", self.engine, if_exists="append", index=False)
                 logger.info("✅ 已追加写入 MySQL 表 `features`")
         else:
