@@ -294,5 +294,9 @@
   "AGTUSDT": "aiville-governance-token",
   "BIGTIMEUSDT": "big-time",
   "DRIFTUSDT": "drift-protocol",
-  "TAUSDT": "staked-ether"
+  "TAUSDT": "staked-ether",
+  "API3USDT": "api3",
+  "KASUSDT": "kaspa",
+  "MEUSDT": "magic-eden",
+  "PIPPINUSDT": "pippin"
 }
