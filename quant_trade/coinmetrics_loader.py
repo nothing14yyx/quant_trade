@@ -27,7 +27,7 @@ class CoinMetricsLoader:
     CATALOG_URL = "https://community-api.coinmetrics.io/v4/catalog/assets"
 
     def __init__(self, engine, api_key: str = "", metrics: Optional[List[str]] = None,
-                 rate_limit: int = 5, period: float = 1.0,
+                 rate_limit: int = 10, period: float = 6.0,
                  retries: int = 3, backoff: float = 1.0) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("COINMETRICS_API_KEY", "")
