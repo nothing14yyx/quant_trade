@@ -298,5 +298,6 @@
   "API3USDT": "api3",
   "KASUSDT": "kaspa",
   "MEUSDT": "magic-eden",
-  "PIPPINUSDT": "pippin"
+  "PIPPINUSDT": "pippin",
+  "ZENUSDT": "zencash"
 }
