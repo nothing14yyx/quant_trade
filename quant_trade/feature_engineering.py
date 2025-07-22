@@ -446,12 +446,8 @@ class FeatureEngineer:
         flags_df = df[feat_cols].isna().astype(int)
         flags_df.columns = [f"{col}_isnan" for col in feat_cols]
 
-        # ----- 删除缺失率 ≥95% 的列 -----
-        drop_cols = missing_ratio[missing_ratio >= 0.95].index.tolist()
-        if drop_cols:
-            df = df.drop(columns=drop_cols)
-            feat_cols = [c for c in feat_cols if c not in drop_cols]
-            missing_ratio = missing_ratio.drop(drop_cols)
+
+        # ----- 不再因缺失率高而删除列，保留所有特征 -----
 
         df_filled = df.copy()
         if "open_time" in df_filled.columns:
@@ -675,18 +671,7 @@ class FeatureEngineer:
         if drop_cols:
             out.drop(columns=drop_cols, inplace=True)
 
-        # remove coinmetrics-derived features when cm_onchain_metrics data is limited
-        cm_prefixes = (
-            "active_addr_roc_",
-            "new_addr_roc_",
-            "tx_count_roc_",
-            "mvrv_ratio_",
-        )
-        cm_feat_cols = [c for c in out.columns if c.startswith(cm_prefixes)]
-        cm_flag_cols = [f"{c}_isnan" for c in cm_feat_cols if f"{c}_isnan" in out.columns]
-        drop_cols = cm_feat_cols + cm_flag_cols
-        if drop_cols:
-            out.drop(columns=drop_cols, inplace=True)
+        # 保留所有链上衍生特征，不再因缺失率或数据量删除
 
         if out.shape[1] > 0:
             return out
