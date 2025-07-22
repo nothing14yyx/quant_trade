@@ -3,7 +3,6 @@
 该仓库包含一个量化交易的数据处理与信号生成框架，主要组件包括：
 
 - **DataLoader**：从币安接口同步行情、资金费率及情绪指数，并可按日拉取 CoinGecko 的市值与板块数据。
-- **SocialSentimentLoader**：抓取 CryptoPanic 新闻情绪并汇总日得分。
 - **CoinMetricsLoader**：批量获取更多链上指标。
   新增 `community_metrics(asset)` 用于查询社区版可用指标，
   `update_cm_metrics(community_only=True)` 可仅抓取这些指标。
@@ -35,7 +34,6 @@
 from quant_trade.robust_signal_generator import risk_budget_threshold
 vol_hist = [0.01, 0.02, 0.05, 0.03]
 th = risk_budget_threshold(vol_hist, quantile=0.9)
-```
 -   早期兼容函数 `robust_signal_generator()` 已移除，请直接调用
     `RobustSignalGenerator.generate_signal()`。
 -   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
@@ -59,23 +57,11 @@ ic_scores:
   1h: 1.0
   4h: 0.2
   d1: 0.1
-```
 这样 `RobustSignalGenerator` 在融合多周期分数时将更侧重 1h 模型。
 
 运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置，
-其中 `api_key`、`api_secret`、`COINGECKO_API_KEY`、`CRYPTOPANIC_API_KEY` 与 MySQL `password` 均可通过环境变量设置。例如：
+其中 `api_key`、`api_secret`、`COINGECKO_API_KEY` 与 MySQL `password` 均可通过环境变量设置。例如：
 
-```bash
-export CRYPTOPANIC_API_KEY="your_token"
-```
-
-新增 `social_sentiment` 和 `coinmetrics` 区块，可配置情绪接口密钥及额外链上指标。
-其中 `social_sentiment` 现支持更多查询选项：
-`public` 控制是否仅抓取公开帖子，`currencies` 指定关注的币种列表，
-`regions` 代表语言区域，`filter` 可筛选热门趋势，`kind` 设置新闻类别，
-`following` 表示是否只查看关注账号。
-默认情况下，项目会使用 CoinGecko 提供的公共 API，额度为每月 1 万次，
-并限制每分钟最多 30 次调用。如有需要可在 `coingecko.api_key` 中配置你的公开密钥。
 
 ### CoinMetrics 社区 API 限制
 
@@ -89,30 +75,10 @@ CoinMetrics 提供的社区版接口无需 API key，但只能访问部分公开
 from quant_trade.utils import community_metrics
 
 print(community_metrics()[:5])
-```
 
 该函数会实时查询官方目录，方便检查当前可用指标。
 
-### SocialSentimentLoader 示例
 
-```python
-from quant_trade.social_sentiment_loader import SocialSentimentLoader
-
-loader = SocialSentimentLoader(
-    engine,
-    api_key="YOUR_TOKEN",
-    plan="developer",
-    public=True,
-    currencies="BTC,ETH",
-    regions="en",
-    filter="rising",
-    kind="news",
-    following=False,
-)
-loader.update_scores(dt.date(2024, 6, 1))
-```
-
-其中 `plan` 对应 CryptoPanic 的账户级别，可选 `free` 或 `developer` 等值，会自动拼接不同的请求路径。其余参数与配置文件中的同名字段含义一致，可用于限定抓取范围和筛选条件。
 
 为减少搜索次数，`DataLoader` 会在初始化时读取 `coingecko_ids.json` 缓存，并在获得新的币种 id 后写回该文件。
 `update_cg_market_data` 会先查询 `cg_market_data` 表，找出各币种的最后时间点，
@@ -130,7 +96,6 @@ loader.update_scores(dt.date(2024, 6, 1))
 ```bash
 pip install -r requirements.txt
 pytest -q tests
-```
 
 无论从哪个目录运行，`RobustSignalGenerator` 都会自动解析相对模型路径，无需手动调整工作目录。
 
@@ -141,7 +106,6 @@ flowchart TD
     A[准备特征] --> B[阶段一: 计算多周期得分]
     B --> C[阶段二: 风险与拥挤度检查]
     C --> D[阶段三: 计算仓位与止盈止损]
-```
 
 内存不足或特征过多时，可以先在 `utils/config.yaml` 将 `feature_engineering.topn`
 调小（如 20），或在执行 `feature_engineering.py` 时传入
@@ -162,7 +126,6 @@ protection_limits:
   risk_score: 1.0    # 允许的风险得分上限
 crowding_limit: 1.05     # 允许的拥挤度上限
 risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
-```
 
 自 v2.6 起，`risk_score` 仅在計算倉位時生效，不再在得分階段二次扣減。
 自 v2.7 起，引入 `RiskManager.calc_risk`，根据环境得分、预测波动率与 OI 变化率
@@ -186,7 +149,6 @@ th_window: 80
 th_decay: 0.5
 signal_threshold:
   quantile: 0.65
-```
 这会使阈值更快反应最新波动，从而在行情活跃时给出更多交易机会。
 `rev_boost` 则决定在检测到潜在反转时额外加成的得分，数值越大越易触发交易。
 `dynamic_threshold` 区块则控制 ATR、ADX 与 funding 对阈值的加成比例和上限，
@@ -196,7 +158,6 @@ signal_threshold:
 dynamic_threshold:
   atr_mult: 3.0
   atr_cap: 0.15
-```
 
 ## 数据库初始化
 
@@ -210,7 +171,6 @@ dynamic_threshold:
 
 ```bash
 python param_search.py --method optuna --trials 50
-```
 
 若脚本抛出 `ValueError("no trades found during parameter search")`，请检查
 `features` 表是否含有数据，并确认 `generate_signal` 是否能正常返回信号。
@@ -219,7 +179,6 @@ python param_search.py --method optuna --trials 50
 
 ```bash
 python backtester.py --recent-days 7
-```
 
 ## 生成离线价位表与缩放参数
 
@@ -227,17 +186,14 @@ python backtester.py --recent-days 7
 
 ```bash
 python -m quant_trade.offline_price_table
-```
 
 脚本会在 `data/offline_prices/` 下为每个币种导出多周期价位表，同时生成 `price_scaler.json`，后续标准化特征时直接加载即可。
 
 回测中每笔交易的收益率计算为：
 
-```
 (exit_price - entry_price) * direction * position_size
 ----------------------------------------------------- - 2 * fee_rate
           entry_price * position_size
-```
 
 若 `position_size` 为 0，则该笔收益记为 0。
 
@@ -254,7 +210,6 @@ python -m quant_trade.offline_price_table
 train_settings:
   periods: ["4h", "d1"]
   tags: ["up", "down"]
-```
 如果留空则会默认训练全部周期和标签。
 
 自 v3.3 起，可在 `train_settings` 中设置 `min_samples`（默认为 2000），
