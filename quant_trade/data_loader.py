@@ -78,8 +78,6 @@ class DataLoader:
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
 
-        # Social sentiment config
-        self.ss_cfg = cfg.get("social_sentiment", {})
 
         # Binance client
         bin_cfg = cfg.get("binance", {})
@@ -177,27 +175,8 @@ class DataLoader:
 
     # ───────────────────────────── 社交情绪 ─────────────────────────────
     def update_social_sentiment(self) -> None:
-        """Fetch social sentiment scores and store into database."""
-        from .social_sentiment_loader import SocialSentimentLoader
-
-        last = pd.read_sql(
-            "SELECT MAX(date) AS d FROM social_sentiment",
-            self.engine,
-            parse_dates=["d"],
-        )
-        since = (last["d"].iloc[0].date() + dt.timedelta(days=1)) if not last.empty and pd.notnull(last["d"].iloc[0]) else dt.date.today() - dt.timedelta(days=7)
-        loader = SocialSentimentLoader(
-            self.engine,
-            api_key=os.getenv(
-                "CRYPTOPANIC_API_KEY", self.ss_cfg.get("api_key", "")
-            ),
-            plan=self.ss_cfg.get("plan", "developer"),
-            public=self.ss_cfg.get("public", True),
-            currencies=self.ss_cfg.get("currencies"),
-            retries=self.retries,
-            backoff=self.backoff,
-        )
-        loader.update_scores(since)
+        """No-op; CryptoPanic integration removed."""
+        logger.info("[social_sentiment] skipped (disabled)")
 
     # ───────────────────────────── Funding Rate ──────────────────────────
     FUNDING_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
@@ -945,10 +924,7 @@ class DataLoader:
             self.update_cm_metrics(symbols)
         except Exception as e:
             logger.exception("[coinmetrics] err: %s", e)
-        try:
-            self.update_social_sentiment()
-        except Exception as e:
-            logger.exception("[social sentiment] err: %s", e)
+        # self.update_social_sentiment()  # disabled
         # 2. 更新 funding rate / open interest（并发）
         logger.info("[sync] funding/openInterest … (%s)", len(symbols))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
