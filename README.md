@@ -81,7 +81,7 @@ export CRYPTOPANIC_API_KEY="your_token"
 
 CoinMetrics 提供的社区版接口无需 API key，但只能访问部分公开链上指标，且
 对同一 IP 每 6 秒最多接受 10 次请求。项目中 `CoinMetricsLoader` 默认
-`rate_limit=5`，以免触发限速。若想调整抓取指标，请在
+`rate_limit=10`、`period=6.0`，以免触发限速。若想调整抓取指标，请在
 `utils/config.yaml` 的 `coinmetrics.metrics` 中填写 `community_metrics()`
 返回的名称，避免使用未开放的字段。
 

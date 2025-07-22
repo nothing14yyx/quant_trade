@@ -12,7 +12,11 @@ def make_loader(engine):
     loader.metrics = ['AdrActCnt', 'AdrNewCnt', 'SplyCur', 'FeesUSD', 'TxTfrCnt']
     loader.retries = 1
     loader.backoff = 0
-    loader.rate_limiter = type('RL', (), {'acquire': lambda self: None})()
+    loader.rate_limiter = type('RL', (), {
+        'acquire': lambda self: None,
+        'max_calls': 10,
+        'period': 6.0,
+    })()
     return loader
 
 
