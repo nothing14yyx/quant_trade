@@ -120,6 +120,7 @@ class DataLoader:
 
         cm_cfg = cfg.get("coinmetrics", {})
         cm_metrics = cm_cfg.get("metrics") or []
+        self.cm_community_only = cm_cfg.get("community_only", True)
         self.cm_loader = CoinMetricsLoader(
             self.engine,
             api_key=os.getenv("COINMETRICS_API_KEY", cm_cfg.get("api_key", "")),
@@ -646,7 +647,7 @@ class DataLoader:
         """更新链上指标"""
         if not self.cm_loader.metrics:
             return
-        self.cm_loader.update_cm_metrics(symbols)
+        self.cm_loader.update_cm_metrics(symbols, community_only=self.cm_community_only)
 
     def get_hot_sector(self) -> Optional[dict]:
         """根据最新的 volume_24h 判断热门板块"""
