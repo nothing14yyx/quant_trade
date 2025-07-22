@@ -24,10 +24,18 @@ class CoinMetricsLoader:
     """使用 CoinMetrics Community API 获取链上指标"""
 
     BASE_URL = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+    CATALOG_URL = "https://community-api.coinmetrics.io/v4/catalog/assets"
 
-    def __init__(self, engine, api_key: str = "", metrics: Optional[List[str]] = None,
-                 rate_limit: int = 5, period: float = 1.0,
-                 retries: int = 3, backoff: float = 1.0) -> None:
+    def __init__(
+        self,
+        engine,
+        api_key: str = "",
+        metrics: Optional[List[str]] = None,
+        rate_limit: int = 5,
+        period: float = 1.0,
+        retries: int = 3,
+        backoff: float = 1.0,
+    ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("COINMETRICS_API_KEY", "")
         self.metrics = metrics or []
@@ -42,7 +50,29 @@ class CoinMetricsLoader:
     def _asset_code(self, symbol: str) -> str:
         return re.sub("USDT$", "", symbol).lower()
 
-    def update_cm_metrics(self, symbols: List[str], batch_size: int = 10) -> None:
+    def community_metrics(self, asset: str) -> List[str]:
+        """返回社区版可用的指标列表"""
+        params = {"assets": asset}
+        headers = self._headers()
+        data = _safe_retry(
+            lambda: requests.get(
+                self.CATALOG_URL, params=params, headers=headers, timeout=10
+            ).json(),
+            retries=self.retries,
+            backoff=self.backoff,
+        )
+        metrics: List[str] = []
+        for a in data.get("data", []):
+            for m in a.get("metrics", []):
+                for freq in m.get("frequencies", []):
+                    if freq.get("community"):
+                        metrics.append(m.get("metric"))
+                        break
+        return metrics
+
+    def update_cm_metrics(
+        self, symbols: List[str], batch_size: int = 10, filter_community: bool = False
+    ) -> None:
         """按日拉取指定币种的链上指标并保存
 
         参数:
@@ -58,11 +88,22 @@ class CoinMetricsLoader:
             "SELECT symbol, MAX(timestamp) AS ts FROM cm_onchain_metrics "
             "WHERE symbol IN :syms GROUP BY symbol"
         ).bindparams(bindparam("syms", expanding=True))
-        last_df = pd.read_sql(stmt, self.engine, params={"syms": symbols}, parse_dates=["ts"])
+        last_df = pd.read_sql(
+            stmt, self.engine, params={"syms": symbols}, parse_dates=["ts"]
+        )
         last_map = {r["symbol"]: r["ts"] for _, r in last_df.iterrows()}
 
         for sym in symbols:
             asset = self._asset_code(sym)
+            metrics = self.metrics
+            if filter_community:
+                try:
+                    allowed = set(self.community_metrics(asset))
+                    metrics = [m for m in self.metrics if m in allowed]
+                except Exception as exc:
+                    logger.warning("community metrics failed for %s: %s", asset, exc)
+            if not metrics:
+                continue
             last_ts = last_map.get(sym)
             if last_ts is None or pd.isna(last_ts):
                 start = (dt.date.today() - dt.timedelta(days=30)).isoformat()
@@ -72,8 +113,8 @@ class CoinMetricsLoader:
                 continue
 
             rows: List[Dict[str, object]] = []
-            for i in range(0, len(self.metrics), batch_size):
-                batch = self.metrics[i : i + batch_size]
+            for i in range(0, len(metrics), batch_size):
+                batch = metrics[i : i + batch_size]
                 params = {
                     "assets": asset,
                     "metrics": ",".join(batch),
@@ -83,13 +124,17 @@ class CoinMetricsLoader:
                 }
                 self.rate_limiter.acquire()
                 data = _safe_retry(
-                    lambda: requests.get(self.BASE_URL, params=params, headers=headers, timeout=10).json(),
+                    lambda: requests.get(
+                        self.BASE_URL, params=params, headers=headers, timeout=10
+                    ).json(),
                     retries=self.retries,
                     backoff=self.backoff,
                 )
                 for item in data.get("data", []):
                     ts = (
-                        pd.to_datetime(item["time"]).to_pydatetime().replace(tzinfo=None)
+                        pd.to_datetime(item["time"])
+                        .to_pydatetime()
+                        .replace(tzinfo=None)
                     )
                     for m in batch:
                         val = item.get(m)
@@ -99,12 +144,14 @@ class CoinMetricsLoader:
                             val = float(val)
                         except (TypeError, ValueError):
                             continue
-                        rows.append({
-                            "symbol": sym,
-                            "timestamp": ts,
-                            "metric": m,
-                            "value": val,
-                        })
+                        rows.append(
+                            {
+                                "symbol": sym,
+                                "timestamp": ts,
+                                "metric": m,
+                                "value": val,
+                            }
+                        )
             if rows:
                 with self.engine.begin() as conn:
                     conn.execute(
@@ -116,5 +163,5 @@ class CoinMetricsLoader:
                     )
                 logger.info("[coinmetrics] %s %s rows", sym, len(rows))
 
-__all__ = ["CoinMetricsLoader"]
 
+__all__ = ["CoinMetricsLoader"]

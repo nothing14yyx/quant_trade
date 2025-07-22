@@ -609,3 +609,7 @@ willr_4h
 willr_4h_isnan
 willr_d1
 willr_d1_isnan
+active_addr_roc_1h
+active_addr_roc_1h_isnan
+active_addr_roc_4h
+active_addr_roc_4h_isnan
