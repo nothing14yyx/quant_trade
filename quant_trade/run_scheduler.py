@@ -365,7 +365,7 @@ class Scheduler:
                 }
             )
 
-        logging.info("[diagnose] %s", self.sg.diagnose())
+        logging.debug("[diagnose] %s", self.sg.diagnose())
 
         with self.engine.begin() as conn:
             conn.execute(

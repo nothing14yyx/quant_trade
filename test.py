@@ -1,9 +1,5 @@
-import pandas as pd
-from sqlalchemy import create_engine, text
-
-engine = create_engine("mysql+pymysql://user:pwd@host/db")  # 用实际连接串
-with engine.begin() as conn:
-    cols = conn.execute(text("SHOW COLUMNS FROM features")).fetchall()
-print("features 表当前列数:", len(cols))
-print("有没有 ichimoku_cloud_thickness_d1 ?",
-      any(c[0] == "ichimoku_cloud_thickness_d1" for c in cols))
+from coinmetrics.api_client import CoinMetricsClient
+client = CoinMetricsClient()          # 不传 api_key == Community
+cat = client.catalog_asset_metrics_v2(assets=['btc']).to_list()
+all_metrics = [m['metric'] for m in cat[0]['metrics']]
+print(len(all_metrics), all_metrics[:10])   # 147 ['AdrActCnt', 'AdrBal1Cnt', ...]
