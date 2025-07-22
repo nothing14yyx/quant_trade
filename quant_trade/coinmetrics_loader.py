@@ -26,15 +26,23 @@ class CoinMetricsLoader:
     BASE_URL = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
     CATALOG_URL = "https://community-api.coinmetrics.io/v4/catalog/assets"
 
-    def __init__(self, engine, api_key: str = "", metrics: Optional[List[str]] = None,
-                 rate_limit: int = 10, period: float = 6.0,
-                 retries: int = 3, backoff: float = 1.0) -> None:
+    def __init__(
+        self,
+        engine,
+        api_key: str = "",
+        metrics: Optional[List[str]] = None,
+        rate_limit: int = 10,
+        period: float = 6.0,
+        retries: int = 3,
+        backoff: float = 1.0,
+    ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("COINMETRICS_API_KEY", "")
         self.metrics = metrics or []
         self.retries = retries
         self.backoff = backoff
         self.rate_limiter = RateLimiter(max_calls=rate_limit, period=period)
+        self._metric_cache: Dict[str, List[str]] = {}
 
     # ------------------------------------------------------------------
     def _headers(self) -> Dict[str, str]:
@@ -44,7 +52,10 @@ class CoinMetricsLoader:
         return re.sub("USDT$", "", symbol).lower()
 
     def community_metrics(self, asset: str) -> List[str]:
-        """返回该资产可免费访问的指标列表"""
+        """返回该资产可免费访问的指标列表，结果会缓存"""
+        if asset in self._metric_cache:
+            return self._metric_cache[asset]
+
         params = {"assets": asset}
         headers = self._headers()
         data = _safe_retry(
@@ -60,6 +71,8 @@ class CoinMetricsLoader:
                 freqs = m.get("frequencies", [])
                 if any(f.get("community") for f in freqs):
                     metrics.append(m.get("metric"))
+
+        self._metric_cache[asset] = metrics
         return metrics
 
     def update_cm_metrics(
@@ -152,8 +165,13 @@ class CoinMetricsLoader:
                         )
                         found.add(m)
 
-                for m in set(batch) - found:
-                    logger.warning("[coinmetrics] %s metric %s missing", sym, m)
+                missing = set(batch) - found
+                if missing:
+                    logger.debug(
+                        "[coinmetrics] %s metrics not returned: %s",
+                        sym,
+                        ",".join(sorted(missing)),
+                    )
             if rows:
                 with self.engine.begin() as conn:
                     conn.execute(
