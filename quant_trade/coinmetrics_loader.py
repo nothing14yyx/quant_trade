@@ -83,13 +83,24 @@ class CoinMetricsLoader:
                 }
                 self.rate_limiter.acquire()
                 data = _safe_retry(
-                    lambda: requests.get(self.BASE_URL, params=params, headers=headers, timeout=10).json(),
+                    lambda: requests.get(
+                        self.BASE_URL, params=params, headers=headers, timeout=10
+                    ).json(),
                     retries=self.retries,
                     backoff=self.backoff,
                 )
+                if "error" in data or "error_msg" in data:
+                    logger.warning(
+                        "[coinmetrics] %s error: %s",
+                        sym,
+                        data.get("error") or data.get("error_msg"),
+                    )
+                    continue
+
+                found = set()
                 for item in data.get("data", []):
-                    ts = (
-                        pd.to_datetime(item["time"]).to_pydatetime().replace(tzinfo=None)
+                    ts = pd.to_datetime(item["time"]).to_pydatetime().replace(
+                        tzinfo=None
                     )
                     for m in batch:
                         val = item.get(m)
@@ -99,12 +110,18 @@ class CoinMetricsLoader:
                             val = float(val)
                         except (TypeError, ValueError):
                             continue
-                        rows.append({
-                            "symbol": sym,
-                            "timestamp": ts,
-                            "metric": m,
-                            "value": val,
-                        })
+                        rows.append(
+                            {
+                                "symbol": sym,
+                                "timestamp": ts,
+                                "metric": m,
+                                "value": val,
+                            }
+                        )
+                        found.add(m)
+
+                for m in set(batch) - found:
+                    logger.warning("[coinmetrics] %s metric %s missing", sym, m)
             if rows:
                 with self.engine.begin() as conn:
                     conn.execute(

@@ -1,6 +1,7 @@
 import pandas as pd
 import sqlalchemy
 import requests
+import logging
 
 from quant_trade.coinmetrics_loader import CoinMetricsLoader
 from quant_trade.data_loader import DataLoader
@@ -91,3 +92,27 @@ def test_data_loader_update_cm_metrics(monkeypatch):
     assert len(df) == 3
     assert set(df['metric']) == {'AdrActCnt', 'AdrNewCnt', 'SplyCur'}
     assert df['value'].sum() == 6
+
+
+def test_update_cm_metrics_api_error(monkeypatch, caplog):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            'CREATE TABLE cm_onchain_metrics (symbol TEXT, timestamp TEXT, metric TEXT, value REAL, PRIMARY KEY(symbol, timestamp, metric))'
+        )
+    loader = make_loader(engine)
+
+    def fake_get(url, params=None, headers=None, timeout=10):
+        class R:
+            def json(self):
+                return {'error_msg': 'invalid metric'}
+        return R()
+
+    monkeypatch.setattr(requests, 'get', fake_get)
+
+    with caplog.at_level(logging.WARNING):
+        loader.update_cm_metrics(['BTCUSDT'])
+
+    assert 'invalid metric' in caplog.text
+    df = pd.read_sql('cm_onchain_metrics', engine)
+    assert df.empty
