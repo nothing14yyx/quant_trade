@@ -15,6 +15,7 @@ from .robust_scaler import (
 )
 from .feature_health import apply_health_check_df
 from .db import CONFIG_PATH, load_config, connect_mysql
+from .community_metrics import community_metrics
 
 __all__ = [
     "RateLimiter",
@@ -32,4 +33,5 @@ __all__ = [
     "CONFIG_PATH",
     "load_config",
     "connect_mysql",
+    "community_metrics",
 ]
