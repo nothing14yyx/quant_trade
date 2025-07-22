@@ -105,6 +105,10 @@ feature_cols:
       - macd_hist_diff_1h_d1
       - rsi_diff_1h_d1
       - atr_pct_ratio_1h_4h
+      - active_addr_roc_1h
+      - new_addr_roc_1h
+      - tx_count_roc_1h
+      - mvrv_ratio_1h
 
     vol:
       - atr_pct_1h
@@ -119,6 +123,10 @@ feature_cols:
       - hv_30d_1h
       - donchian_delta_1h
       - atr_pct_ratio_1h_4h
+      - active_addr_roc_1h
+      - new_addr_roc_1h
+      - tx_count_roc_1h
+      - mvrv_ratio_1h
 
     rise:
       - atr_pct_1h
@@ -133,6 +141,10 @@ feature_cols:
       - hour_of_day
       - macd_hist_diff_1h_d1
       - atr_pct_ratio_1h_4h
+      - active_addr_roc_1h
+      - new_addr_roc_1h
+      - tx_count_roc_1h
+      - mvrv_ratio_1h
 
     drawdown:
       - atr_pct_1h
@@ -147,6 +159,10 @@ feature_cols:
       - vol_breakout_1h
       - hv_14d_1h
       - atr_pct_ratio_1h_4h
+      - active_addr_roc_1h
+      - new_addr_roc_1h
+      - tx_count_roc_1h
+      - mvrv_ratio_1h
 
   4h:
     cls:
@@ -163,6 +179,10 @@ feature_cols:
       - close_spread_1h_4h
       - hv_14d_4h
       - pct_chg6_4h
+      - active_addr_roc_4h
+      - new_addr_roc_4h
+      - tx_count_roc_4h
+      - mvrv_ratio_4h
 
     vol:
       - atr_pct_4h
@@ -177,6 +197,10 @@ feature_cols:
       - vol_ratio_4h_d1
       - atr_pct_ratio_1h_4h
       - hour_of_day
+      - active_addr_roc_4h
+      - new_addr_roc_4h
+      - tx_count_roc_4h
+      - mvrv_ratio_4h
 
     rise:
       - atr_pct_4h
@@ -191,6 +215,10 @@ feature_cols:
       - day_of_week
       - atr_pct_ratio_1h_4h
       - vol_ratio_1h_4h
+      - active_addr_roc_4h
+      - new_addr_roc_4h
+      - tx_count_roc_4h
+      - mvrv_ratio_4h
     drawdown:
       - atr_pct_4h
       - hv_7d_4h
@@ -204,6 +232,10 @@ feature_cols:
       - kurtosis_4h
       - atr_pct_ratio_1h_4h
       - vol_ratio_1h_4h
+      - active_addr_roc_4h
+      - new_addr_roc_4h
+      - tx_count_roc_4h
+      - mvrv_ratio_4h
 
   d1:
     cls:
@@ -219,6 +251,10 @@ feature_cols:
       - hv_7d_d1
       - ichimoku_cloud_thickness_d1
       - cg_market_cap_roc_d1
+      - active_addr_roc_d1
+      - new_addr_roc_d1
+      - tx_count_roc_d1
+      - mvrv_ratio_d1
 
     vol:
       - day_of_week
@@ -233,6 +269,10 @@ feature_cols:
       - vwap_d1
       - vol_ratio_4h_d1
       - obv_delta_d1
+      - active_addr_roc_d1
+      - new_addr_roc_d1
+      - tx_count_roc_d1
+      - mvrv_ratio_d1
 
     rise:
       - day_of_week
@@ -248,6 +288,10 @@ feature_cols:
       - long_upper_shadow_d1
       - vwap_d1
       - bb_width_chg_d1
+      - active_addr_roc_d1
+      - new_addr_roc_d1
+      - tx_count_roc_d1
+      - mvrv_ratio_d1
 
     drawdown:
       - day_of_week
@@ -264,6 +308,10 @@ feature_cols:
       - ema_diff_d1
       - cg_total_volume_roc_d1
       - cg_market_cap_roc_d1
+      - active_addr_roc_d1
+      - new_addr_roc_d1
+      - tx_count_roc_d1
+      - mvrv_ratio_d1
 
 
 
