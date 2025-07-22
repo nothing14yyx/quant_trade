@@ -16,7 +16,7 @@ import pandas as pd
 import yaml
 from tqdm import tqdm
 from joblib import Parallel, delayed
-from sqlalchemy import create_engine, text, bindparam
+from sqlalchemy import create_engine, text, bindparam, inspect
 from sklearn.metrics import mutual_info_score
 
 # 不再 import calc_features_full，而改为：
@@ -555,10 +555,14 @@ class FeatureEngineer:
     def _write_output(self, df: pd.DataFrame, save_to_db: bool, append: bool) -> None:
         self.merged_table_path.parent.mkdir(parents=True, exist_ok=True)
         if save_to_db:
-            if_exists = "append" if append else "replace"
-            df.to_sql("features", self.engine, if_exists=if_exists, index=False)
-            msg = "追加写入" if append else "写入"
-            logger.info("✅ 已%s MySQL 表 `features`", msg)
+            inspector = inspect(self.engine)
+            table_exists = "features" in inspector.get_table_names()
+            if not table_exists:
+                df.to_sql("features", self.engine, if_exists="replace", index=False)
+                logger.info("✅ 已创建并写入 MySQL 表 `features`")
+            else:
+                df.to_sql("features", self.engine, if_exists="append", index=False)
+                logger.info("✅ 已追加写入 MySQL 表 `features`")
         else:
             mode = "a" if append else "w"
             header = not append
