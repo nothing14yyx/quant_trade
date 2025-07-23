@@ -202,7 +202,14 @@ class FeatureEngineer:
         self.period_cfg: dict[str, dict[str, float | int]] = {
             "1h": {"q_low": 0.25, "q_up": 0.75, "base_n": 3, "vol_window": 24},
             "4h": {"q_low": 0.30, "q_up": 0.70, "base_n": 12, "vol_window": 96},
-            "d1": {"q_low": 0.35, "q_up": 0.65, "base_n": 72, "vol_window": 576},
+            # 平滑 future_max_drawdown_d1，默认窗口 3
+            "d1": {
+                "q_low": 0.35,
+                "q_up": 0.65,
+                "base_n": 72,
+                "vol_window": 576,
+                "smooth_window": 3,
+            },
         }
 
         self._kl_cache: dict[tuple[str, str], pd.DataFrame | None] = {}
@@ -245,6 +252,8 @@ class FeatureEngineer:
             源数据，需包含 ``close`` 和 ``symbol`` 列。
         period_cfg : dict, optional
             各周期参数，形如 ``{"1h": {"q_low": 0.25, "q_up": 0.75, "base_n": 3}}``。
+            可在 ``d1`` 区块加入 ``smooth_window``，对
+            ``future_max_drawdown_d1`` 进行 ``rolling().max()`` 平滑。
             若为 ``None``，则使用默认配置。
         smooth_alpha : float, default 0.2
             计算未来收益时的 EWMA 衰减系数。
@@ -277,6 +286,10 @@ class FeatureEngineer:
 
                 up_ret = fut_hi / close - 1
                 down_ret = fut_lo / close - 1
+                if p == "d1":
+                    window = int(cfg.get("smooth_window", 1))
+                    if window > 1:
+                        down_ret = down_ret.rolling(window, min_periods=1).max()
 
                 up_thr = up_ret.quantile(q_up)
                 down_thr = down_ret.quantile(q_low)
