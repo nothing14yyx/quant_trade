@@ -18,6 +18,8 @@ from tqdm import tqdm
 from joblib import Parallel, delayed
 from sqlalchemy import create_engine, text, bindparam, inspect
 from sklearn.metrics import mutual_info_score
+from scipy import stats
+import json
 
 # 不再 import calc_features_full，而改为：
 from quant_trade.utils.helper import (
@@ -192,6 +194,10 @@ class FeatureEngineer:
         # 参考币种
         self.btc_symbol: str = fe_cfg.get("btc_symbol", "BTCUSDT")
         self.eth_symbol: str = fe_cfg.get("eth_symbol", "ETHUSDT")
+        self.rise_transform: str = fe_cfg.get("rise_transform", "none")
+        self.boxcox_lambda_path: Path = Path(
+            fe_cfg.get("boxcox_lambda_path", "scalers/rise_boxcox_lambda.json")
+        )
 
         self.period_cfg: dict[str, dict[str, float | int]] = {
             "1h": {"q_low": 0.25, "q_up": 0.75, "base_n": 3, "vol_window": 24},
@@ -215,8 +221,17 @@ class FeatureEngineer:
         cm_cfg = self.cfg.get("coinmetrics", {})
         self.cm_metrics: List[str] = cm_cfg.get("metrics", [])
 
-    @staticmethod
+        if self.mode != "train" and self.rise_transform == "boxcox":
+            if self.boxcox_lambda_path.is_file():
+                with open(self.boxcox_lambda_path, "r", encoding="utf-8") as f:
+                    self.boxcox_lambda = json.load(f)
+            else:
+                self.boxcox_lambda = {}
+        else:
+            self.boxcox_lambda = {}
+
     def add_up_down_targets(
+        self,
         df: pd.DataFrame,
         period_cfg: dict[str, dict[str, float | int]] | None = None,
         smooth_alpha: float = 0.2,
@@ -245,6 +260,8 @@ class FeatureEngineer:
             }
 
         results = []
+        if not hasattr(self, "boxcox_lambda"):
+            self.boxcox_lambda = {}
         for sym, g in df.groupby("symbol", group_keys=False):
             close = g["close"]
             for p, cfg in period_cfg.items():
@@ -279,7 +296,21 @@ class FeatureEngineer:
 
                 g[f"target_{p}"] = target.astype(float)
                 g[f"future_volatility_{p}"] = close.pct_change().rolling(base_n).std().shift(-base_n)
-                g[f"future_max_rise_{p}"] = up_ret
+                rise_vals = up_ret
+                if self.rise_transform == "log":
+                    rise_vals = np.log1p(up_ret)
+                elif self.rise_transform == "boxcox":
+                    arr = up_ret + 1.0
+                    arr[arr <= 0] = np.nanmin(arr[arr > 0]) if np.any(arr > 0) else 1e-6
+                    valid = arr[~np.isnan(arr)]
+                    if p not in self.boxcox_lambda:
+                        _, lmbda = stats.boxcox(valid)
+                        self.boxcox_lambda[p] = float(lmbda)
+                    else:
+                        lmbda = self.boxcox_lambda[p]
+                    rise_vals = np.full_like(arr, np.nan, dtype=float)
+                    rise_vals[~np.isnan(arr)] = stats.boxcox(valid, lmbda)
+                g[f"future_max_rise_{p}"] = rise_vals
                 g[f"future_max_drawdown_{p}"] = down_ret
 
                 g.loc[g.tail(base_n).index, [f"target_{p}", f"future_volatility_{p}"]] = np.nan
@@ -774,6 +805,10 @@ class FeatureEngineer:
         if self.mode == "train":
             self.scaler_path.parent.mkdir(parents=True, exist_ok=True)
             save_scaler_params_to_json(all_scaler_params, str(self.scaler_path))
+            if self.rise_transform == "boxcox":
+                self.boxcox_lambda_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.boxcox_lambda_path, "w", encoding="utf-8") as f:
+                    json.dump(self.boxcox_lambda, f)
 
         self.feature_cols_path.parent.mkdir(parents=True, exist_ok=True)
         self.feature_cols_path.write_text(
