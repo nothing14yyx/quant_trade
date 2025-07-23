@@ -528,17 +528,29 @@
       "mean": 1.0,
       "std": 1e-06
     },
-    "hour_of_day": {
-      "lower": 0.0,
-      "upper": 23.0,
-      "mean": 10.3,
-      "std": 6.817380750803579
+    "hour_of_day_sin": {
+      "lower": -1.0,
+      "upper": 1.0,
+      "mean": 0.0,
+      "std": 0.5
     },
-    "day_of_week": {
-      "lower": 2.0,
-      "upper": 4.0,
-      "mean": 2.8,
-      "std": 0.7483324773547883
+    "hour_of_day_cos": {
+      "lower": -1.0,
+      "upper": 1.0,
+      "mean": 0.0,
+      "std": 0.5
+    },
+    "day_of_week_sin": {
+      "lower": -1.0,
+      "upper": 1.0,
+      "mean": 0.0,
+      "std": 0.5
+    },
+    "day_of_week_cos": {
+      "lower": -1.0,
+      "upper": 1.0,
+      "mean": 0.0,
+      "std": 0.5
     }
   }
 }

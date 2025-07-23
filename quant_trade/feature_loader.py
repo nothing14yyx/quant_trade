@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 import pandas as pd
+import numpy as np
 from sqlalchemy import text
 
 from quant_trade.utils.db import load_config, connect_mysql
@@ -114,8 +115,12 @@ def prepare_all_features(
         fd1_df["funding_rate_anom_d1"] = fr_anom
 
     merged = calc_cross_features(f1h_df, f4h_df, fd1_df)
-    merged["hour_of_day"] = merged["open_time"].dt.hour.astype(float)
-    merged["day_of_week"] = merged["open_time"].dt.dayofweek.astype(float)
+    hour = merged["open_time"].dt.hour.astype(float)
+    merged["hour_of_day_sin"] = np.sin(2 * np.pi * hour / 24)
+    merged["hour_of_day_cos"] = np.cos(2 * np.pi * hour / 24)
+    dow = merged["open_time"].dt.dayofweek.astype(float)
+    merged["day_of_week_sin"] = np.sin(2 * np.pi * dow / 7)
+    merged["day_of_week_cos"] = np.cos(2 * np.pi * dow / 7)
 
     if len(merged) <= offset:
         raise IndexError("insufficient cross period data for requested offset")
@@ -123,7 +128,22 @@ def prepare_all_features(
     cross_last["symbol"] = symbol
     cross_scaled = apply_robust_z_with_params(cross_last, params).drop(columns=["symbol"]).iloc[0]
 
-    cross_cols = [c for c in cross_last.columns if any(x in c for x in ["_1h_4h", "_1h_d1", "_4h_d1", "hour_of_day", "day_of_week"])]
+    cross_cols = [
+        c
+        for c in cross_last.columns
+        if any(
+            x in c
+            for x in [
+                "_1h_4h",
+                "_1h_d1",
+                "_4h_d1",
+                "hour_of_day_sin",
+                "hour_of_day_cos",
+                "day_of_week_sin",
+                "day_of_week_cos",
+            ]
+        )
+    ]
 
     scaled1h, raw1h = prepare_features(df1h, "1h", params, symbol, offset)
     scaled4h, raw4h = prepare_features(df4h, "4h", params, symbol, offset)

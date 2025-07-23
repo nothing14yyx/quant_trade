@@ -1,3 +1,9 @@
+interval
+open
+high
+low
+close
+volume
 fg_index
 funding_rate
 active_addr_roc_1h
