@@ -57,6 +57,10 @@ feature_engineering:
   eth_symbol: "ETHUSDT"
   rise_transform: none               # none | log | boxcox
   boxcox_lambda_path: scalers/rise_boxcox_lambda.json
+  # 周期参数示例，可在 d1 周期平滑 future_max_drawdown
+  period_cfg:
+    d1:
+      smooth_window: 3
 
 feature_selector:
   target:
