@@ -14,6 +14,7 @@ from pathlib import Path
 from sklearn.metrics import mean_absolute_error, log_loss
 from sklearn.metrics import precision_recall_curve
 from sklearn.impute import SimpleImputer
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 
 
@@ -347,8 +348,9 @@ def train_one(
     if not regression:
         logging.info("类别分布 %s", drop_data[tgt].value_counts().to_dict())
 
-    # 时序切分 - 按 open_time 分组，避免同一时间片落入不同集合
-    splits = list(forward_chain_split(data["open_time"], n_splits=5))
+    # 时序切分
+    tscv = TimeSeriesSplit(n_splits=5)
+    splits = list(tscv.split(data))
 
     imputer = SimpleImputer(strategy="median", keep_empty_features=True)
 
