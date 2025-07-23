@@ -511,7 +511,7 @@ def train_one(
             ),
             "subsample": fixed_in_yaml.get(
                 "subsample",
-                fixed_in_yaml.get("bagging_fraction", 1.0),
+                fixed_in_yaml.get("bagging_fraction", 0.9),
             ),
             "cbt": fixed_in_yaml.get(
                 "feature_fraction",
@@ -547,7 +547,7 @@ def train_one(
         ),
         "subsample": raw_params.get(
             "subsample",
-            fixed_in_yaml.get("subsample", fixed_in_yaml.get("bagging_fraction", 1.0)),
+            fixed_in_yaml.get("subsample", fixed_in_yaml.get("bagging_fraction", 0.9)),
         ),
         "colsample_bytree": raw_params.get(
             "cbt",
