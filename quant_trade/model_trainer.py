@@ -18,6 +18,14 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 
 
+def get_lambda_default(space: dict, fixed: dict) -> float:
+    """Return lambda_l2 default from search space or fixed params."""
+    if "lambda_l2" in fixed:
+        return float(fixed["lambda_l2"])
+    lo, hi = space["lambda_l2"]
+    return (lo + hi) / 2
+
+
 import optuna
 
 optuna.logging.set_verbosity(optuna.logging.ERROR)
@@ -487,6 +495,8 @@ def train_one(
         pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=2000)
     trials_df = pd.DataFrame()
     if n_trials == 0:
+        lambda_default = get_lambda_default(space, fixed_in_yaml)
+        logging.info("默认 lambda_l2=%s", lambda_default)
         raw_params = {
             "lr": fixed_in_yaml.get("learning_rate", 0.05),
             "nl": fixed_in_yaml.get("num_leaves", 63),
@@ -507,7 +517,7 @@ def train_one(
                 "feature_fraction",
                 fixed_in_yaml.get("colsample_bytree", 1.0),
             ),
-            "lambda_l2": fixed_in_yaml.get("lambda_l2", 0.0),
+            "lambda_l2": lambda_default,
         }
         best_value = float("nan")
     else:
@@ -547,7 +557,7 @@ def train_one(
         ),
         "lambda_l2": raw_params.get(
             "lambda_l2",
-            fixed_in_yaml.get("lambda_l2", 0.0),
+            get_lambda_default(space, fixed_in_yaml),
         ),
     }
     best_params.update(fixed_in_yaml)
