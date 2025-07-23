@@ -55,6 +55,8 @@ feature_engineering:
   scaler_path: scalers/all_features_scaler.json
   btc_symbol: "BTCUSDT"
   eth_symbol: "ETHUSDT"
+  rise_transform: none               # none | log | boxcox
+  boxcox_lambda_path: scalers/rise_boxcox_lambda.json
 
 feature_selector:
   target:
