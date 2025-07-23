@@ -395,11 +395,11 @@ param_space:
   4h:
     lr: [0.02, 0.06]       # 学习率保持
     nl: [31, 127]
-    ne: [140, 260]         # ← 原 300-700，减小以防过拟
+    ne: [200, 400]         # 上调范围以允许更多迭代
     md: [4, 10]
     mcs: [1500, 3000]      # ← 原 50-120，增大叶子样本
     subsample: [0.70, 0.9]
-    lambda_l2: [0.5, 2.0]
+    lambda_l2: [1.0, 4.0]   # 略增正则化强度
     scale_pos_weight: [1.1, 1.5]
   d1:
     lr: [0.02, 0.06]
@@ -433,7 +433,7 @@ model_params:
     bagging_fraction: 0.85
     bagging_freq: 1
   4h:                       # ≈13 万行
-    num_boost_round: 140      # ← 原 160
+    num_boost_round: 300      # 与新 ne 范围匹配
     min_data_in_leaf: 2200    # 不变
     feature_fraction: 0.48    # ← 原 0.50
     bagging_fraction: 0.70
