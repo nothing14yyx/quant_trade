@@ -721,6 +721,10 @@ class FeatureEngineer:
         out["symbol"] = sym
         out["hour_of_day"] = out["open_time"].dt.hour.astype(float)
         out["day_of_week"] = out["open_time"].dt.dayofweek.astype(float)
+        out["hour_of_day_sin"] = np.sin(2 * np.pi * out["hour_of_day"] / 24)
+        out["hour_of_day_cos"] = np.cos(2 * np.pi * out["hour_of_day"] / 24)
+        out["day_of_week_sin"] = np.sin(2 * np.pi * out["day_of_week"] / 7)
+        out["day_of_week_cos"] = np.cos(2 * np.pi * out["day_of_week"] / 7)
         if out["close"].nunique() > 1:
             out = self.add_up_down_targets(out, self.period_cfg)
 
