@@ -16,6 +16,7 @@ if __package__ is None and __name__ == "__main__":
     __package__ = "quant_trade"
 
 import json
+from json import JSONDecodeError
 import yaml, requests, pandas as pd, numpy as np
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
@@ -46,7 +47,18 @@ def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
                 delay *= 5
                 logger.warning("Hit Binance rate limit (-1003), sleep %.1fs", delay)
             else:
-                logger.warning("Retry %s/%s for %s: %s", i + 1, retries, fn.__qualname__, exc)
+                msg = str(exc)
+                resp = getattr(exc, "response", None)
+                if resp is not None:
+                    status = getattr(resp, "status_code", "?")
+                    try:
+                        body = resp.text[:200]
+                    except Exception:
+                        body = ""
+                    msg = f"{msg} [status={status} body={body}]"
+                logger.warning(
+                    "Retry %s/%s for %s: %s", i + 1, retries, fn.__qualname__, msg
+                )
             time.sleep(delay)
     raise RuntimeError(
         f"Failed after {retries} retries for {fn.__qualname__}"
@@ -193,10 +205,30 @@ class DataLoader:
         end_ms = int(pd.Timestamp.utcnow().timestamp() * 1000)
         rows: List[dict] = []
         while start_ms < end_ms:
-            params = {"symbol": symbol, "startTime": start_ms, "endTime": end_ms, "limit": 1000}
+            params = {
+                "symbol": symbol,
+                "startTime": start_ms,
+                "endTime": end_ms,
+                "limit": 1000,
+            }
+
+            def _req():
+                resp = requests.get(self.FUNDING_URL, params=params, timeout=10)
+                resp.raise_for_status()
+                try:
+                    return resp.json()
+                except (ValueError, JSONDecodeError):
+                    logger.warning(
+                        "[funding] bad response for %s: %s",
+                        symbol,
+                        resp.text[:200],
+                    )
+                    return []
+
             payload = _safe_retry(
-                lambda: requests.get(self.FUNDING_URL, params=params, timeout=10).json(),
-                retries=self.retries, backoff=self.backoff
+                _req,
+                retries=self.retries,
+                backoff=self.backoff,
             )
             if not payload:
                 break
