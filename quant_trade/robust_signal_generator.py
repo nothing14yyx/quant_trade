@@ -28,6 +28,7 @@ from .ai_model_predictor import AIModelPredictor
 from .risk_manager import RiskManager
 from .feature_processor import FeatureProcessor
 from .constants import ZeroReason
+from scipy.special import inv_boxcox
 
 logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
@@ -556,6 +557,16 @@ class RobustSignalGenerator:
         self.config_manager = ConfigManager(config_path)
         cfg = self.config_manager.cfg
         self.cfg = cfg
+        fe_cfg = cfg.get("feature_engineering", {})
+        self.rise_transform = fe_cfg.get("rise_transform", "none")
+        self.boxcox_lambda_path = Path(
+            fe_cfg.get("boxcox_lambda_path", "scalers/rise_boxcox_lambda.json")
+        )
+        if self.rise_transform == "boxcox" and self.boxcox_lambda_path.is_file():
+            with open(self.boxcox_lambda_path, "r", encoding="utf-8") as f:
+                self.boxcox_lambda = json.load(f)
+        else:
+            self.boxcox_lambda = {}
         self.signal_threshold_cfg = get_cfg_value(cfg, "signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
             self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
@@ -1339,9 +1350,21 @@ class RobustSignalGenerator:
         """根据回归模型预测未来波动率"""
         return self.ai_predictor.get_vol_prediction(features, model_dict)
 
-    def get_reg_prediction(self, features, model_dict):
-        """通用回归模型预测"""
-        return self.ai_predictor.get_reg_prediction(features, model_dict)
+    def get_reg_prediction(
+        self, features, model_dict, tag: str | None = None, period: str | None = None
+    ):
+        """通用回归模型预测, 根据 tag 应用逆变换"""
+        pred = self.ai_predictor.get_reg_prediction(features, model_dict)
+        if tag == "rise" and self.rise_transform != "none":
+            if self.rise_transform == "log":
+                return float(np.expm1(pred))
+            if self.rise_transform == "boxcox":
+                lmbda = None
+                if period is not None:
+                    lmbda = self.boxcox_lambda.get(period)
+                if lmbda is not None:
+                    return float(inv_boxcox(pred, lmbda) - 1.0)
+        return pred
 
     # robust_signal_generator.py
 
@@ -2423,7 +2446,7 @@ class RobustSignalGenerator:
         if "vol" in models_p:
             vol_pred = self.get_vol_prediction(feats, models_p["vol"])
         if "rise" in models_p:
-            rise_pred = self.get_reg_prediction(feats, models_p["rise"])
+            rise_pred = self.get_reg_prediction(feats, models_p["rise"], tag="rise", period=period)
         if "drawdown" in models_p:
             drawdown_pred = self.get_reg_prediction(feats, models_p["drawdown"])
 
