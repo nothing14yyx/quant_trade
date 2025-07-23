@@ -246,12 +246,7 @@ param_space_all = cfg["param_space"]
 fixed_params = cfg["fixed_params"]
 model_params = cfg.get("model_params", {})
 
-# ---------- 2. 读取特征大表并按时间排序 ----------
-df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time"])
-# 确保整表按 open_time 升序排列，再 reset_index
-df = df.sort_values("open_time").reset_index(drop=True)
-
-# ---------- 3. 固定特征列 （来自 config.yaml 的 feature_cols） ----------
+# ---------- 2. 固定特征列 （来自 config.yaml 的 feature_cols） ----------
 feature_cols = cfg.get("feature_cols", {})
 if not feature_cols:
     raise RuntimeError("config.yaml 缺少 feature_cols 配置")
@@ -271,13 +266,28 @@ for period, cols in feature_cols.items():
         raise ValueError("feature_cols 配置格式有误")
 feature_cols = feature_cols_nested
 
-# ---------- 4. 目标列 ----------
+# ---------- 3. 目标列 ----------
 targets = {
     "cls": "target",
     "vol": "future_volatility",
     "rise": "future_max_rise",
     "drawdown": "future_max_drawdown",
 }
+
+# ---------- 4. 计算字段并读取特征表 ----------
+basic_cols = {"symbol", "open_time", "open", "close"}
+required_cols = set(basic_cols)
+for period, tag_dict in feature_cols.items():
+    for cols in tag_dict.values():
+        required_cols.update(cols)
+    for tgt_col_base in targets.values():
+        suffix = "" if period == "1h" else f"_{period}"
+        required_cols.add(f"{tgt_col_base}{suffix}")
+cols_str = ",".join(sorted(required_cols))
+query = f"SELECT {cols_str} FROM features"
+df = pd.read_sql(query, engine, parse_dates=["open_time"])
+# 确保整表按 open_time 升序排列，再 reset_index
+df = df.sort_values("open_time").reset_index(drop=True)
 
 
 # ---------- 辅助：剔除极端异常样本 ----------
