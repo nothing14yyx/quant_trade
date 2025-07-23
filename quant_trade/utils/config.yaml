@@ -389,8 +389,8 @@ param_space:
     ne: [400, 800]
     md: [4, 12]
     mcs: [50, 150]
-    subsample: [0.8, 1.0]
-    lambda_l2: [0.5, 2.0]
+    subsample: [0.8, 0.95]
+    lambda_l2: [0.5, 1.5]
     scale_pos_weight: [1.1, 1.5]
   4h:
     lr: [0.02, 0.06]       # 学习率保持
@@ -430,7 +430,7 @@ model_params:
     num_boost_round: 600
     min_data_in_leaf: 700
     feature_fraction: 0.80
-    bagging_fraction: 0.80
+    bagging_fraction: 0.85
     bagging_freq: 1
   4h:                       # ≈13 万行
     num_boost_round: 140      # ← 原 160
