@@ -299,5 +299,8 @@
   "KASUSDT": "kaspa",
   "MEUSDT": "magic-eden",
   "PIPPINUSDT": "pippin",
-  "ZENUSDT": "zencash"
+  "ZENUSDT": "zencash",
+  "DOGSUSDT": "dogs-2",
+  "QNTUSDT": "quant-network",
+  "RUNEUSDT": "thorchain"
 }
