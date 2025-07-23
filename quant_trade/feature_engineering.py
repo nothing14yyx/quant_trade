@@ -17,6 +17,7 @@ import yaml
 from tqdm import tqdm
 from joblib import Parallel, delayed
 from sqlalchemy import create_engine, text, bindparam, inspect
+from sqlalchemy.exc import IntegrityError
 from sklearn.metrics import mutual_info_score
 from scipy import stats
 import json
@@ -601,6 +602,27 @@ class FeatureEngineer:
         if save_to_db:
             inspector = inspect(self.engine)
             table_exists = "features" in inspector.get_table_names()
+
+            df = df.drop_duplicates(subset=["symbol", "open_time"])
+
+            if table_exists:
+                try:
+                    existing = pd.read_sql("SELECT symbol, open_time FROM features", self.engine)
+                    existing["open_time"] = pd.to_datetime(existing["open_time"])
+                except Exception as e:  # pragma: no cover - unexpected db error
+                    logger.warning("读取已存在数据失败：%s", e)
+                    existing = pd.DataFrame()
+                if not existing.empty:
+                    df["open_time"] = pd.to_datetime(df["open_time"])
+                    mask = df.set_index(["symbol", "open_time"]).index.isin(
+                        existing.set_index(["symbol", "open_time"]).index
+                    )
+                    df = df.loc[~mask].copy()
+
+            if df.empty:
+                logger.info("✅ 无新增 features 数据需要写入")
+                return
+
             if not table_exists:
                 df.to_sql("features", self.engine, if_exists="replace", index=False)
                 logger.info("✅ 已创建并写入 MySQL 表 `features`")
@@ -619,8 +641,11 @@ class FeatureEngineer:
                         sql_type = "TEXT"
                     with self.engine.begin() as conn:
                         conn.execute(text(f"ALTER TABLE features ADD COLUMN `{col}` {sql_type}"))
-                df.to_sql("features", self.engine, if_exists="append", index=False)
-                logger.info("✅ 已追加写入 MySQL 表 `features`")
+                try:
+                    df.to_sql("features", self.engine, if_exists="append", index=False)
+                    logger.info("✅ 已追加写入 MySQL 表 `features`")
+                except IntegrityError as e:  # pragma: no cover - defensive
+                    logger.warning("跳过部分重复行：%s", e)
         else:
             mode = "a" if append else "w"
             header = not append
