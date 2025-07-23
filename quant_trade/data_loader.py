@@ -213,7 +213,11 @@ class DataLoader:
             }
 
             def _req():
-                resp = requests.get(self.FUNDING_URL, params=params, timeout=10)
+                resp = self.client.session.get(
+                    self.FUNDING_URL,
+                    params=params,
+                    timeout=10,
+                )
                 resp.raise_for_status()
                 try:
                     return resp.json()
