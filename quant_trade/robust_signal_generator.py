@@ -1619,21 +1619,24 @@ class RobustSignalGenerator:
 
     def update_market_phase(self, engine):
         """根据链上指标更新市场阶段并调整阈值系数"""
+        data = {}
         try:
             from .market_phase import detect_market_phase
 
             data = detect_market_phase(engine)
-            phase = data.get("TOTAL", {}).get("phase", "range")
+            phase = data.get("TOTAL", {}).get("phase")
         except Exception as e:
             logger.warning("detect_market_phase failed: %s", e)
-            phase = "range"
+            phase = None
 
-        self.market_phase = phase
+        phase = phase or "range"
         self.phase_th_mult = {
             "bull": 0.9,
             "bear": 1.1,
             "range": 1.0,
         }.get(phase, 1.0)
+
+        self.market_phase = data or phase
 
     def stop_weight_update_thread(self):
         if self._weight_thread:
