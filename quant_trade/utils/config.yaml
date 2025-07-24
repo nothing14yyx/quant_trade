@@ -25,7 +25,9 @@ market_phase:
   - AdrActCnt
   - CapMrktCurUSD
   - FeeTotUSD
+  # 可填写 symbols 列表以同时参考多个交易对
   symbol: "BTCUSDT"
+  # symbols: ["BTCUSDT", "ETHUSDT"]
 
 mysql:
   host: "localhost"
