@@ -6,7 +6,15 @@
 - **CoinMetricsLoader**：批量获取更多链上指标。
   新增 `community_metrics(asset)` 用于查询社区版可用指标，
   `update_cm_metrics(community_only=True)` 可仅抓取这些指标。
-- **Market Phase Detection**：根据活跃地址与市值判断牛市、熊市或震荡阶段，可在 `utils/config.yaml` 的 `market_phase.symbols` 列表（或单个 `symbol`）指定参与判断的交易对，默认仅使用 BTCUSDT。
+- **Market Phase Detection**：根据活跃地址与市值判断牛市、熊市或震荡阶段，可在 `utils/config.yaml` 的 `market_phase.symbols` 列表（或单个 `symbol`）指定参与判断的交易对，默认仅使用 BTCUSDT。若填写多个币种，函数会分别返回各链的得分 `S` 与阶段，并按市值加权给出整体结果，例如：
+
+```python
+{
+    "BTCUSDT": {"phase": "bull", "S": 1.8},
+    "ETHUSDT": {"phase": "bear", "S": -0.9},
+    "TOTAL": {"phase": "range", "S": 0.3}
+}
+```
 - **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子；同时加入 HV_7d/14d/30d、KC 宽度变化率、Ichimoku 基准线、VWAP、随机指标等新指标，并支持买卖比、资金流量比、成交量密度、价差百分比及 BTC/ETH 短期相关性。
   另外新增 `sma_5_*`、`sma_20_*` 均线及其交叉比值 `ma_ratio_5_20`，用于衡量短中期趋势变化。
 -   `merge_features` 新增 `batch_size` 参数，可在内存有限时按币种分批写入：
