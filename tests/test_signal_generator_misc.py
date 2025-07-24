@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.market_phase import get_market_phase
 
 
 def make_rsg():
@@ -31,14 +32,43 @@ def make_rsg():
 
 
 def test_detect_market_regime():
-    rsg = make_rsg()
-    assert rsg.detect_market_regime(30, 20, 25, 0.1, 0.6) == "trend"
-    assert rsg.detect_market_regime(10, 15, 20, -0.1, 0.2) == "range"
+    res = get_market_phase(
+        None,
+        {
+            "adx1": 30,
+            "adx4": 20,
+            "adxd": 25,
+            "bb_width_chg": 0.1,
+            "channel_pos": 0.6,
+        },
+    )
+    assert res["regime"] == "trend"
+
+    res = get_market_phase(
+        None,
+        {
+            "adx1": 10,
+            "adx4": 15,
+            "adxd": 20,
+            "bb_width_chg": -0.1,
+            "channel_pos": 0.2,
+        },
+    )
+    assert res["regime"] == "range"
 
 
 def test_detect_market_regime_all_nan():
-    rsg = make_rsg()
-    assert rsg.detect_market_regime(np.nan, np.nan, np.nan, None, None) == "range"
+    res = get_market_phase(
+        None,
+        {
+            "adx1": np.nan,
+            "adx4": np.nan,
+            "adxd": np.nan,
+            "bb_width_chg": None,
+            "channel_pos": None,
+        },
+    )
+    assert res["regime"] == "range"
 
 
 def test_get_ic_period_weights():
