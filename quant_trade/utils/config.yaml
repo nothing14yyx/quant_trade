@@ -41,6 +41,16 @@ market_phase:
     bull: 0.9
     bear: 1.1
     range: 1.0
+  phase_dir_mult:
+    bull:
+      long: 1.0
+      short: 1.0
+    bear:
+      long: 1.0
+      short: 1.0
+    range:
+      long: 1.0
+      short: 1.0
   # symbols: ["BTCUSDT", "ETHUSDT"]
 
 mysql:
