@@ -3,7 +3,7 @@ import sqlalchemy
 import yaml
 import pytest
 
-from quant_trade.market_phase import detect_market_phase
+from quant_trade.market_phase import get_market_phase
 
 
 def _prepare_engine():
@@ -48,7 +48,7 @@ def test_detect_market_phase_multi_chain(engine_with_data, tmp_path):
     cfg_path = tmp_path / "cfg.yaml"
     yaml.safe_dump(cfg, cfg_path.open("w"))
 
-    res = detect_market_phase(engine_with_data, cfg_path)
+    res = get_market_phase(engine_with_data, config_path=cfg_path)
 
     assert res["BTCUSDT"]["phase"] == "bull" and res["BTCUSDT"]["S"] > 0
     assert res["ETHUSDT"]["phase"] == "bear" and res["ETHUSDT"]["S"] < 0

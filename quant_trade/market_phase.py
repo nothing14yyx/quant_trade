@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from sqlalchemy import text
 from pathlib import Path
 
@@ -7,28 +8,32 @@ from .config_manager import ConfigManager
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
 
-def _rolling_zscore(series: pd.Series, window: int) -> pd.Series:
-    mean = series.rolling(window=window, min_periods=1).mean()
-    std = series.rolling(window=window, min_periods=1).std()
-    z = (series - mean) / std
-    return z.replace([float("inf"), float("-inf")], pd.NA)
+class MarketPhaseCalculator:
+    """Market phase related helper functions."""
 
+    @staticmethod
+    def rolling_zscore(series: pd.Series, window: int) -> pd.Series:
+        mean = series.rolling(window=window, min_periods=1).mean()
+        std = series.rolling(window=window, min_periods=1).std()
+        z = (series - mean) / std
+        return z.replace([float("inf"), float("-inf")], pd.NA)
 
-def _normalize_weights(weights: dict, metrics: list[str]) -> pd.Series:
-    if not weights:
-        return pd.Series(1.0, index=metrics) / len(metrics)
-    ser = pd.Series({m: weights.get(m, 1.0) for m in metrics}, dtype=float)
-    total = ser.sum()
-    if total == 0:
-        ser[:] = 1.0
-        total = len(metrics)
-    return ser / total
+    @staticmethod
+    def normalize_weights(weights: dict, metrics: list[str]) -> pd.Series:
+        if not weights:
+            return pd.Series(1.0, index=metrics) / len(metrics)
+        ser = pd.Series({m: weights.get(m, 1.0) for m in metrics}, dtype=float)
+        total = ser.sum()
+        if total == 0:
+            ser[:] = 1.0
+            total = len(metrics)
+        return ser / total
 
-
-def _phase_from_score(score: float) -> str:
-    if pd.isna(score) or score == 0:
-        return "range"
-    return "bull" if score > 0 else "bear"
+    @staticmethod
+    def phase_from_score(score: float) -> str:
+        if pd.isna(score) or score == 0:
+            return "range"
+        return "bull" if score > 0 else "bear"
 
 
 def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> dict:
@@ -55,7 +60,7 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> dict:
         ).format(placeholders=placeholders)
     )
 
-    metric_weights = _normalize_weights(weights_cfg, metrics)
+    metric_weights = MarketPhaseCalculator.normalize_weights(weights_cfg, metrics)
     results: dict[str, dict] = {}
     caps: dict[str, float] = {}
     latest_ts = None
@@ -75,11 +80,11 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> dict:
             if series.dropna().empty:
                 scores.append(0.0)
             else:
-                z = _rolling_zscore(series, window).iloc[-1]
+                z = MarketPhaseCalculator.rolling_zscore(series, window).iloc[-1]
                 scores.append(0.0 if pd.isna(z) else float(z))
 
         s_chain = float((metric_weights * pd.Series(scores, index=metrics)).sum())
-        results[sym] = {"S": s_chain, "phase": _phase_from_score(s_chain)}
+        results[sym] = {"S": s_chain, "phase": MarketPhaseCalculator.phase_from_score(s_chain)}
 
         cap_series = pd.to_numeric(pivot.get("CapMrktCurUSD"), errors="coerce")
         if not cap_series.dropna().empty:
@@ -99,8 +104,76 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> dict:
         chain_weights = {s: 1 / len(results) for s in results}
 
     s_total = sum(chain_weights[s] * results[s]["S"] for s in results)
-    results["TOTAL"] = {"S": s_total, "phase": _phase_from_score(s_total)}
+    results["TOTAL"] = {"S": s_total, "phase": MarketPhaseCalculator.phase_from_score(s_total)}
     if latest_ts is not None:
         results["latest_timestamp"] = latest_ts
     results["window"] = window
     return results
+
+
+def _classify_regime(adx: float | None, bb_width: float | None,
+                     adx_trend: float, adx_range: float) -> str:
+    if adx is None or bb_width is None:
+        return "unknown"
+    try:
+        adx = float(adx)
+        bb_chg = float(bb_width)
+    except Exception:
+        return "unknown"
+    if adx >= adx_trend and bb_chg > 0:
+        return "trend"
+    if adx <= adx_range and bb_chg < 0:
+        return "range"
+    return "unknown"
+
+
+def detect_market_regime(
+    adx1: float | None,
+    adx4: float | None,
+    adxd: float | None,
+    bb_width_chg: float | None = None,
+    channel_pos: float | None = None,
+    *,
+    adx_trend: float = 25,
+    adx_range: float = 20,
+) -> str:
+    """根据多周期 ADX 与布林带变化判断市场状态。"""
+    adx_arr = np.array([adx1, adx4, adxd], dtype=float)
+    adx_arr = adx_arr[~np.isnan(adx_arr)]
+    avg_adx = adx_arr.mean() if adx_arr.size else None
+
+    regime = _classify_regime(avg_adx, bb_width_chg, adx_trend, adx_range)
+    if regime != "unknown":
+        return regime
+    if avg_adx is None:
+        return "range"
+    return "trend" if avg_adx >= 25 else "range"
+
+
+def get_market_phase(
+    engine=None,
+    indicators: dict | None = None,
+    config_path: str | Path = CONFIG_PATH,
+    *,
+    adx_trend: float = 25,
+    adx_range: float = 20,
+) -> dict:
+    """统一获取市场阶段信息。"""
+    data = {}
+    if engine is not None:
+        data = detect_market_phase(engine, config_path)
+        phase = data.get("TOTAL", {}).get("phase")
+        if phase is not None:
+            data["phase"] = phase
+    if indicators:
+        regime = detect_market_regime(
+            indicators.get("adx1"),
+            indicators.get("adx4"),
+            indicators.get("adxd"),
+            indicators.get("bb_width_chg"),
+            indicators.get("channel_pos"),
+            adx_trend=adx_trend,
+            adx_range=adx_range,
+        )
+        data["regime"] = regime
+    return data

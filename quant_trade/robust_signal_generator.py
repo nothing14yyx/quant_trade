@@ -902,22 +902,30 @@ class RobustSignalGenerator:
             return "range"
         return "unknown"
 
-    def detect_market_regime(self, adx1, adx4, adxd, bb_width_chg=None, channel_pos=None):
-        """根据多周期 ADX 平均值以及布林带宽度变化等判断市场状态"""
-        adx_arr = np.array([adx1, adx4, adxd], dtype=float)
-        adx_arr = adx_arr[~np.isnan(adx_arr)]
-        if adx_arr.size == 0:
-            avg_adx = None
-        else:
-            avg_adx = adx_arr.mean()
+    def detect_market_regime(
+        self, adx1, adx4, adxd, bb_width_chg=None, channel_pos=None, *, engine=None
+    ):
+        """根据指标获取市场状态"""
+        from .market_phase import get_market_phase
 
-        regime = self.classify_regime(avg_adx, bb_width_chg, channel_pos)
-        if regime != "unknown":
-            return regime
-
-        if avg_adx is None:
-            return "range"
-        return "trend" if avg_adx >= 25 else "range"
+        info = get_market_phase(
+            engine,
+            {
+                "adx1": adx1,
+                "adx4": adx4,
+                "adxd": adxd,
+                "bb_width_chg": bb_width_chg,
+                "channel_pos": channel_pos,
+            },
+        )
+        phase = info.get("phase")
+        if phase is not None:
+            self.phase_th_mult = {
+                "bull": 0.9,
+                "bear": 1.1,
+                "range": 1.0,
+            }.get(phase, 1.0)
+        return info.get("regime", "range")
 
     def get_ic_period_weights(self, ic_scores):
         """根据近一周 IC 加权各周期"""
@@ -1621,10 +1629,10 @@ class RobustSignalGenerator:
         """根据链上指标更新市场阶段并调整阈值系数"""
         data = {}
         try:
-            from .market_phase import detect_market_phase
+            from .market_phase import get_market_phase
 
-            data = detect_market_phase(engine)
-            phase = data.get("TOTAL", {}).get("phase")
+            data = get_market_phase(engine)
+            phase = data.get("phase") or data.get("TOTAL", {}).get("phase")
         except Exception as e:
             logger.warning("detect_market_phase failed: %s", e)
             phase = None
