@@ -818,6 +818,7 @@ class RobustSignalGenerator:
             "dynamic_th_params": DynamicThresholdParams.from_cfg({}),
             "market_phase": "range",
             "phase_th_mult": 1.0,
+            "phase_dir_mult": {"long": 1.0, "short": 1.0},
         }
         if name in defaults:
             val = defaults[name]
@@ -1645,6 +1646,16 @@ class RobustSignalGenerator:
             {"bull": 0.9, "bear": 1.1, "range": 1.0},
         )
         self.phase_th_mult = mult_map.get(phase, 1.0)
+
+        dir_map = mp_cfg.get(
+            "phase_dir_mult",
+            {
+                "bull": {"long": 1.0, "short": 1.0},
+                "bear": {"long": 1.0, "short": 1.0},
+                "range": {"long": 1.0, "short": 1.0},
+            },
+        )
+        self.phase_dir_mult = dir_map.get(phase, {"long": 1.0, "short": 1.0})
 
         self.market_phase = data or phase
 
@@ -3852,6 +3863,15 @@ class RobustSignalGenerator:
         ts = prepared["ts"]
         cache = prepared["cache"]
         rev_dir = prepared["rev_dir"]
+
+        phase = getattr(self, "market_phase", "range")
+        if isinstance(phase, dict):
+            phase = phase.get("phase", "range")
+        mults = getattr(self, "phase_dir_mult", {})
+        if fused_score > 0:
+            fused_score *= mults.get("long", 1.0)
+        elif fused_score < 0:
+            fused_score *= mults.get("short", 1.0)
 
         pre_res, _, _ = self._precheck_and_direction(
             fused_score,
