@@ -76,7 +76,11 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> dict:
 
         scores = []
         for m in metrics:
-            series = pd.to_numeric(pivot.get(m), errors="coerce")
+            series = pivot.get(m)
+            if series is None:
+                scores.append(0.0)
+                continue
+            series = pd.to_numeric(series, errors="coerce")
             if series.dropna().empty:
                 scores.append(0.0)
             else:
@@ -86,9 +90,11 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> dict:
         s_chain = float((metric_weights * pd.Series(scores, index=metrics)).sum())
         results[sym] = {"S": s_chain, "phase": MarketPhaseCalculator.phase_from_score(s_chain)}
 
-        cap_series = pd.to_numeric(pivot.get("CapMrktCurUSD"), errors="coerce")
-        if not cap_series.dropna().empty:
-            caps[sym] = float(cap_series.iloc[-1])
+        cap_series = pivot.get("CapMrktCurUSD")
+        if cap_series is not None:
+            cap_series = pd.to_numeric(cap_series, errors="coerce")
+            if not cap_series.dropna().empty:
+                caps[sym] = float(cap_series.iloc[-1])
 
         ts = pivot.index.max()
         if latest_ts is None or ts > latest_ts:
