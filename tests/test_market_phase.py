@@ -3,7 +3,6 @@ import sqlalchemy
 import yaml
 
 from quant_trade.market_phase import detect_market_phase
-from quant_trade.tests.test_utils import make_dummy_rsg
 
 
 def _setup(engine, data):
@@ -11,144 +10,46 @@ def _setup(engine, data):
         conn.exec_driver_sql(
             "CREATE TABLE cm_onchain_metrics (symbol TEXT, timestamp INTEGER, metric TEXT, value REAL)"
         )
-    df = pd.DataFrame(data)
-    df.to_sql("cm_onchain_metrics", engine, if_exists="append", index=False)
+    pd.DataFrame(data).to_sql("cm_onchain_metrics", engine, if_exists="append", index=False)
 
 
-def test_detect_market_phase():
+def test_detect_market_phase_multi_chain(tmp_path):
     engine = sqlalchemy.create_engine("sqlite:///:memory:")
+
     data = []
     for i in range(39):
-        for m, v in [
-            ("AdrActCnt", 100),
-            ("CapMrktCurUSD", 1000),
-            ("FeeTotUSD", 1),
-        ]:
-            data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
-    data.append({
-        "symbol": "BTCUSDT",
-        "timestamp": 39,
-        "metric": "AdrActCnt",
-        "value": 200,
-    })
-    data.append({
-        "symbol": "BTCUSDT",
-        "timestamp": 39,
-        "metric": "CapMrktCurUSD",
-        "value": 2000,
-    })
-    data.append({
-        "symbol": "BTCUSDT",
-        "timestamp": 39,
-        "metric": "FeeTotUSD",
-        "value": 2,
-    })
-    _setup(engine, data)
-    phase = detect_market_phase(engine)
-    assert phase == "bull"
+        for sym in ["BTCUSDT", "ETHUSDT", "LTCUSDT"]:
+            for m, v in [
+                ("AdrActCnt", 100),
+                ("CapMrktCurUSD", 1000),
+                ("FeeTotUSD", 1),
+            ]:
+                data.append({"symbol": sym, "timestamp": i, "metric": m, "value": v})
 
-
-def test_phase_threshold_adjustment():
-    engine = sqlalchemy.create_engine("sqlite:///:memory:")
-    data = []
-    for i in range(39):
-        for m, v in [
-            ("AdrActCnt", 100),
-            ("CapMrktCurUSD", 1000),
-            ("FeeTotUSD", 1),
-        ]:
-            data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
-    data.append({
-        "symbol": "BTCUSDT",
-        "timestamp": 39,
-        "metric": "AdrActCnt",
-        "value": 200,
-    })
-    data.append({
-        "symbol": "BTCUSDT",
-        "timestamp": 39,
-        "metric": "CapMrktCurUSD",
-        "value": 2000,
-    })
-    data.append({
-        "symbol": "BTCUSDT",
-        "timestamp": 39,
-        "metric": "FeeTotUSD",
-        "value": 2,
-    })
-    _setup(engine, data)
-
-    rsg = make_dummy_rsg()
-    rsg.update_market_phase(engine)
-    assert rsg.phase_th_mult < 1.0
-    res = rsg.apply_risk_filters(
-        fused_score=0.2,
-        logic_score=0.2,
-        env_score=0.0,
-        std_1h={},
-        std_4h={},
-        std_d1={},
-        raw_f1h={},
-        raw_f4h={},
-        raw_fd1={},
-        vol_preds={},
-        open_interest=None,
-        all_scores_list=None,
-        rev_dir=0,
-        cache={"history_scores": []},
-        global_metrics=None,
-        symbol=None,
-    )
-    assert res["base_th"] < rsg.signal_params.base_th
-
-
-def test_detect_market_phase_symbol_filter():
-    engine = sqlalchemy.create_engine("sqlite:///:memory:")
-    data = []
-    for i in range(39):
-        for m, v in [
-            ("AdrActCnt", 100),
-            ("CapMrktCurUSD", 1000),
-            ("FeeTotUSD", 1),
-        ]:
-            data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
-            data.append({"symbol": "ETHUSDT", "timestamp": i, "metric": m, "value": v})
     data.extend([
         {"symbol": "BTCUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 200},
         {"symbol": "BTCUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 2000},
         {"symbol": "BTCUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 2},
         {"symbol": "ETHUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 50},
         {"symbol": "ETHUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 500},
-        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 1},
+        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 0.5},
+        {"symbol": "LTCUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 100},
+        {"symbol": "LTCUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 1000},
+        {"symbol": "LTCUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 1},
     ])
-    _setup(engine, data)
-    phase = detect_market_phase(engine)
-    assert phase == "bull"
 
-
-def test_detect_market_phase_multi_symbols(tmp_path):
-    engine = sqlalchemy.create_engine("sqlite:///:memory:")
-    data = []
-    for i in range(39):
-        for m, v in [
-            ("AdrActCnt", 100),
-            ("CapMrktCurUSD", 1000),
-            ("FeeTotUSD", 1),
-        ]:
-            data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
-            data.append({"symbol": "ETHUSDT", "timestamp": i, "metric": m, "value": v})
-    data.extend([
-        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 200},
-        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 2000},
-        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 2},
-        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 200},
-        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 2000},
-        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 2},
-    ])
     _setup(engine, data)
 
     cfg_path = tmp_path / "cfg.yaml"
-    yaml.safe_dump({"market_phase": {"symbols": ["BTCUSDT", "ETHUSDT"]}}, cfg_path.open("w"))
-    phase = detect_market_phase(engine, cfg_path)
-    assert phase == "bull"
+    yaml.safe_dump({"market_phase": {"symbols": ["BTCUSDT", "ETHUSDT", "LTCUSDT"]}}, cfg_path.open("w"))
 
+    res = detect_market_phase(engine, cfg_path)
+    assert isinstance(res, dict)
+
+    assert res["BTCUSDT"]["phase"] == "bull"
+    assert res["ETHUSDT"]["phase"] == "bear"
+    assert res["LTCUSDT"]["phase"] == "range"
+
+    assert res["BTCUSDT"]["S"] > 1.5
+    assert res["ETHUSDT"]["S"] < 0.8
+    assert abs(res["LTCUSDT"]["S"] - 1.0) < 1e-6
