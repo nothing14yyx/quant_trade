@@ -1638,11 +1638,13 @@ class RobustSignalGenerator:
             phase = None
 
         phase = phase or "range"
-        self.phase_th_mult = {
-            "bull": 0.9,
-            "bear": 1.1,
-            "range": 1.0,
-        }.get(phase, 1.0)
+        cfg = getattr(self, "config_manager", None)
+        mp_cfg = cfg.get("market_phase", {}) if cfg else {}
+        mult_map = mp_cfg.get(
+            "phase_th_mult",
+            {"bull": 0.9, "bear": 1.1, "range": 1.0},
+        )
+        self.phase_th_mult = mult_map.get(phase, 1.0)
 
         self.market_phase = data or phase
 
