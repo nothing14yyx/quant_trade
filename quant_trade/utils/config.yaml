@@ -35,6 +35,11 @@ market_phase:
   window: 30
   # 默认仅使用单个 symbol，可填写 symbols 列表以同时参考多个交易对
   symbol: "BTCUSDT"
+  # 不同市场阶段对阈值的系数，可在此调整
+  phase_th_mult:
+    bull: 0.9
+    bear: 1.1
+    range: 1.0
   # symbols: ["BTCUSDT", "ETHUSDT"]
 
 mysql:
