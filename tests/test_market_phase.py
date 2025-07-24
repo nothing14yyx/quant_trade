@@ -100,3 +100,27 @@ def test_phase_threshold_adjustment():
     )
     assert res["base_th"] < rsg.signal_params.base_th
 
+
+def test_detect_market_phase_symbol_filter():
+    engine = sqlalchemy.create_engine("sqlite:///:memory:")
+    data = []
+    for i in range(39):
+        for m, v in [
+            ("AdrActCnt", 100),
+            ("CapMrktCurUSD", 1000),
+            ("FeeTotUSD", 1),
+        ]:
+            data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
+            data.append({"symbol": "ETHUSDT", "timestamp": i, "metric": m, "value": v})
+    data.extend([
+        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 200},
+        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 2000},
+        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 2},
+        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 50},
+        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 500},
+        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 1},
+    ])
+    _setup(engine, data)
+    phase = detect_market_phase(engine)
+    assert phase == "bull"
+
