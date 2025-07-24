@@ -951,3 +951,8 @@ SHOW VARIABLES WHERE Variable_name IN (
   'read_buffer_size',
   'read_rnd_buffer_size'
 );
+
+SELECT DISTINCT symbol FROM cm_onchain_metrics;
+SELECT DISTINCT metric FROM cm_onchain_metrics;
+SELECT DISTINCT symbol, metric FROM cm_onchain_metrics;
+

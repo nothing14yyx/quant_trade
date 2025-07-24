@@ -302,5 +302,6 @@
   "ZENUSDT": "zencash",
   "DOGSUSDT": "dogs-2",
   "QNTUSDT": "quant-network",
-  "RUNEUSDT": "thorchain"
+  "RUNEUSDT": "thorchain",
+  "SXTUSDT": "space-and-time"
 }
