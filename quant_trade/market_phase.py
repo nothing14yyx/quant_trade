@@ -10,6 +10,9 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
     """根据活跃地址与市值判断市场阶段。
 
+    该函数从配置文件读取 ``market_phase.symbol``（默认为 ``"BTCUSDT"``），
+    并据此筛选对应交易对的数据。
+
     返回值为 "bull"、"bear" 或 "range"。
     """
     cfg = ConfigManager(config_path).get("market_phase", {})
@@ -19,9 +22,11 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
     metrics = list(dict.fromkeys(base + [m for m in metrics if m not in base]))
     placeholders = ",".join(f"'{m}'" for m in metrics)
     q = text(
-        "SELECT timestamp, metric, value FROM cm_onchain_metrics "
-        "WHERE symbol=:symbol AND metric IN ({placeholders}) "
-        "ORDER BY timestamp DESC LIMIT 120".format(placeholders=placeholders)
+        (
+            "SELECT timestamp, metric, value FROM cm_onchain_metrics "
+            "WHERE symbol=:symbol AND metric IN ({placeholders}) "
+            "ORDER BY timestamp DESC LIMIT 120"
+        ).format(placeholders=placeholders)
     )
     df = pd.read_sql(q, engine, params={"symbol": symbol}, parse_dates=["timestamp"])
     if df.empty:
