@@ -17,7 +17,13 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
     """
     cfg = ConfigManager(config_path).get("market_phase", {})
     metrics = cfg.get("metrics", ["AdrActCnt", "CapMrktCurUSD", "FeeTotUSD"])
-    symbol = cfg.get("symbol", "BTCUSDT")
+    symbols_cfg = cfg.get("symbols")
+    if symbols_cfg is None:
+        symbol = cfg.get("symbol", "BTCUSDT")
+        symbols = [symbol]
+    else:
+        symbols = symbols_cfg if isinstance(symbols_cfg, list) else [symbols_cfg]
+
     base = ["AdrActCnt", "CapMrktCurUSD"]
     metrics = list(dict.fromkeys(base + [m for m in metrics if m not in base]))
     placeholders = ",".join(f"'{m}'" for m in metrics)
@@ -28,12 +34,18 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
             "ORDER BY timestamp DESC LIMIT 120"
         ).format(placeholders=placeholders)
     )
-    df = pd.read_sql(q, engine, params={"symbol": symbol}, parse_dates=["timestamp"])
+
+    df_list = []
+    for symbol in symbols:
+        tmp = pd.read_sql(q, engine, params={"symbol": symbol}, parse_dates=["timestamp"])
+        df_list.append(tmp)
+    df = pd.concat(df_list, ignore_index=True)
+
     if df.empty:
         return "range"
 
     df = (
-        df.pivot(index="timestamp", columns="metric", values="value")
+        df.pivot_table(index="timestamp", columns="metric", values="value", aggfunc="mean")
         .sort_index()
     )
 

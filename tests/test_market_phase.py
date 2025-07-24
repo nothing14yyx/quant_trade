@@ -1,5 +1,6 @@
 import pandas as pd
 import sqlalchemy
+import yaml
 
 from quant_trade.market_phase import detect_market_phase
 from quant_trade.tests.test_utils import make_dummy_rsg
@@ -122,5 +123,32 @@ def test_detect_market_phase_symbol_filter():
     ])
     _setup(engine, data)
     phase = detect_market_phase(engine)
+    assert phase == "bull"
+
+
+def test_detect_market_phase_multi_symbols(tmp_path):
+    engine = sqlalchemy.create_engine("sqlite:///:memory:")
+    data = []
+    for i in range(39):
+        for m, v in [
+            ("AdrActCnt", 100),
+            ("CapMrktCurUSD", 1000),
+            ("FeeTotUSD", 1),
+        ]:
+            data.append({"symbol": "BTCUSDT", "timestamp": i, "metric": m, "value": v})
+            data.append({"symbol": "ETHUSDT", "timestamp": i, "metric": m, "value": v})
+    data.extend([
+        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 200},
+        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 2000},
+        {"symbol": "BTCUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 2},
+        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "AdrActCnt", "value": 200},
+        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "CapMrktCurUSD", "value": 2000},
+        {"symbol": "ETHUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 2},
+    ])
+    _setup(engine, data)
+
+    cfg_path = tmp_path / "cfg.yaml"
+    yaml.safe_dump({"market_phase": {"symbols": ["BTCUSDT", "ETHUSDT"]}}, cfg_path.open("w"))
+    phase = detect_market_phase(engine, cfg_path)
     assert phase == "bull"
 
