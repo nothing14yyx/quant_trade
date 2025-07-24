@@ -21,11 +21,19 @@ coinmetrics:
   - SplyCur
 
 market_phase:
+  # 指标列表，可按需增删
   metrics:
   - AdrActCnt
   - CapMrktCurUSD
   - FeeTotUSD
-  # 可填写 symbols 列表以同时参考多个交易对
+  # 每个指标的权重示例，若省略则均分
+  weights:
+    AdrActCnt: 1.0
+    CapMrktCurUSD: 1.0
+    FeeTotUSD: 1.0
+  # 计算滚动 Z 分数的窗口
+  window: 30
+  # 默认仅使用单个 symbol，可填写 symbols 列表以同时参考多个交易对
   symbol: "BTCUSDT"
   # symbols: ["BTCUSDT", "ETHUSDT"]
 
