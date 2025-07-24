@@ -25,6 +25,7 @@ market_phase:
   - AdrActCnt
   - CapMrktCurUSD
   - FeeTotUSD
+  symbol: "BTCUSDT"
 
 mysql:
   host: "localhost"
