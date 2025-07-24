@@ -10,6 +10,9 @@ CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
     """根据活跃地址与市值判断市场阶段。
 
+    该函数从配置文件读取 ``market_phase.symbol``（默认为 ``"BTCUSDT"``），
+    并据此筛选对应交易对的数据。
+
     返回值为 "bull"、"bear" 或 "range"。
     """
     cfg = ConfigManager(config_path).get("market_phase", {})
