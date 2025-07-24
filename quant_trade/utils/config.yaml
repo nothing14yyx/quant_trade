@@ -21,10 +21,18 @@ coinmetrics:
   - SplyCur
 
 market_phase:
+  # 判断市场阶段参考的指标
   metrics:
   - AdrActCnt
   - CapMrktCurUSD
   - FeeTotUSD
+  # 指标权重示例，可按需调整
+  weights:
+    AdrActCnt: 1.0
+    CapMrktCurUSD: 1.0
+    FeeTotUSD: 1.0
+  # 计算均值的窗口
+  window: 30
   # 可填写 symbols 列表以同时参考多个交易对
   symbol: "BTCUSDT"
   # symbols: ["BTCUSDT", "ETHUSDT"]

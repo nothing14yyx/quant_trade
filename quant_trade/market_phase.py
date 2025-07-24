@@ -17,6 +17,7 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
     """
     cfg = ConfigManager(config_path).get("market_phase", {})
     metrics = cfg.get("metrics", ["AdrActCnt", "CapMrktCurUSD", "FeeTotUSD"])
+    window = int(cfg.get("window", 30))
     symbols_cfg = cfg.get("symbols")
     if symbols_cfg is None:
         symbol = cfg.get("symbol", "BTCUSDT")
@@ -54,8 +55,8 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
     if aa.dropna().empty or cap.dropna().empty:
         return "range"
 
-    aa_ma = aa.rolling(window=30, min_periods=1).mean().iloc[-1]
-    cap_ma = cap.rolling(window=30, min_periods=1).mean().iloc[-1]
+    aa_ma = aa.rolling(window=window, min_periods=1).mean().iloc[-1]
+    cap_ma = cap.rolling(window=window, min_periods=1).mean().iloc[-1]
 
     cur_aa = aa.iloc[-1]
     cur_cap = cap.iloc[-1]
@@ -69,7 +70,7 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
         series = pd.to_numeric(df.get(m), errors="coerce")
         if series.dropna().empty:
             continue
-        ma = series.rolling(window=30, min_periods=1).mean().iloc[-1]
+        ma = series.rolling(window=window, min_periods=1).mean().iloc[-1]
         cur = series.iloc[-1]
         bull_cond &= cur > ma
         bear_cond &= cur < ma
