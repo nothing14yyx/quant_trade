@@ -1622,7 +1622,8 @@ class RobustSignalGenerator:
         try:
             from .market_phase import detect_market_phase
 
-            phase = detect_market_phase(engine)
+            data = detect_market_phase(engine)
+            phase = data.get("TOTAL", {}).get("phase", "range")
         except Exception as e:
             logger.warning("detect_market_phase failed: %s", e)
             phase = "range"

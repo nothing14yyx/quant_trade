@@ -44,8 +44,8 @@ def test_detect_market_phase():
         "value": 2,
     })
     _setup(engine, data)
-    phase = detect_market_phase(engine)
-    assert phase == "bull"
+    res = detect_market_phase(engine)
+    assert res["TOTAL"]["phase"] == "bull"
 
 
 def test_phase_threshold_adjustment():
@@ -122,8 +122,8 @@ def test_detect_market_phase_symbol_filter():
         {"symbol": "ETHUSDT", "timestamp": 39, "metric": "FeeTotUSD", "value": 1},
     ])
     _setup(engine, data)
-    phase = detect_market_phase(engine)
-    assert phase == "bull"
+    res = detect_market_phase(engine)
+    assert res["TOTAL"]["phase"] == "bull"
 
 
 def test_detect_market_phase_multi_symbols(tmp_path):
@@ -149,6 +149,6 @@ def test_detect_market_phase_multi_symbols(tmp_path):
 
     cfg_path = tmp_path / "cfg.yaml"
     yaml.safe_dump({"market_phase": {"symbols": ["BTCUSDT", "ETHUSDT"]}}, cfg_path.open("w"))
-    phase = detect_market_phase(engine, cfg_path)
-    assert phase == "bull"
+    res = detect_market_phase(engine, cfg_path)
+    assert res["TOTAL"]["phase"] == "bull"
 
