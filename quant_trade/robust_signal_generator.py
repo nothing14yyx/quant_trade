@@ -1622,12 +1622,17 @@ class RobustSignalGenerator:
         try:
             from .market_phase import detect_market_phase
 
-            phase = detect_market_phase(engine)
+            phase_info = detect_market_phase(engine)
+            if isinstance(phase_info, dict):
+                phase = phase_info.get("TOTAL", {}).get("phase", "range")
+            else:
+                phase = phase_info
         except Exception as e:
             logger.warning("detect_market_phase failed: %s", e)
+            phase_info = "range"
             phase = "range"
 
-        self.market_phase = phase
+        self.market_phase = phase_info
         self.phase_th_mult = {
             "bull": 0.9,
             "bear": 1.1,

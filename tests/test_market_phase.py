@@ -152,3 +152,17 @@ def test_detect_market_phase_multi_symbols(tmp_path):
     phase = detect_market_phase(engine, cfg_path)
     assert phase == "bull"
 
+
+def test_update_market_phase_dict(monkeypatch):
+    rsg = make_dummy_rsg()
+
+    def fake_detect(engine):
+        return {"TOTAL": {"phase": "bear"}}
+
+    monkeypatch.setattr("quant_trade.market_phase.detect_market_phase", fake_detect)
+    rsg.update_market_phase(None)
+
+    assert isinstance(rsg.market_phase, dict)
+    assert rsg.market_phase["TOTAL"]["phase"] == "bear"
+    assert rsg.phase_th_mult > 1.0
+
