@@ -15,7 +15,7 @@
     "TOTAL": {"phase": "range", "S": 0.3}
 }
 ```
-`RobustSignalGenerator.update_market_phase()` 会读取 `market_phase.phase_th_mult` 调整阈值系数，例如：
+`RobustSignalGenerator.update_market_phase()` 会读取 `market_phase.phase_th_mult` 与 `phase_dir_mult` 调整阈值和多空倾向，例如：
 
 ```yaml
 market_phase:
@@ -23,6 +23,16 @@ market_phase:
     bull: 0.8
     bear: 1.2
     range: 1.0
+  phase_dir_mult:
+    bull:
+      long: 1.2
+      short: 0.8
+    bear:
+      long: 0.8
+      short: 1.2
+    range:
+      long: 1.0
+      short: 1.0
 ```
 - **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子；同时加入 HV_7d/14d/30d、KC 宽度变化率、Ichimoku 基准线、VWAP、随机指标等新指标，并支持买卖比、资金流量比、成交量密度、价差百分比及 BTC/ETH 短期相关性。
   另外新增 `sma_5_*`、`sma_20_*` 均线及其交叉比值 `ma_ratio_5_20`，用于衡量短中期趋势变化。
