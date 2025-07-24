@@ -19,9 +19,11 @@ def detect_market_phase(engine, config_path: str | Path = CONFIG_PATH) -> str:
     metrics = list(dict.fromkeys(base + [m for m in metrics if m not in base]))
     placeholders = ",".join(f"'{m}'" for m in metrics)
     q = text(
-        "SELECT timestamp, metric, value FROM cm_onchain_metrics "
-        "WHERE symbol=:symbol AND metric IN ({placeholders}) "
-        "ORDER BY timestamp DESC LIMIT 120".format(placeholders=placeholders)
+        (
+            "SELECT timestamp, metric, value FROM cm_onchain_metrics "
+            "WHERE symbol=:symbol AND metric IN ({placeholders}) "
+            "ORDER BY timestamp DESC LIMIT 120"
+        ).format(placeholders=placeholders)
     )
     df = pd.read_sql(q, engine, params={"symbol": symbol}, parse_dates=["timestamp"])
     if df.empty:
