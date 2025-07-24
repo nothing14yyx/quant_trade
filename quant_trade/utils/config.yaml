@@ -34,8 +34,8 @@ market_phase:
   # 计算滚动 Z 分数的窗口
   window: 30
   # 默认仅使用单个 symbol，可填写 symbols 列表以同时参考多个交易对
-  symbol: "BTCUSDT"
-  # symbols: ["BTCUSDT", "ETHUSDT"]
+#  symbol: "BTCUSDT"
+  symbols: ["BTCUSDT", "ETHUSDT"]
 
 mysql:
   host: "localhost"
