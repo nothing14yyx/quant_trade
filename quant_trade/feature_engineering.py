@@ -689,20 +689,6 @@ class FeatureEngineer:
 
             df = df.drop_duplicates(subset=["symbol", "open_time"])
 
-            if table_exists:
-                try:
-                    existing = pd.read_sql("SELECT symbol, open_time FROM features", self.engine)
-                    existing["open_time"] = pd.to_datetime(existing["open_time"])
-                except Exception as e:  # pragma: no cover - unexpected db error
-                    logger.warning("读取已存在数据失败：%s", e)
-                    existing = pd.DataFrame()
-                if not existing.empty:
-                    df["open_time"] = pd.to_datetime(df["open_time"])
-                    mask = df.set_index(["symbol", "open_time"]).index.isin(
-                        existing.set_index(["symbol", "open_time"]).index
-                    )
-                    df = df.loc[~mask].copy()
-
             if df.empty:
                 logger.info("✅ 无新增 features 数据需要写入")
                 return
@@ -725,8 +711,25 @@ class FeatureEngineer:
                         sql_type = "TEXT"
                     with self.engine.begin() as conn:
                         conn.execute(text(f"ALTER TABLE features ADD COLUMN `{col}` {sql_type}"))
+                dialect = self.engine.url.get_backend_name()
+                cols = ", ".join(f"`{c}`" for c in df.columns)
+                placeholders = ", ".join(f":{c}" for c in df.columns)
+                if dialect == "sqlite":
+                    prefix = "OR IGNORE"
+                elif dialect.startswith("mysql"):
+                    prefix = "IGNORE"
+                else:
+                    prefix = ""
+                sql = text(f"INSERT {prefix} INTO features ({cols}) VALUES ({placeholders})")
+                records = []
+                for rec in df.to_dict(orient="records"):
+                    for k, v in rec.items():
+                        if isinstance(v, pd.Timestamp):
+                            rec[k] = v.to_pydatetime()
+                    records.append(rec)
                 try:
-                    df.to_sql("features", self.engine, if_exists="append", index=False)
+                    with self.engine.begin() as conn:
+                        conn.execute(sql, records)
                     logger.info("✅ 已追加写入 MySQL 表 `features`")
                 except IntegrityError as e:  # pragma: no cover - defensive
                     logger.warning("跳过部分重复行：%s", e)
