@@ -53,3 +53,19 @@ def test_write_output_skip_duplicates(tmp_path):
     out = pd.read_sql('features', engine).sort_values('open_time')
     assert len(out) == 2
     assert out['val'].tolist() == [1.0, 3.0]
+
+
+def test_write_output_replace_nan(tmp_path):
+    engine = sqlalchemy.create_engine('sqlite:///:memory:')
+    fe = FeatureEngineer.__new__(FeatureEngineer)
+    fe.engine = engine
+    fe.merged_table_path = tmp_path / 'dummy.csv'
+    df = pd.DataFrame({
+        'symbol': ['BTCUSDT'],
+        'interval': ['1h'],
+        'open_time': [pd.Timestamp('2020-01-01 00:00:00')],
+        'val': [float('nan')],
+    })
+    fe._write_output(df, save_to_db=True, append=True)
+    out = pd.read_sql('features', engine)
+    assert out['val'].isna().iloc[0]
