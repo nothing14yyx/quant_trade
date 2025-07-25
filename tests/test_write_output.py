@@ -7,12 +7,15 @@ from quant_trade.feature_engineering import FeatureEngineer
 def test_write_output_add_missing_cols(tmp_path):
     engine = sqlalchemy.create_engine('sqlite:///:memory:')
     with engine.begin() as conn:
-        conn.exec_driver_sql('CREATE TABLE features (symbol TEXT, open_time TEXT)')
+        conn.exec_driver_sql(
+            'CREATE TABLE features (symbol TEXT, interval TEXT, open_time TEXT)'
+        )
     fe = FeatureEngineer.__new__(FeatureEngineer)
     fe.engine = engine
     fe.merged_table_path = tmp_path / 'dummy.csv'
     df = pd.DataFrame({
         'symbol': ['BTCUSDT'],
+        'interval': ['1h'],
         'open_time': [pd.Timestamp('2020-01-01 00:00:00')],
         'extra_col': [1.23]
     })
@@ -27,10 +30,10 @@ def test_write_output_skip_duplicates(tmp_path):
     engine = sqlalchemy.create_engine('sqlite:///:memory:')
     with engine.begin() as conn:
         conn.exec_driver_sql(
-            'CREATE TABLE features (symbol TEXT, open_time TEXT, val REAL, PRIMARY KEY (symbol, open_time))'
+            'CREATE TABLE features (symbol TEXT, interval TEXT, open_time TEXT, val REAL, PRIMARY KEY (symbol, interval, open_time))'
         )
         conn.exec_driver_sql(
-            "INSERT INTO features (symbol, open_time, val) VALUES ('BTCUSDT', '2020-01-01 00:00:00', 1.0)"
+            "INSERT INTO features (symbol, interval, open_time, val) VALUES ('BTCUSDT', '1h', '2020-01-01 00:00:00', 1.0)"
         )
 
     fe = FeatureEngineer.__new__(FeatureEngineer)
@@ -39,6 +42,7 @@ def test_write_output_skip_duplicates(tmp_path):
     df = pd.DataFrame(
         {
             'symbol': ['BTCUSDT', 'BTCUSDT'],
+            'interval': ['1h', '1h'],
             'open_time': [pd.Timestamp('2020-01-01 00:00:00'), pd.Timestamp('2020-01-01 01:00:00')],
             'val': [2.0, 3.0],
         }
