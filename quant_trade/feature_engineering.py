@@ -62,6 +62,26 @@ FUTURE_COLS = [
     "target_d1",
 ]
 
+# 基础列，合并批次时保持在前，且不参与归一化
+BASE_COLS = [
+    "open_time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "close_time",
+    "quote_asset_volume",
+    "num_trades",
+    "taker_buy_base",
+    "taker_buy_quote",
+    "symbol",
+    "target",
+] + FUTURE_COLS
+
+# FUTURE_COLS 中包含 "target"，拼接后需去重
+BASE_COLS = list(dict.fromkeys(BASE_COLS))
+
 
 def calc_cross_features(
     df1h: pd.DataFrame, df4h: pd.DataFrame, df1d: pd.DataFrame
@@ -306,7 +326,8 @@ class FeatureEngineer:
         # 从 feature_cols.txt 自动读取所有待标准化列；若文件不存在，先设为空列表
         if self.feature_cols_path.is_file():
             lines = self.feature_cols_path.read_text(encoding="utf-8").splitlines()
-            self.feature_cols_all: List[str] = [c.strip() for c in lines if c.strip()]
+            cols = [c.strip() for c in lines if c.strip()]
+            self.feature_cols_all: List[str] = [c for c in cols if c not in BASE_COLS]
         else:
             self.feature_cols_all = []
 
@@ -608,24 +629,7 @@ class FeatureEngineer:
         else:
             df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
 
-        base_cols = [
-            "open_time",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "close_time",
-            "quote_asset_volume",
-            "num_trades",
-            "taker_buy_base",
-            "taker_buy_quote",
-            "symbol",
-            "target",
-        ] + FUTURE_COLS
-        # FUTURE_COLS 中包含 "target"，拼接后需去重，避免生成重复列
-        base_cols = list(dict.fromkeys(base_cols))
-        base_cols_exist = [c for c in base_cols if c in df_all.columns]
+        base_cols_exist = [c for c in BASE_COLS if c in df_all.columns]
         other_cols = [c for c in df_all.columns if c not in base_cols_exist]
         df_all = df_all[base_cols_exist + other_cols]
 
@@ -678,7 +682,7 @@ class FeatureEngineer:
         # 同步更新全局特征列表，确保后续批次字段一致
         self.feature_cols_all = feat_cols_all
 
-        final_other_cols = [c for c in df_final.columns if c not in base_cols]
+        final_other_cols = [c for c in df_final.columns if c not in BASE_COLS]
         return df_final, final_other_cols, scaler_params if self.mode == "train" else None
 
     def _write_output(self, df: pd.DataFrame, save_to_db: bool, append: bool) -> None:
