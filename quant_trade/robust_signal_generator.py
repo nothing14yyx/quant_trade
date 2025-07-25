@@ -227,7 +227,9 @@ class RobustSignalGeneratorConfig:
 
 def softmax(x):
     """简单 softmax 实现"""
-    arr = np.array(x, dtype=float)
+    arr = np.asarray(x, dtype=float)
+    if np.all(np.isnan(arr)):
+        return np.full_like(arr, np.nan)
     ex = np.exp(arr - np.nanmax(arr))
     return ex / ex.sum()
 
