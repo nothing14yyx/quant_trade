@@ -198,12 +198,14 @@ dynamic_threshold:
 如需在首次运行前创建或补充字段，可执行
 `mysql < scripts/migrate_add_feature_columns.sql`。
 
-通过 `python param_search.py --rows 10000`(可选) 调整信号权重。
+通过 `python -m quant_trade.param_search --rows 10000` (可选) 调整信号权重。
 参数搜索默认按时间拆分为训练集和验证集，可通过 `--test-ratio` 调整验证集比例。
 脚本默认使用 Optuna 搜索，并同时优化 Δ-boost 参数，例如：
 
 ```bash
-python param_search.py --trials 50
+python -m quant_trade.param_search --trials 50
+```
+以上示例需在项目根目录执行，或确保该目录已加入 `PYTHONPATH`。
 
 若脚本抛出 `ValueError("no trades found during parameter search")`，请检查
 `features` 表是否含有数据，并确认 `generate_signal` 是否能正常返回信号。
@@ -211,8 +213,9 @@ python param_search.py --trials 50
 回测脚本 `backtester.py` 支持 `--recent-days N` 参数，可只回测最近 N 天的数据，例如：
 
 ```bash
-python backtester.py --recent-days 7
-
+python -m quant_trade.backtester --recent-days 7
+```
+同样地，其它脚本也推荐通过 `python -m quant_trade.<name>` 方式运行。
 ## 生成离线价位表与缩放参数
 
 同步行情数据后，可运行：
