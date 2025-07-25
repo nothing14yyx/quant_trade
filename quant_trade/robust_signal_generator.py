@@ -318,6 +318,9 @@ def _calc_history_base(history, base, quantile, window, decay, limit=None):
         if len(history) == 0:
             return base
         arr = np.asarray(list(history)[-window:], dtype=float)
+    arr = arr[~np.isnan(arr)]
+    if arr.size == 0:
+        return base
     arr = np.abs(arr)
     if arr.size == 0:
         return base
