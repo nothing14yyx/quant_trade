@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import pytest
 
 from quant_trade.backtester import simulate_trades
@@ -236,3 +237,64 @@ def test_run_backtest_recent_days(monkeypatch):
     times = captured["times"]
     assert times.is_monotonic_increasing
     assert times.min() >= pd.Timestamp("2024-01-03")
+
+
+def test_run_backtest_skip_invalid_features(monkeypatch, caplog):
+    import logging
+    import quant_trade.backtester as bt
+
+    monkeypatch.setattr(bt, "load_config", lambda: {})
+    monkeypatch.setattr(bt, "connect_mysql", lambda cfg: None)
+
+    def fake_read_sql(sql, engine, parse_dates=None, params=None):
+        return pd.DataFrame(
+            {
+                "symbol": ["BTCUSDT"] * 3,
+                "open_time": pd.date_range("2024-01-01", periods=3, freq="h"),
+                "close_time": pd.date_range("2024-01-01", periods=3, freq="h")
+                + pd.Timedelta(hours=1),
+                "open": [1, 1, 1],
+                "high": [1, 1, 1],
+                "low": [1, 1, 1],
+                "close": [1, 1, 1],
+                "volume": [1, 1, 1],
+                "feat": [np.nan, np.nan, np.nan],
+            }
+        )
+
+    monkeypatch.setattr(bt.pd, "read_sql", fake_read_sql)
+    monkeypatch.setattr(bt, "calc_features_raw", lambda df, period: pd.DataFrame(index=df.index))
+    monkeypatch.setattr(bt, "simulate_trades", lambda *a, **k: pd.DataFrame(columns=["position_size", "ret"]))
+    monkeypatch.setattr(pd.DataFrame, "to_csv", lambda *a, **k: None)
+    monkeypatch.setattr(bt, "FEATURE_COLS_1H", ["feat"])
+    monkeypatch.setattr(bt, "FEATURE_COLS_4H", [])
+    monkeypatch.setattr(bt, "FEATURE_COLS_D1", [])
+
+    class DummyRSG:
+        def __init__(self, *a, **k):
+            pass
+
+        def update_ic_scores(self, df, group_by=None):
+            pass
+
+        def generate_signal(self, *a, **k):
+            return {
+                "signal": 0,
+                "score": 0.0,
+                "position_size": 0.0,
+                "take_profit": None,
+                "stop_loss": None,
+            }
+
+    class DummyCfg:
+        @staticmethod
+        def from_cfg(cfg):
+            return None
+
+    monkeypatch.setattr(bt, "RobustSignalGenerator", DummyRSG)
+    monkeypatch.setattr(bt, "RobustSignalGeneratorConfig", DummyCfg)
+
+    with caplog.at_level(logging.WARNING):
+        bt.run_backtest()
+
+    assert "缺少有效特征列" in caplog.text
