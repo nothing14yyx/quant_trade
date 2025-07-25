@@ -228,10 +228,13 @@ class RobustSignalGeneratorConfig:
 def softmax(x):
     """简单 softmax 实现"""
     arr = np.asarray(x, dtype=float)
-    if np.all(np.isnan(arr)):
-        return np.full_like(arr, np.nan)
-    ex = np.exp(arr - np.nanmax(arr))
-    return ex / ex.sum()
+    result = np.full_like(arr, np.nan)
+    valid = arr[~np.isnan(arr)]
+    if valid.size == 0:
+        return result
+    ex = np.exp(valid - np.nanmax(valid))
+    result[~np.isnan(arr)] = ex / ex.sum()
+    return result
 
 
 def sigmoid(x):
