@@ -4,6 +4,7 @@ import logging
 import pandas as pd
 import numpy as np
 import yaml
+from sqlalchemy import text
 from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
@@ -158,11 +159,24 @@ def calc_equity_curve(trades_df: pd.DataFrame) -> pd.Series:
 def run_backtest(*, recent_days: int | None = None):
     cfg = load_config()
     engine = connect_mysql(cfg)
-    df = pd.read_sql('SELECT * FROM features', engine, parse_dates=['open_time','close_time'])
+
     if recent_days:
-        end_time = df['open_time'].max()
+        max_q = "SELECT MAX(open_time) AS max_open_time FROM features"
+        end_time = pd.read_sql(max_q, engine, parse_dates=["max_open_time"]).iloc[0, 0]
         start_time = end_time - pd.Timedelta(days=recent_days)
-        df = df[df['open_time'] >= start_time]
+        query = text("SELECT * FROM features WHERE open_time >= :start")
+        df = pd.read_sql(
+            query,
+            engine,
+            params={"start": start_time},
+            parse_dates=["open_time", "close_time"],
+        )
+    else:
+        df = pd.read_sql(
+            "SELECT * FROM features",
+            engine,
+            parse_dates=["open_time", "close_time"],
+        )
 
     # 按币种分组
     all_symbols = df['symbol'].unique().tolist()
