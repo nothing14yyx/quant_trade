@@ -687,7 +687,7 @@ class FeatureEngineer:
             inspector = inspect(self.engine)
             table_exists = "features" in inspector.get_table_names()
 
-            df = df.drop_duplicates(subset=["symbol", "open_time"])
+            df = df.drop_duplicates(subset=["symbol", "interval", "open_time"])
 
             if df.empty:
                 logger.info("✅ 无新增 features 数据需要写入")
@@ -715,12 +715,15 @@ class FeatureEngineer:
                 cols = ", ".join(f"`{c}`" for c in df.columns)
                 placeholders = ", ".join(f":{c}" for c in df.columns)
                 if dialect == "sqlite":
-                    prefix = "OR IGNORE"
+                    sql = text(
+                        f"INSERT OR IGNORE INTO features ({cols}) VALUES ({placeholders})"
+                    )
                 elif dialect.startswith("mysql"):
-                    prefix = "IGNORE"
+                    sql = text(
+                        f"INSERT IGNORE INTO features ({cols}) VALUES ({placeholders})"
+                    )
                 else:
-                    prefix = ""
-                sql = text(f"INSERT {prefix} INTO features ({cols}) VALUES ({placeholders})")
+                    sql = text(f"INSERT INTO features ({cols}) VALUES ({placeholders})")
                 records = []
                 for rec in df.to_dict(orient="records"):
                     for k, v in rec.items():
