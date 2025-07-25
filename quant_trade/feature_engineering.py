@@ -693,6 +693,9 @@ class FeatureEngineer:
 
             df = df.drop_duplicates(subset=["symbol", "interval", "open_time"])
 
+            # MySQL 不支持直接插入 NaN，需要先替换为 None
+            df = df.where(pd.notna(df), None)
+
             if df.empty:
                 logger.info("✅ 无新增 features 数据需要写入")
                 return
