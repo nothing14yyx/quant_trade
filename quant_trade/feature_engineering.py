@@ -688,20 +688,8 @@ class FeatureEngineer:
             table_exists = "features" in inspector.get_table_names()
 
             df = df.drop_duplicates(subset=["symbol", "open_time"])
-
-            if table_exists:
-                try:
-                    existing = pd.read_sql("SELECT symbol, open_time FROM features", self.engine)
-                    existing["open_time"] = pd.to_datetime(existing["open_time"])
-                except Exception as e:  # pragma: no cover - unexpected db error
-                    logger.warning("读取已存在数据失败：%s", e)
-                    existing = pd.DataFrame()
-                if not existing.empty:
-                    df["open_time"] = pd.to_datetime(df["open_time"])
-                    mask = df.set_index(["symbol", "open_time"]).index.isin(
-                        existing.set_index(["symbol", "open_time"]).index
-                    )
-                    df = df.loc[~mask].copy()
+            if pd.api.types.is_datetime64_any_dtype(df["open_time"]):
+                df["open_time"] = df["open_time"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
             if df.empty:
                 logger.info("✅ 无新增 features 数据需要写入")
@@ -725,11 +713,28 @@ class FeatureEngineer:
                         sql_type = "TEXT"
                     with self.engine.begin() as conn:
                         conn.execute(text(f"ALTER TABLE features ADD COLUMN `{col}` {sql_type}"))
-                try:
-                    df.to_sql("features", self.engine, if_exists="append", index=False)
-                    logger.info("✅ 已追加写入 MySQL 表 `features`")
-                except IntegrityError as e:  # pragma: no cover - defensive
-                    logger.warning("跳过部分重复行：%s", e)
+
+                def insert_ignore(table, conn, keys, data_iter):
+                    data = [dict(zip(keys, row)) for row in data_iter]
+                    if conn.dialect.name == "mysql":
+                        from sqlalchemy.dialects.mysql import insert as dialect_insert
+                        stmt = dialect_insert(table.table).prefix_with("IGNORE").values(data)
+                    elif conn.dialect.name == "sqlite":
+                        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+                        stmt = dialect_insert(table.table).prefix_with("OR IGNORE").values(data)
+                    else:
+                        from sqlalchemy import insert
+                        stmt = insert(table.table).values(data)
+                    conn.execute(stmt)
+
+                df.to_sql(
+                    "features",
+                    self.engine,
+                    if_exists="append",
+                    index=False,
+                    method=insert_ignore,
+                )
+                logger.info("✅ 已追加写入 MySQL 表 `features`")
         else:
             mode = "a" if append else "w"
             header = not append
