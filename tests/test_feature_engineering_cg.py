@@ -213,3 +213,17 @@ def test_onchain_features_cross_merge():
     assert 'active_addr_roc_4h' in merged
     assert 'mvrv_ratio_d1' in merged
 
+
+def test_btc_correlation_fallback():
+    times = pd.date_range('2020-01-01', periods=3, freq='h')
+    df = pd.DataFrame({
+        'open': [1, 2, 3],
+        'high': [2, 3, 4],
+        'low': [0.5, 1.5, 2.5],
+        'close': [1.5, 2.5, 3.5],
+        'volume': [100, 100, 100],
+    }, index=times)
+
+    feats = calc_features_raw(df, '1h', symbol='BTCUSDT', long_window=1)
+    assert 'btc_correlation_1h_1h' in feats
+

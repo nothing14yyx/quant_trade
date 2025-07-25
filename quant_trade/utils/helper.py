@@ -621,6 +621,10 @@ def calc_features_raw(
 
     btc_price = _find_price(["btc_close", "close_btc", "btcusdt_close", "btc_price"])
     eth_price = _find_price(["eth_close", "close_eth", "ethusdt_close", "eth_price"])
+    if btc_price is None and symbol and symbol.upper().startswith("BTC"):
+        btc_price = feats["close"]
+    if eth_price is None and symbol and symbol.upper().startswith("ETH"):
+        eth_price = feats["close"]
     asset_ret = feats["close"].pct_change(fill_method=None)
     _check_index("correlation")
     if btc_price is not None:
