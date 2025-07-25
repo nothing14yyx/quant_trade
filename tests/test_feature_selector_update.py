@@ -4,7 +4,7 @@ import yaml
 import pytest
 
 
-def test_update_selected_features(tmp_path, monkeypatch):
+def test_update_selected_features(tmp_path):
     df = pd.DataFrame({
         'open_time': pd.date_range('2020-01-01', periods=100, freq='h'),
         'f1': range(100),
@@ -12,8 +12,6 @@ def test_update_selected_features(tmp_path, monkeypatch):
         'target': [i + 0.1 for i in range(100)],
     })
 
-    # 模拟模块在导入时读取数据库
-    monkeypatch.setattr('pandas.read_sql', lambda *a, **k: df)
     fs = importlib.import_module('quant_trade.feature_selector')
     importlib.reload(fs)
 

@@ -8,7 +8,11 @@
 #   5) 相关性阈值降至 0.85，并在此基础上计算 VIF，迭代剔除 VIF>10 的列
 #      (VIF 计算时若数据行数太多，先抽样加速)
 
-import os, yaml, lightgbm as lgb, numpy as np, pandas as pd
+import os
+import yaml
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
 from pathlib import Path
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
@@ -79,12 +83,20 @@ PCA_COMPONENTS = 3
 N_SPLIT   = 5
 MAX_VIF_SAMPLE = 10000    # 计算 VIF 时最多抽样的行数
 
-# ---------- 1. 取特征大表 ----------
-df = pd.read_sql("SELECT * FROM features", engine, parse_dates=["open_time", "close_time"])
+# ---------- 1. 数据加载辅助函数 ----------
+
+def load_feature_data() -> pd.DataFrame:
+    """从数据库读取 `features` 表数据"""
+    return pd.read_sql(
+        "SELECT * FROM features",
+        engine,
+        parse_dates=["open_time", "close_time"],
+    )
 
 
 def select_features(
     target: str,
+    df: pd.DataFrame | None = None,
     corr_thresh: float = CORR_THRESH,
     max_vif: float = MAX_VIF,
     min_cover_map: dict[str, float] = MIN_COVER_MAP,
@@ -92,6 +104,8 @@ def select_features(
     var_thresh: float = VAR_THRESH,
     use_permutation: bool = USE_PERM,
 ) -> None:
+    if df is None:
+        df = load_feature_data()
     orig_cols = {
         "open_time",
         "open",
@@ -327,7 +341,7 @@ if __name__ == "__main__":
 
 
 def update_selected_features(
-    df: pd.DataFrame,
+    df: pd.DataFrame | None,
     period: str,
     target: str,
     yaml_file: Path | str = Path("selected_features/selected_features.yaml"),
@@ -338,8 +352,8 @@ def update_selected_features(
 
     Parameters
     ----------
-    df : pandas.DataFrame
-        含最新特征数据与目标列的表格。
+    df : pandas.DataFrame or None
+        含最新特征数据与目标列的表格，若为 ``None`` 则自动从数据库读取。
     period : str
         周期名称，如 ``"1h"``、``"4h"``。
     target : str
@@ -356,6 +370,9 @@ def update_selected_features(
     list[str]
         更新后的特征列表。
     """
+    if df is None:
+        df = load_feature_data()
+
     yaml_path = Path(yaml_file)
     if not yaml_path.exists():
         logger.warning("%s 不存在", yaml_path)
