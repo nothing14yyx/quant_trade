@@ -228,7 +228,7 @@ def run_single_backtest(
 
 def run_param_search(
     rows: int | None = None,
-    method: str = "grid",
+    method: str = "optuna",
     trials: int = 30,
     tune_delta: bool = True,
     n_jobs: int = 1,
