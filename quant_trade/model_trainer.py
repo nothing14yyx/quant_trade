@@ -284,10 +284,25 @@ for period, tag_dict in feature_cols.items():
         suffix = "" if period == "1h" else f"_{period}"
         required_cols.add(f"{tgt_col_base}{suffix}")
 cols_str = ",".join(sorted(required_cols))
-query = f"SELECT {cols_str} FROM features"
-df = pd.read_sql(query, engine, parse_dates=["open_time"])
-# 确保整表按 open_time 升序排列，再 reset_index
-df = df.sort_values("open_time").reset_index(drop=True)
+
+
+def load_features(
+    *, start_time: pd.Timestamp | str | None = None, rows: int | None = None
+) -> pd.DataFrame:
+    """从数据库读取训练数据，可按时间或行数过滤"""
+    query = f"SELECT {cols_str} FROM features"
+    params: dict[str, object] | None = None
+    if start_time is not None:
+        query += " WHERE open_time >= %(start)s"
+        params = {"start": pd.to_datetime(start_time)}
+    query += " ORDER BY open_time"
+    if rows:
+        query += f" LIMIT {rows}"
+    df = pd.read_sql(query, engine, params=params, parse_dates=["open_time"])
+    return df.sort_values("open_time").reset_index(drop=True)
+
+
+df = load_features()
 
 
 # ---------- 辅助：剔除极端异常样本 ----------
@@ -681,50 +696,59 @@ def train_one(
 
 
 # ---------- 6. 周期 × 方向 × 符号 训练循环 ----------
-symbols = df["symbol"].unique() if train_by_symbol else [None]
+def train_models(
+    *, start_time: pd.Timestamp | str | None = None, rows: int | None = None
+) -> None:
+    """训练所有模型，可选按时间或行数限制加载的数据量"""
+    global df
+    df = load_features(start_time=start_time, rows=rows)
+    symbols = df["symbol"].unique() if train_by_symbol else [None]
 
-for sym in symbols:
-    df_sym = df[df["symbol"] == sym] if sym is not None else df
-    if len(df_sym) < min_rows:
-        continue
-    for rng in time_ranges:
-        df_rng = df_sym
-        if rng.get("start"):
-            df_rng = df_rng[df_rng["open_time"] >= pd.to_datetime(rng["start"])]
-        if rng.get("end"):
-            df_rng = df_rng[df_rng["open_time"] < pd.to_datetime(rng["end"])]
-        df_rng = drop_price_outliers(df_rng)
+    for sym in symbols:
+        df_sym = df[df["symbol"] == sym] if sym is not None else df
+        if len(df_sym) < min_rows:
+            continue
+        for rng in time_ranges:
+            df_rng = df_sym
+            if rng.get("start"):
+                df_rng = df_rng[df_rng["open_time"] >= pd.to_datetime(rng["start"])]
+            if rng.get("end"):
+                df_rng = df_rng[df_rng["open_time"] < pd.to_datetime(rng["end"])]
+            df_rng = drop_price_outliers(df_rng)
 
-        for period, tag_cols in feature_cols.items():
-            if selected_periods and period not in selected_periods:
-                continue
-            if period == "4h":
-                subset = df_rng[df_rng["open_time"].dt.hour % 4 == 0]
-            elif period == "d1":
-                subset = df_rng[df_rng["open_time"].dt.hour == 0]
-            else:
-                subset = df_rng
-
-            for tag, tgt_col_base in targets.items():
-                if selected_tags and tag not in selected_tags:
+            for period, tag_cols in feature_cols.items():
+                if selected_periods and period not in selected_periods:
                     continue
-                file_name = f"model_{period}_{tag}.pkl"
-                logging.info(
-                    f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}"
-                )
-                out_dir = Path("models") / sym if sym is not None else Path("models")
-                out_dir.mkdir(parents=True, exist_ok=True)
-                out_file = out_dir / file_name
-                period_suffix = "" if period == "1h" else f"_{period}"
-                tgt_col = f"{tgt_col_base}{period_suffix}"
-                train_one(
-                    subset.copy(),
-                    tag_cols.get(tag, []),
-                    tgt_col,
-                    out_file,
-                    period,
-                    tag,
-                    regression=(tag in ("vol", "rise", "drawdown")),
-                )
+                if period == "4h":
+                    subset = df_rng[df_rng["open_time"].dt.hour % 4 == 0]
+                elif period == "d1":
+                    subset = df_rng[df_rng["open_time"].dt.hour == 0]
+                else:
+                    subset = df_rng
 
-logging.info("\n✅  All models finished.")
+                for tag, tgt_col_base in targets.items():
+                    if selected_tags and tag not in selected_tags:
+                        continue
+                    file_name = f"model_{period}_{tag}.pkl"
+                    logging.info(
+                        f"\n🚀  Train {period} {sym or 'all'} {rng.get('name','all')} {tag}"
+                    )
+                    out_dir = Path("models") / sym if sym is not None else Path("models")
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    out_file = out_dir / file_name
+                    period_suffix = "" if period == "1h" else f"_{period}"
+                    tgt_col = f"{tgt_col_base}{period_suffix}"
+                    train_one(
+                        subset.copy(),
+                        tag_cols.get(tag, []),
+                        tgt_col,
+                        out_file,
+                        period,
+                        tag,
+                        regression=(tag in ("vol", "rise", "drawdown")),
+                    )
+
+    logging.info("\n✅  All models finished.")
+
+
+train_models()

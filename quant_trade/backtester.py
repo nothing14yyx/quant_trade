@@ -155,10 +155,20 @@ def calc_equity_curve(trades_df: pd.DataFrame) -> pd.Series:
     return (weighted_ret + 1.0).cumprod()
 
 # =========== 融合信号回测 ===========
-def run_backtest(*, recent_days: int | None = None):
+def run_backtest(
+    *, recent_days: int | None = None,
+    start_time: pd.Timestamp | str | None = None,
+) -> None:
     cfg = load_config()
     engine = connect_mysql(cfg)
-    if recent_days:
+    if start_time is not None:
+        df = pd.read_sql(
+            'SELECT * FROM features WHERE open_time >= %(start)s',
+            engine,
+            params={'start': pd.to_datetime(start_time)},
+            parse_dates=['open_time', 'close_time'],
+        )
+    elif recent_days:
         end_time = pd.read_sql(
             'SELECT MAX(open_time) AS end_time FROM features',
             engine,

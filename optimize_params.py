@@ -17,17 +17,20 @@ KEYS = ["ai", "trend", "momentum", "volatility", "volume", "sentiment", "funding
 
 
 def optimize_params(
-    rows: int = 50000,
+    rows: int | None = 50000,
     trials: int = 30,
     out_path: Path | str = CONFIG_PATH,
     method: str = "optuna",
+    start_time: pd.Timestamp | str | None = None,
 ) -> dict:
     """搜索最佳参数并写入配置文件.
 
     Parameters
     ----------
-    rows: int
+    rows: int | None
         读取最近 N 行数据.
+    start_time: pandas.Timestamp or str, optional
+        起始时间, 仅加载该时间之后的数据.
     trials: int
         迭代次数或试验次数.
     out_path: Path | str
@@ -37,10 +40,23 @@ def optimize_params(
     """
     cfg = load_config()
     engine = connect_mysql(cfg)
-    query = "SELECT * FROM features ORDER BY open_time DESC"
+    query = "SELECT * FROM features"
+    params: dict[str, object] | None = None
+    conds = []
+    if start_time is not None:
+        conds.append("open_time >= %(start)s")
+        params = {"start": pd.to_datetime(start_time)}
+    if conds:
+        query += " WHERE " + " AND ".join(conds)
+    query += " ORDER BY open_time DESC"
     if rows:
         query += f" LIMIT {rows}"
-    df = pd.read_sql(query, engine, parse_dates=["open_time", "close_time"])
+    df = pd.read_sql(
+        query,
+        engine,
+        params=params,
+        parse_dates=["open_time", "close_time"],
+    )
     if df.empty:
         raise ValueError("features 表无数据")
     df = df.sort_values("open_time").reset_index(drop=True)
