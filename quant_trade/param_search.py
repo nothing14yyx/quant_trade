@@ -395,7 +395,7 @@ def run_param_search(
             metric = mean_sharpe if not np.isnan(mean_sharpe) else -100.0
             return metric, params, mean_ret, mean_sharpe, trades
 
-        results = Parallel(n_jobs=n_jobs, prefer="threads")(
+        results = Parallel(n_jobs=n_jobs, prefer="processes")(
             delayed(eval_params)(p) for p in tqdm(grid, desc="Grid Search")
         )
 

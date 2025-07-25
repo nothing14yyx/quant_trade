@@ -43,6 +43,7 @@ market_phase:
 -```
 -   现在还可通过 `use_polars=True` 启用 [Polars](https://pola.rs/) 加速批量拼接，
     与 `n_jobs` 结合能更好利用多核性能。
+    并行模式会占用较多 CPU/内存，请在资源允许的环境下使用。
 -   新增 `period_cfg.d1.smooth_window` 参数，可滚动平滑
     `future_max_drawdown_d1`，默认窗口为 3。
 - **ModelTrainer**：使用 LightGBM 训练多周期预测模型。
