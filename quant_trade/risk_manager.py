@@ -32,6 +32,10 @@ class RiskManager:
         if oi_change is not None:
             values.append(abs(oi_change))
 
+        values = [v for v in values if not np.isnan(v)]
+        if not values:
+            return 0.0
+
         risk = float(np.quantile(values, quantile))
         return min(risk, self.cap)
 
