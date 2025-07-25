@@ -206,6 +206,19 @@ def run_backtest(*, recent_days: int | None = None):
         for col in FEATURE_COLS_D1:
             if col not in df_sym: df_sym[col] = np.nan
 
+        key_cols = (
+            ['open', 'high', 'low', 'close', 'volume']
+            + FEATURE_COLS_1H
+            + FEATURE_COLS_4H
+            + FEATURE_COLS_D1
+        )
+        missing = [
+            c for c in key_cols if c not in df_sym.columns or df_sym[c].isna().all()
+        ]
+        if missing:
+            logger.warning("%s 缺少有效特征列：%s，跳过回测", symbol, ",".join(missing))
+            continue
+
         # === 计算未归一化的原始特征，用于动态阈值和 ATR 等逻辑 ===
         base_cols = ['open', 'high', 'low', 'close', 'volume']
         if 'fg_index' in df_sym.columns:
@@ -339,7 +352,10 @@ def run_backtest(*, recent_days: int | None = None):
     logger.info("%s", results_df.to_string(index=False))
 
     # 所有明细也合并导出一份（可选）
-    all_trades = pd.concat(trades_all, ignore_index=True)
+    if trades_all:
+        all_trades = pd.concat(trades_all, ignore_index=True)
+    else:
+        all_trades = pd.DataFrame()
     all_trades.to_csv('backtest_fusion_trades_all.csv', index=False)
     if hasattr(sg, "stop_weight_update_thread"):
         sg.stop_weight_update_thread()
