@@ -234,6 +234,7 @@ def run_param_search(
     n_jobs: int = 1,
     test_ratio: float = 0.2,
     n_splits: int = 1,
+    start_time: pd.Timestamp | str | None = None,
 ) -> None:
     """Search for optimal parameters using a train/validation split.
 
@@ -241,6 +242,8 @@ def run_param_search(
     ----------
     rows: int | None
         Number of recent rows to query from the features table.
+    start_time: pandas.Timestamp or str, optional
+        Only load data with ``open_time`` greater than or equal to this value.
     method: str
         Search algorithm: "grid" or "optuna".
     trials: int
@@ -259,9 +262,22 @@ def run_param_search(
     cfg = load_config()
     engine = connect_mysql(cfg)
     query = "SELECT * FROM features"
+    params: dict[str, object] | None = None
+    conds = []
+    if start_time is not None:
+        conds.append("open_time >= %(start)s")
+        params = {"start": pd.to_datetime(start_time)}
+    if conds:
+        query += " WHERE " + " AND ".join(conds)
+    query += " ORDER BY open_time DESC"
     if rows:
-        query += f" ORDER BY open_time DESC LIMIT {rows}"
-    df = pd.read_sql(query, engine, parse_dates=["open_time", "close_time"])
+        query += f" LIMIT {rows}"
+    df = pd.read_sql(
+        query,
+        engine,
+        params=params,
+        parse_dates=["open_time", "close_time"],
+    )
     if df.empty:
         raise ValueError("features 表无数据")
     df = df.sort_values("open_time").reset_index(drop=True)

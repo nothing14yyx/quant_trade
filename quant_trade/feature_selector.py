@@ -85,11 +85,22 @@ MAX_VIF_SAMPLE = 10000    # 计算 VIF 时最多抽样的行数
 
 # ---------- 1. 数据加载辅助函数 ----------
 
-def load_feature_data() -> pd.DataFrame:
-    """从数据库读取 `features` 表数据"""
+def load_feature_data(
+    *, start_time: pd.Timestamp | str | None = None, rows: int | None = None
+) -> pd.DataFrame:
+    """从数据库读取 ``features`` 表数据，可选按时间或行数过滤"""
+    query = "SELECT * FROM features"
+    params: dict[str, object] | None = None
+    if start_time is not None:
+        query += " WHERE open_time >= %(start)s"
+        params = {"start": pd.to_datetime(start_time)}
+    query += " ORDER BY open_time"
+    if rows:
+        query += f" LIMIT {rows}"
     return pd.read_sql(
-        "SELECT * FROM features",
+        query,
         engine,
+        params=params,
         parse_dates=["open_time", "close_time"],
     )
 
