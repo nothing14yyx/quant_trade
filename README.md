@@ -199,10 +199,10 @@ dynamic_threshold:
 
 通过 `python param_search.py --rows 10000`(可选) 调整信号权重。
 参数搜索默认按时间拆分为训练集和验证集，可通过 `--test-ratio` 调整验证集比例。
-脚本默认同时优化 Δ-boost 参数，例如：
+脚本默认使用 Optuna 搜索，并同时优化 Δ-boost 参数，例如：
 
 ```bash
-python param_search.py --method optuna --trials 50
+python param_search.py --trials 50
 
 若脚本抛出 `ValueError("no trades found during parameter search")`，请检查
 `features` 表是否含有数据，并确认 `generate_signal` 是否能正常返回信号。
