@@ -155,3 +155,84 @@ def test_total_ret_all_in():
     series = trades['ret'] * trades['position_size']
     total_ret = (series + 1.0).cumprod().iloc[-1] - 1.0
     assert total_ret == pytest.approx(0.0, rel=1e-4)
+
+
+def test_run_backtest_recent_days(monkeypatch):
+    import quant_trade.backtester as bt
+
+    monkeypatch.setattr(bt, "load_config", lambda: {})
+    monkeypatch.setattr(bt, "connect_mysql", lambda cfg: None)
+
+    queries: list[tuple[str, dict | None]] = []
+
+    def fake_read_sql(sql, engine, parse_dates=None, params=None):
+        queries.append((sql, params))
+        if "MAX(open_time" in sql:
+            return pd.DataFrame({"end_time": [pd.Timestamp("2024-01-05")]} )
+        assert "WHERE open_time >= %(start)s" in sql
+        assert params["start"] == pd.Timestamp("2024-01-03")
+        df = pd.DataFrame(
+            {
+                "symbol": ["BTCUSDT"] * 3,
+                "open_time": pd.to_datetime([
+                    "2024-01-05 00:00:00",
+                    "2024-01-03 00:00:00",
+                    "2024-01-04 00:00:00",
+                ]),
+                "close_time": pd.to_datetime([
+                    "2024-01-05 01:00:00",
+                    "2024-01-03 01:00:00",
+                    "2024-01-04 01:00:00",
+                ]),
+                "open": [1, 1, 1],
+                "high": [1, 1, 1],
+                "low": [1, 1, 1],
+                "close": [1, 1, 1],
+                "volume": [1, 1, 1],
+            }
+        )
+        return df
+
+    monkeypatch.setattr(bt.pd, "read_sql", fake_read_sql)
+    monkeypatch.setattr(bt, "calc_features_raw", lambda df, period: pd.DataFrame(index=df.index))
+    monkeypatch.setattr(bt, "simulate_trades", lambda *a, **k: pd.DataFrame(columns=["position_size", "ret"]))
+    monkeypatch.setattr(pd.DataFrame, "to_csv", lambda *a, **k: None)
+    monkeypatch.setattr(bt, "FEATURE_COLS_1H", [])
+    monkeypatch.setattr(bt, "FEATURE_COLS_4H", [])
+    monkeypatch.setattr(bt, "FEATURE_COLS_D1", [])
+
+    captured = {}
+
+    class DummyRSG:
+        def __init__(self, *a, **k):
+            pass
+
+        def update_ic_scores(self, df, group_by=None):
+            captured["times"] = df["open_time"].copy()
+            raise StopIteration
+
+        def generate_signal(self, *a, **k):
+            return {
+                "signal": 0,
+                "score": 0.0,
+                "position_size": 0.0,
+                "take_profit": None,
+                "stop_loss": None,
+            }
+
+    class DummyCfg:
+        @staticmethod
+        def from_cfg(cfg):
+            return None
+
+    monkeypatch.setattr(bt, "RobustSignalGenerator", DummyRSG)
+    monkeypatch.setattr(bt, "RobustSignalGeneratorConfig", DummyCfg)
+
+    with pytest.raises(StopIteration):
+        bt.run_backtest(recent_days=2)
+
+    assert any("MAX(open_time" in q for q, _ in queries)
+    assert any("WHERE open_time >= %(start)s" in q for q, _ in queries)
+    times = captured["times"]
+    assert times.is_monotonic_increasing
+    assert times.min() >= pd.Timestamp("2024-01-03")
