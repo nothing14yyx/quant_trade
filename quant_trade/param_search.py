@@ -283,14 +283,14 @@ def run_param_search(
     if method == "grid":
         param_grid = {
             "history_window": [300, 500],
-            "th_base": [0.10, 0.12],
-            "ai_w": [0.1, 0.3],
-            "trend_w": [0.1, 0.3],
-            "momentum_w": [0.1, 0.3],
-            "volatility_w": [0.1, 0.3],
-            "volume_w": [0.05, 0.2],
-            "sentiment_w": [0.05, 0.2],
-            "funding_w": [0.05, 0.2],
+            "th_base": [0.03, 0.08],
+            "ai_w": [0.05, 0.35],
+            "trend_w": [0.05, 0.35],
+            "momentum_w": [0.05, 0.35],
+            "volatility_w": [0.05, 0.35],
+            "volume_w": [0.05, 0.35],
+            "sentiment_w": [0.05, 0.35],
+            "funding_w": [0.05, 0.35],
         }
         if tune_delta:
             param_grid.update({
@@ -433,19 +433,19 @@ def run_param_search(
             ]
             weights = np.array(
                 [
-                    trial.suggest_float("ai_w", 0.1, 0.3),
-                    trial.suggest_float("trend_w", 0.1, 0.3),
-                    trial.suggest_float("momentum_w", 0.1, 0.3),
-                    trial.suggest_float("volatility_w", 0.1, 0.3),
-                    trial.suggest_float("volume_w", 0.05, 0.2),
-                    trial.suggest_float("sentiment_w", 0.05, 0.2),
-                    trial.suggest_float("funding_w", 0.05, 0.2),
+                    trial.suggest_float("ai_w", 0.05, 0.35),
+                    trial.suggest_float("trend_w", 0.05, 0.35),
+                    trial.suggest_float("momentum_w", 0.05, 0.35),
+                    trial.suggest_float("volatility_w", 0.05, 0.35),
+                    trial.suggest_float("volume_w", 0.05, 0.35),
+                    trial.suggest_float("sentiment_w", 0.05, 0.35),
+                    trial.suggest_float("funding_w", 0.05, 0.35),
                 ]
             )
             weights /= weights.sum() if weights.sum() != 0 else 1.0
             base_weights = dict(zip(keys, weights))
             th_params = {
-                "base": trial.suggest_float("th_base", 0.06, 0.15),
+                "base": trial.suggest_float("th_base", 0.03, 0.10),
             }
             history_window = trial.suggest_int("history_window", 300, 800)
             delta_params = base_delta.copy()
