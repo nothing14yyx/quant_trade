@@ -460,7 +460,7 @@ ic_scores:
     momentum: 0.2
     volatility: 0.35
     volume: 0.15
-    sentiment: 0.0
+    sentiment: 0.1
     funding: 0.15
 cycle_weight:
   strong: 1.2
