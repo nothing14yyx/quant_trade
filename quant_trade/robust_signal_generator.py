@@ -687,13 +687,13 @@ class RobustSignalGenerator:
 
         # 静态因子权重（后续可由动态IC接口进行更新）
         _base_weights = {
-            "ai": 0.16845787222555247,
-            "trend": 0.10379786570269561,
-            "momentum": 0.14680674356612294,
-            "volatility": 0.23651731361188078,
-            "volume": 0.13898561995072503,
-            "sentiment": 0.050855019988969595,
-            "funding": 0.15615537150904193,
+            "ai": 0.0,
+            "trend": 0.15,
+            "momentum": 0.2,
+            "volatility": 0.35,
+            "volume": 0.15,
+            "sentiment": 0.0,
+            "funding": 0.15,
         }
         cfg_bw = get_cfg_value(cfg, "base_weights", _base_weights)
         total_w = sum(cfg_bw.values())

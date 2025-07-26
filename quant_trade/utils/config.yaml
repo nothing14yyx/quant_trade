@@ -591,13 +591,13 @@ ic_scores:
   4h: 0.2
   d1: 0.1
   base_weights:
-    ai: 0.13015916729804258
-    trend: 0.13708845769939287
-    momentum: 0.11744246867048218
-    volatility: 0.24301128028527966
-    volume: 0.19056955202002207
-    sentiment: 0.1294010422345832
-    funding: 0.0925375095878271
+    ai: 0.0
+    trend: 0.15
+    momentum: 0.2
+    volatility: 0.35
+    volume: 0.15
+    sentiment: 0.0
+    funding: 0.15
 cycle_weight:
   strong: 1.2
   weak: 0.8
