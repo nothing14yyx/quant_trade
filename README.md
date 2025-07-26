@@ -72,6 +72,7 @@ th = risk_budget_threshold(vol_hist, quantile=0.9)
     其中 `rsi_1h_mul_vol_ma_ratio_4h` 仅归入 `volume` 因子，不再在 `momentum` 中重复计分。
 - **Backtester**：依据生成的信号回测策略表现。
 - **FeatureSelector**：综合 AUC、SHAP 与 Permutation Importance 评分，筛选去冗余的核心特征。生成的 YAML 文件现统一存放在 `quant_trade/selected_features/` 目录。
+  可通过 `feature_selector.rows` 设置读取样本的最大行数，以避免内存不足。
 
 `RobustSignalGenerator` 提供 `update_ic_scores(df, window=None, group_by=None)`
 接口，可在启动回测或模拟时传入近期历史数据，按时间窗口或币种分组滚动计算
@@ -142,6 +143,16 @@ flowchart TD
 调小（如 20），或在执行 `feature_engineering.py` 时传入
 `merge_features(topn=20)`。此外，`data_loader` 区段的 `start` 与 `end`
 参数也可限定日期范围，以减少同步的历史数据行数。
+
+若只需处理近期样本，可在 `feature_selector` 区段设置 `rows` 或 `start_time`
+限制加载的数据量，例如：
+
+```yaml
+feature_selector:
+  rows: 200000        # 仅读取最近 20 万行，可根据实际内存调整
+  # 或
+  # start_time: "2024-01-01"
+```
 
 ## 风险参数调整
 

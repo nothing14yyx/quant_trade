@@ -38,6 +38,8 @@ fs_cfg = cfg.get("feature_selector", {})
 targets = fs_cfg.get("targets") or fs_cfg.get("target", "target")
 if not isinstance(targets, list):
     targets = [targets]
+ROWS = fs_cfg.get("rows")
+START_TIME = fs_cfg.get("start_time")
 TOP_N = fs_cfg.get("top_n", 30)
 CORR_THRESH = fs_cfg.get("corr_thresh", 0.85)
 MAX_VIF = fs_cfg.get("max_vif", 10)
@@ -45,15 +47,18 @@ MIN_COVER_MAP = fs_cfg.get("min_cover_map", {"1h": 0.8, "4h": 0.7, "d1": 0.6})
 EARLY_STOP = fs_cfg.get("early_stopping_rounds", 30)
 USE_PERM = fs_cfg.get("use_permutation", False)
 VAR_THRESH = fs_cfg.get("var_thresh", 1e-5)
+ROWS_LIMIT = fs_cfg.get("rows")
 
 logger.info(
-    "Config loaded: corr_thresh=%s, max_vif=%s, min_cover_map=%s, early_stop=%s, use_permutation=%s, var_thresh=%s",
+    "Config loaded: corr_thresh=%s, max_vif=%s, min_cover_map=%s, early_stop=%s, use_permutation=%s, var_thresh=%s, rows=%s, start_time=%s",
     CORR_THRESH,
     MAX_VIF,
     MIN_COVER_MAP,
     EARLY_STOP,
     USE_PERM,
     VAR_THRESH,
+    ROWS,
+    START_TIME,
 )
 
 # 与 FeatureEngineer 保持同步的未来字段列表，避免选入泄漏特征
@@ -114,9 +119,10 @@ def select_features(
     early_stopping_rounds: int = EARLY_STOP,
     var_thresh: float = VAR_THRESH,
     use_permutation: bool = USE_PERM,
+    rows: int | None = ROWS_LIMIT,
 ) -> None:
     if df is None:
-        df = load_feature_data()
+        df = load_feature_data(start_time=START_TIME, rows=ROWS)
     orig_cols = {
         "open_time",
         "open",
@@ -346,9 +352,10 @@ def select_features(
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    df = load_feature_data(start_time=START_TIME, rows=ROWS)
     for t in targets:
         logger.info("\n====== 处理 %s ======", t)
-        select_features(t)
+        select_features(t, df)
 
 
 def update_selected_features(
@@ -358,6 +365,7 @@ def update_selected_features(
     yaml_file: Path | str = Path("selected_features/selected_features.yaml"),
     shap_thresh: float = 0.01,
     ic_thresh: float = 0.01,
+    rows: int | None = ROWS_LIMIT,
 ) -> list[str]:
     """根据最近样本的 SHAP 值和因子 IC 更新特征列表
 
@@ -382,7 +390,7 @@ def update_selected_features(
         更新后的特征列表。
     """
     if df is None:
-        df = load_feature_data()
+        df = load_feature_data(start_time=START_TIME, rows=ROWS)
 
     yaml_path = Path(yaml_file)
     if not yaml_path.exists():
