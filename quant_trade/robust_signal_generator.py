@@ -1406,108 +1406,38 @@ class RobustSignalGenerator:
         dedup_row = {k: v for k, v in features.items()}
         safe = lambda k, d=0: self.get_feat_value(dedup_row, k, d)
 
-        td_score = math.tanh(
-            (safe(f"td_sell_count_{period}", 0) - safe(f"td_buy_count_{period}", 0))
-            / 9
-        )
+        # 旧逻辑保留在注释中以便参考
+        # td_score = math.tanh(
+        #     (safe(f"td_sell_count_{period}", 0) - safe(f"td_buy_count_{period}", 0)) / 9
+        # )
 
+        # 趋势因子仅基于长期均线或斜率，以及可选的 ADX
         trend_raw = (
-            np.tanh(safe(f'ema_diff_{period}', 0) * 5)
-            + 2 * (safe(f'boll_perc_{period}', 0.5) - 0.5)
-            + safe(f'supertrend_dir_{period}', 0)
-            + np.tanh(safe(f'adx_delta_{period}', 0) / 10)
-            + np.tanh((safe(f'bull_streak_{period}', 0) - safe(f'bear_streak_{period}', 0)) / 3)
-            + 0.5 * safe(f'long_lower_shadow_{period}', 0)
-            - 0.5 * safe(f'long_upper_shadow_{period}', 0)
-            + 0.5 * safe(f'vol_breakout_{period}', 0)
-            + np.tanh(safe(f'ichimoku_cloud_thickness_{period}', 0))
-            + np.tanh((safe(f'close_{period}', safe("close", 0)) / safe(f'vwap_{period}', 1) - 1) * 5)
-            + np.tanh((safe(f'kc_perc_{period}', 0.5) - 0.5) * 3)
-            + np.tanh((safe(f'donchian_perc_{period}', 0.5) - 0.5) * 3)
-            + 0.5 * np.tanh(
-                (safe(f'ichimoku_conversion_{period}', 0) - safe(f'ichimoku_base_{period}', 0))
-                / (abs(safe(f'close_{period}', safe("close", 1))) + 1e-6)
-                * 10
-            )
-            + 0.5 * np.tanh(
-                (
-                    safe(f'sma_10_{period}', safe(f'sma_20_{period}', 0))
-                    / (safe(f'sma_20_{period}', 1) or 1)
-                    - 1
-                )
-                * 5
-            )
-            + 0.3 * np.tanh(safe('close_spread_1h_4h', 0) * 5)
-            + 0.3 * np.tanh(safe('close_spread_1h_d1', 0) * 5)
-            + np.tanh(safe(f"close_vs_pivot_{period}", 0) * 8)
-            + 0.3 * td_score
+            np.tanh(safe(f"price_vs_ma200_{period}", 0) * 5)
+            + np.tanh(safe(f"ema_slope_50_{period}", 0) * 5)
+            + 0.5 * np.tanh(safe(f"adx_{period}", 0) / 50)
         )
 
+        # 动量因子仅考虑 RSI，必要时加入 MACD 柱状图
         momentum_raw = (
-            (safe(f'rsi_{period}', 50) - 50) / 50
-            + safe(f'willr_{period}', -50) / 50
-            + np.tanh(safe(f'macd_hist_{period}', 0) * 5)
-            + np.tanh(safe(f'rsi_slope_{period}', 0) * 10)
-            + (safe(f'mfi_{period}', 50) - 50) / 50
-            + 0.5 * np.tanh(safe('rsi_diff_1h_4h', 0) / 10)
-            + 0.5 * np.tanh(safe('rsi_diff_1h_d1', 0) / 10)
-            + 0.5 * np.tanh(safe('rsi_diff_4h_d1', 0) / 10)
-            + 0.5 * safe(f'rsi_bull_div_{period}', 0)
-            - 0.5 * safe(f'rsi_bear_div_{period}', 0)
-            + 0.5 * np.tanh((safe(f'stoch_k_{period}', 50) - 50) / 50)
-            + 0.5 * np.tanh((safe(f'stoch_d_{period}', 50) - 50) / 50)
-            + 0.5 * np.tanh(safe(f'macd_signal_{period}', 0) * 5)
-            + 0.3 * np.tanh(safe(f'pct_chg1_{period}', 0) * 20)
-            + 0.2 * np.tanh(safe(f'pct_chg3_{period}', 0) * 10)
-            + 0.2 * np.tanh(safe(f'pct_chg6_{period}', 0) * 5)
-            + 0.5 * np.tanh(safe(f'cci_{period}', 0) / 100)
-            + 0.3 * np.tanh(safe(f'cci_delta_{period}', 0) / 20)
-            + 0.3 * np.tanh(safe('macd_hist_4h_mul_bb_width_1h', 0) * 5)
+            (safe(f"rsi_{period}", 50) - 50) / 50
+            + np.tanh(safe(f"macd_hist_{period}", 0) * 5)
         )
 
+        # 波动率因子只使用 ATR 百分比和布林带宽度
         volatility_raw = (
-            np.tanh(safe(f'atr_pct_{period}', 0) * 8)
-            + np.tanh(safe(f'bb_width_{period}', 0) * 2)
-            + np.tanh(safe(f'donchian_delta_{period}', 0) * 5)
-            + np.tanh(safe(f'hv_7d_{period}', 0) * 5)
-            + 0.5 * np.tanh(safe(f'hv_14d_{period}', 0) * 5)
-            + 0.5 * np.tanh(safe(f'hv_30d_{period}', 0) * 5)
-            + 0.5 * np.tanh(safe(f'kc_width_pct_chg_{period}', 0) * 5)
-            + 0.5 * np.tanh(safe(f'skewness_{period}', 0) * 5)
-            + 0.5 * np.tanh((safe(f'kurtosis_{period}', 3) - 3))
-            + 0.5 * np.tanh(safe(f'atr_chg_{period}', 0) * 50)
-            + 0.5 * np.tanh(safe(f'bb_width_chg_{period}', 0) * 20)
-            - 0.5 * safe(f'bb_squeeze_{period}', 0)
-            + 0.3 * np.tanh(safe('mom_5m_roll1h_std', 0) * 5)
-            + 0.3 * np.tanh(safe('mom_15m_roll1h_std', 0) * 5)
+            np.tanh(safe(f"atr_pct_{period}", 0) * 8)
+            + np.tanh(safe(f"bb_width_{period}", 0) * 2)
         )
 
+        # 量能因子只包含成交量均值比和买卖比
         volume_raw = (
-            np.tanh(safe(f'vol_ma_ratio_{period}', 0))
-            + np.tanh(safe(f'obv_delta_{period}', 0) / 1e5)
-            + np.tanh(safe(f'vol_roc_{period}', 0) / 5)
-            + np.tanh(safe(f'rsi_mul_vol_ma_ratio_{period}', 0) / 100)
-            + np.tanh((safe(f'buy_sell_ratio_{period}', 1) - 1) * 2)
-            + np.tanh(safe(f'vol_profile_density_{period}', 0) / 10)
-            + np.tanh((safe(f'money_flow_ratio_{period}', 1) - 1) * 2)
-            - np.tanh(safe(f'bid_ask_spread_pct_{period}', 0) * 10)
-            + 0.5 * np.tanh((safe(f'vol_ma_ratio_long_{period}', 1) - 1) * 2)
-            + 0.5 * np.tanh(safe(f'cg_total_volume_roc_{period}', 0) * 5)
-            + 0.5 * np.tanh(safe('bid_ask_imbalance', 0) * 10)
-            + 0.3 * np.tanh(safe('vol_ratio_4h_d1', 0))
-            + 0.3 * np.tanh(safe('rsi_1h_mul_vol_ma_ratio_4h', 0) / 100)
-            + np.tanh(safe(f"close_vs_vpoc_{period}", 0) * 8)
+            np.tanh(safe(f"vol_ma_ratio_{period}", 0))
+            + np.tanh((safe(f"buy_sell_ratio_{period}", 1) - 1) * 2)
         )
 
-        sentiment_raw = (
-            (safe('fg_index_d1', 50) - 50) / 50
-            + np.tanh(safe(f'btc_correlation_1h_{period}', 0))
-            + np.tanh(safe(f'eth_correlation_1h_{period}', 0))
-            + np.tanh(safe(f'price_diff_cg_{period}', 0) * 5)
-            + np.tanh(safe(f'cg_market_cap_roc_{period}', 0) * 5)
-            + np.tanh((safe(f'volume_cg_ratio_{period}', 1) - 1) * 2)
-            + 0.5 * np.tanh((safe(f'price_ratio_cg_{period}', 1) - 1) * 10)
-        )
+        # 情绪因子仅保留资金费率
+        sentiment_raw = np.tanh(safe(f"funding_rate_{period}", 0) * 4000)
 
         f_rate = safe(f'funding_rate_{period}', 0)
         f_anom = safe(f'funding_rate_anom_{period}', 0)
