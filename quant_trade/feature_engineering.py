@@ -469,7 +469,7 @@ class FeatureEngineer:
                 params=(itv,),
             )
             symbol_sets.append(set(df["symbol"]))
-        return list(set.intersection(*symbol_sets))
+        return sorted(set.intersection(*symbol_sets))
 
     def _load_klines_raw(self, symbol: str, interval: str) -> Optional[pd.DataFrame]:
         key = (symbol, interval)
