@@ -176,6 +176,40 @@ def test_merge_features_scaler_batch(tmp_path):
     assert set(params.keys()) == {'BTC', 'ETH'}
 
 
+def test_merge_features_custom_symbols(tmp_path):
+    fe = FeatureEngineer()
+    fe.feature_cols_path = tmp_path / 'cols.txt'
+    fe.scaler_path = tmp_path / 'scaler.json'
+    fe.mode = 'train'
+
+    called = []
+
+    def dummy_calc(sym):
+        called.append(sym)
+        return pd.DataFrame({
+            'symbol': [sym],
+            'interval': ['1h'],
+            'open_time': [pd.Timestamp('2020-01-01')],
+            'close_time': [pd.Timestamp('2020-01-01')],
+            'open': [1], 'high': [1], 'low': [1], 'close': [1],
+            'volume': [1], 'quote_asset_volume': [1],
+            'num_trades': [1], 'taker_buy_base': [0.5], 'taker_buy_quote': [0.5],
+        })
+
+    fe._calc_symbol_features = dummy_calc
+    fe._finalize_batch = lambda dfs, use_polars: (pd.concat(dfs, ignore_index=True), [], {})
+    fe._write_output = lambda df, save_to_db, append: setattr(fe, 'out_df', df)
+
+    fe.merge_features(symbols=['ETH', 'BTC'], save_to_db=False, batch_size=None)
+    assert called == ['ETH', 'BTC']
+    assert fe.out_df['symbol'].tolist() == ['ETH', 'BTC']
+
+    called.clear()
+    fe.merge_features(symbols=['ETH', 'BTC'], topn=1, save_to_db=False, batch_size=None)
+    assert called == ['ETH']
+    assert fe.out_df['symbol'].tolist() == ['ETH']
+
+
 def test_get_latest_order_book_imbalance():
     engine = sqlalchemy.create_engine('sqlite:///:memory:')
     with engine.begin() as conn:

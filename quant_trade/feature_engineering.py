@@ -8,7 +8,7 @@ import os
 import asyncio
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import polars as pl
 import numpy as np
@@ -875,13 +875,33 @@ class FeatureEngineer:
     def merge_features(
         self,
         topn: int | None = None,
+        symbols: Sequence[str] | None = None,
         save_to_db: bool = False,
         batch_size: int | None = None,
         n_jobs: int = 1,
         use_polars: bool = False,
     ) -> None:
-        symbols = self.get_symbols(("1h", "4h", "d1", "5m", "15m"))
-        symbols = symbols[: (topn or self.topn)]
+        """合并多周期特征并写入文件或数据库。
+
+        Parameters
+        ----------
+        topn
+            仅处理成交量排名前 ``topn`` 的币种，默认为 ``self.topn``。
+        symbols
+            自定义币种列表，若为 ``None`` 则自动调用 :meth:`get_symbols`。
+        save_to_db
+            是否写入数据库。
+        batch_size
+            每处理 ``batch_size`` 个币种就落盘一次，``None`` 表示一次性处理。
+        n_jobs
+            并行作业数。
+        use_polars
+            是否使用 polars 加速合并。
+        """
+
+        if symbols is None:
+            symbols = self.get_symbols(("1h", "4h", "d1", "5m", "15m"))
+        symbols = list(symbols)[: (topn or self.topn)]
 
         all_dfs: list[pd.DataFrame] = []
         final_cols: set[str] = set()
