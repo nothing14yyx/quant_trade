@@ -13,6 +13,11 @@ from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
 
 logger = logging.getLogger(__name__)
 
+# 项目根目录
+BASE_DIR = Path(__file__).resolve().parents[1]
+# 回测日志目录
+BACKTEST_LOG_DIR = BASE_DIR / "backtest_logs"
+
 # 配置文件路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
@@ -352,12 +357,12 @@ def run_backtest(
         results.append(summary)
 
         # 保存每个币种明细
-        trades_df.to_csv(f'backtest_logs/{symbol}_fusion_trades.csv', index=False)
+        trades_df.to_csv(BACKTEST_LOG_DIR / f"{symbol}_fusion_trades.csv", index=False)
         logger.info("%s 回测完成，信号数：%s", symbol, len(trades_df))
 
     # 汇总
     results_df = pd.DataFrame(results)
-    results_df.to_csv('backtest_fusion_summary.csv', index=False)
+    results_df.to_csv(BASE_DIR / 'backtest_fusion_summary.csv', index=False)
     logger.info("========== 回测汇总 ==========")
     logger.info("%s", results_df.to_string(index=False))
 
@@ -366,7 +371,7 @@ def run_backtest(
         all_trades = pd.concat(trades_all, ignore_index=True)
     else:
         all_trades = pd.DataFrame()
-    all_trades.to_csv('backtest_fusion_trades_all.csv', index=False)
+    all_trades.to_csv(BASE_DIR / 'backtest_fusion_trades_all.csv', index=False)
     if hasattr(sg, "stop_weight_update_thread"):
         sg.stop_weight_update_thread()
 
@@ -377,5 +382,5 @@ if __name__ == '__main__':
     parser.add_argument('--recent-days', type=int, default=None, help='只回测最近 N 天的数据')
     args = parser.parse_args()
 
-    os.makedirs('backtest_logs', exist_ok=True)
+    BACKTEST_LOG_DIR.mkdir(exist_ok=True)
     run_backtest(recent_days=args.recent_days)
