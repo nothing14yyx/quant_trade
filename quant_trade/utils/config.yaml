@@ -105,6 +105,7 @@ feature_selector:
   - future_max_rise_d1
   - future_max_drawdown_d1
   top_n: 50             # 每周期保留前 N
+  rows: 200000          # 读取 features 表的最大行数
 
 models:
   1h:
