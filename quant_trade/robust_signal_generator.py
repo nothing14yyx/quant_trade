@@ -3175,7 +3175,7 @@ class RobustSignalGenerator:
         Returns:
             包含 ``signal``、``score`` 等字段的结果字典。
         """
-        base_th = risk_info["base_th"]
+        base_th = risk_info.get("base_th", self.signal_params.base_th)
         factor_breakdown = self._compute_factor_breakdown(ai_scores, fs)
         self._save_factor_breakdown(factor_breakdown, symbol, ts)
         if not risk_info.get("crowding_adjusted"):
@@ -3195,10 +3195,10 @@ class RobustSignalGenerator:
         else:
             crowding_factor = risk_info.get("crowding_factor", 1.0)
             th_oi = risk_info.get("th_oi")
-        risk_score = risk_info["risk_score"]
-        regime = risk_info["regime"]
-        rev_dir = risk_info["rev_dir"]
-        funding_conflicts = risk_info["funding_conflicts"]
+        risk_score = risk_info.get("risk_score", 0.0)
+        regime = risk_info.get("regime", "range")
+        rev_dir = risk_info.get("rev_dir", 0)
+        funding_conflicts = risk_info.get("funding_conflicts", 0)
 
         vol_ratio_1h_4h = get_feat(raw_f1h, std_1h, "vol_ratio_1h_4h")
         if vol_ratio_1h_4h is None:
