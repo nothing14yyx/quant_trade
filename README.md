@@ -165,6 +165,13 @@ risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
 
 修改后重启调度器即可生效。
 
+若希望暂时停用风险与拥挤度过滤，可在 `utils/config.yaml` 顶层设置：
+
+```yaml
+risk_filters_enabled: false
+```
+关闭后 `apply_risk_filters` 会直接返回得分，`compute_position_size` 也不会再根据风险值提高仓位下限。
+
 ### 动态阈值调节
 `compute_dynamic_threshold` 会根据近期得分历史计算出门槛基准。其中
 `th_window` 决定统计多少条 `history_scores`，窗口越短反应越灵敏；

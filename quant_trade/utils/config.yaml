@@ -1,3 +1,4 @@
+risk_filters_enabled: true
 binance:
   api_key: "${BINANCE_API_KEY}"
   api_secret: "${BINANCE_API_SECRET}"

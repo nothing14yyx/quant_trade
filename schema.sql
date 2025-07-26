@@ -112,7 +112,7 @@ CREATE TABLE cm_onchain_metrics (
     INDEX idx_cm_value (value)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE features (
+CREATE TABLE `features` (
     `symbol` VARCHAR(24) NOT NULL,
     `open_time` DATETIME,
     `close_time` DATETIME,

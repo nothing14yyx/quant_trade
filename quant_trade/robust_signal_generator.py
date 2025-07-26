@@ -73,6 +73,7 @@ DEFAULTS = {
     "low_base": DEFAULT_LOW_BASE,
     "low_vol_ratio": DEFAULT_LOW_VOL_RATIO,
     "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
+    "risk_filters_enabled": True,
 }
 
 SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
@@ -114,6 +115,7 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
     "_fuse_cache",
     "rebound_cooldown",
     "last_rebound_ts",
+    "risk_filters_enabled",
 }
 
 from dataclasses import dataclass
@@ -565,6 +567,7 @@ class RobustSignalGenerator:
         self.config_manager = ConfigManager(config_path)
         cfg = self.config_manager.cfg
         self.cfg = cfg
+        self.risk_filters_enabled = cfg.get("risk_filters_enabled", True)
         fe_cfg = cfg.get("feature_engineering", {})
         self.rise_transform = fe_cfg.get("rise_transform", "none")
         self.boxcox_lambda_path = Path(
@@ -827,6 +830,7 @@ class RobustSignalGenerator:
             "market_phase": "range",
             "phase_th_mult": 1.0,
             "phase_dir_mult": {"long": 1.0, "short": 1.0},
+            "risk_filters_enabled": True,
         }
         if name in defaults:
             val = defaults[name]
@@ -1317,7 +1321,7 @@ class RobustSignalGenerator:
         min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
         # 当风险评分升高时提升仓位下限，确保高风险环境下更谨慎
         dynamic_min = min_pos * math.exp(self.risk_scale * risk_score)
-        if pos_size < dynamic_min:
+        if self.risk_filters_enabled and pos_size < dynamic_min:
             direction, pos_size = 0, 0.0
             if low_vol_flag:
                 # 低量能环境触发减半，最终仓位仍低于下限
@@ -2839,6 +2843,12 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """执行风险限制与拥挤度检查"""
+        if not self.risk_filters_enabled:
+            return {
+                "fused_score": fused_score,
+                "risk_score": 0.0,
+                "crowding_factor": 1.0,
+            }
         atr_1h = raw_f1h.get("atr_pct_1h", 0) if raw_f1h else 0
         adx_1h = raw_f1h.get("adx_1h", 0) if raw_f1h else 0
         funding_1h = raw_f1h.get("funding_rate_1h", 0) if raw_f1h else 0
