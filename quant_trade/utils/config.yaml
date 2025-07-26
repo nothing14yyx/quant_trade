@@ -399,6 +399,8 @@ feature_cols:
     - bb_squeeze_d1
     - vpoc_d1
     - hv_30d_d1
+
+
 train_settings:
   by_symbol: false
   min_rows: 500
