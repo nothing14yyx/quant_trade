@@ -22,6 +22,7 @@ import threading
 import logging
 import time
 import warnings
+import os
 
 from .config_manager import ConfigManager
 from .ai_model_predictor import AIModelPredictor
@@ -546,9 +547,15 @@ class RobustSignalGenerator:
         self._lock = threading.RLock()
 
         # 使用独立模块加载 AI 模型
-        self.ai_predictor = AIModelPredictor(model_paths)
-        self.models = self.ai_predictor.models
-        self.calibrators = self.ai_predictor.calibrators
+        # 默认为禁用, 设置环境变量 ``ENABLE_AI=1`` 时启用
+        if os.environ.get("ENABLE_AI", "0") == "1":
+            self.ai_predictor = AIModelPredictor(model_paths)
+            self.models = self.ai_predictor.models
+            self.calibrators = self.ai_predictor.calibrators
+        else:
+            self.ai_predictor = None
+            self.models = {}
+            self.calibrators = {}
 
         # 特征处理器
         self.feature_processor = FeatureProcessor(
@@ -785,6 +792,8 @@ class RobustSignalGenerator:
                 "d1": deque(maxlen=2),
             },
             "symbol_data": {},
+            "ai_predictor": None,
+            "models": {},
             "calibrators": {p: {"up": None, "down": None} for p in ("1h", "4h", "d1")},
             "core_keys": self.DEFAULT_CORE_KEYS.copy(),
             "delta_params": self.DELTA_PARAMS.copy(),
@@ -1355,6 +1364,9 @@ class RobustSignalGenerator:
         elif isinstance(features, pd.Series):
             features = features.to_dict()
 
+        if self.ai_predictor is None:
+            return 0.0
+
         return self.ai_predictor.get_ai_score(
             features,
             model_up,
@@ -1365,16 +1377,22 @@ class RobustSignalGenerator:
 
     def get_ai_score_cls(self, features, model_dict):
         """从单个分类模型计算AI得分"""
+        if self.ai_predictor is None:
+            return 0.0
         return self.ai_predictor.get_ai_score_cls(features, model_dict)
 
     def get_vol_prediction(self, features, model_dict):
         """根据回归模型预测未来波动率"""
+        if self.ai_predictor is None:
+            return None
         return self.ai_predictor.get_vol_prediction(features, model_dict)
 
     def get_reg_prediction(
         self, features, model_dict, tag: str | None = None, period: str | None = None
     ):
         """通用回归模型预测, 根据 tag 应用逆变换"""
+        if self.ai_predictor is None:
+            return None
         pred = self.ai_predictor.get_reg_prediction(features, model_dict)
         if tag == "rise" and self.rise_transform != "none":
             if self.rise_transform == "log":
@@ -2430,6 +2448,17 @@ class RobustSignalGenerator:
         cached = self._cache_get(self._ai_score_cache, key)
         if cached is not None:
             return cached
+
+        # 若未加载 AI 模型且无外部模型, 直接返回全零得分
+        if self.ai_predictor is None and not self.models:
+            ai_scores = {"1h": 0.0, "4h": 0.0, "d1": 0.0}
+            vol_preds = {"1h": None, "4h": None, "d1": None}
+            rise_preds = {"1h": None, "4h": None, "d1": None}
+            drawdown_preds = {"1h": None, "4h": None, "d1": None}
+            extreme_reversal = False
+            result = ai_scores, vol_preds, rise_preds, drawdown_preds, extreme_reversal
+            self._cache_set(self._ai_score_cache, key, result)
+            return result
 
         ai_scores: dict[str, float] = {}
         vol_preds: dict[str, float | None] = {}
