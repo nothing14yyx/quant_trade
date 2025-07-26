@@ -193,7 +193,12 @@ class Scheduler:
                 self.update_klines(symbols, iv)
             self.update_oi_and_order_book(symbols)
             self.update_funding_rates(symbols)
-            self.fe.merge_features(topn=self.fe.topn, save_to_db=True, batch_size=1)
+            self.fe.merge_features(
+                topn=self.fe.topn,
+                symbols=symbols,
+                save_to_db=True,
+                batch_size=1,
+            )
         except Exception as e:
             logging.exception("update_features failed: %s", e)
 
