@@ -77,7 +77,7 @@ feature_engineering:
 #  merged_dir: "quant_trade/data/merged"
 #  merged_table_path: "quant_trade/data/merged/merged_table.csv"
   feature_cols_path: "data/merged/feature_cols.txt"
-  topn: 5
+  topn: 120
   mode: train                        # train 或 inference
   scaler_path: scalers/all_features_scaler.json
   btc_symbol: "BTCUSDT"

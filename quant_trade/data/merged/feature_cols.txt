@@ -1,3 +1,6 @@
+active_addr_roc_1h
+active_addr_roc_4h
+active_addr_roc_d1
 adx_1h
 adx_1h_isnan
 adx_4h
@@ -25,7 +28,9 @@ atr_pct_d1_isnan
 atr_pct_ratio_1h_4h
 atr_pct_ratio_1h_4h_isnan
 atr_pct_ratio_1h_d1
+atr_pct_ratio_1h_d1_isnan
 atr_pct_ratio_4h_d1
+atr_pct_ratio_4h_d1_isnan
 bb_squeeze_1h
 bb_squeeze_1h_isnan
 bb_squeeze_4h
@@ -47,7 +52,9 @@ bb_width_d1_isnan
 bb_width_ratio_1h_4h
 bb_width_ratio_1h_4h_isnan
 bb_width_ratio_1h_d1
+bb_width_ratio_1h_d1_isnan
 bb_width_ratio_4h_d1
+bb_width_ratio_4h_d1_isnan
 bear_streak_1h
 bear_streak_1h_isnan
 bear_streak_4h
@@ -149,6 +156,7 @@ close_spread_1h_4h_isnan
 close_spread_1h_d1
 close_spread_1h_d1_isnan
 close_spread_4h_d1
+close_spread_4h_d1_isnan
 close_time_4h
 close_time_d1
 close_vs_pivot_1h
@@ -166,6 +174,7 @@ close_vs_vpoc_d1_isnan
 day_of_week
 day_of_week_cos
 day_of_week_cos_isnan
+day_of_week_isnan
 day_of_week_sin
 day_of_week_sin_isnan
 donchian_delta_1h
@@ -192,6 +201,9 @@ eth_correlation_1h_1h
 eth_correlation_1h_1h_isnan
 eth_correlation_1h_4h
 eth_correlation_1h_4h_isnan
+fee_tot_roc_1h
+fee_tot_roc_4h
+fee_tot_roc_d1
 fg_index
 fg_index_d1
 fg_index_d1_isnan
@@ -229,6 +241,7 @@ high_y_isnan
 hour_of_day
 hour_of_day_cos
 hour_of_day_cos_isnan
+hour_of_day_isnan
 hour_of_day_sin
 hour_of_day_sin_isnan
 hv_14d_1h
@@ -339,6 +352,7 @@ macd_hist_diff_1h_4h_isnan
 macd_hist_diff_1h_d1
 macd_hist_diff_1h_d1_isnan
 macd_hist_diff_4h_d1
+macd_hist_diff_4h_d1_isnan
 macd_signal_1h
 macd_signal_1h_isnan
 macd_signal_4h
@@ -365,6 +379,9 @@ money_flow_ratio_4h
 money_flow_ratio_4h_isnan
 money_flow_ratio_d1
 money_flow_ratio_d1_isnan
+mvrv_ratio_1h
+mvrv_ratio_4h
+mvrv_ratio_d1
 obv_1h
 obv_1h_isnan
 obv_4h
@@ -507,6 +524,9 @@ sma_5_4h
 sma_5_4h_isnan
 sma_5_d1
 sma_5_d1_isnan
+sply_cur_roc_1h
+sply_cur_roc_4h
+sply_cur_roc_d1
 stoch_d_1h
 stoch_d_1h_isnan
 stoch_d_4h
@@ -551,6 +571,9 @@ td_sell_count_4h
 td_sell_count_4h_isnan
 td_sell_count_d1
 td_sell_count_d1_isnan
+tx_count_roc_1h
+tx_count_roc_4h
+tx_count_roc_d1
 upper_wick_ratio_1h
 upper_wick_ratio_1h_isnan
 upper_wick_ratio_4h
@@ -584,6 +607,7 @@ vol_profile_density_d1_isnan
 vol_ratio_1h_4h
 vol_ratio_1h_4h_isnan
 vol_ratio_1h_d1
+vol_ratio_1h_d1_isnan
 vol_ratio_4h_d1
 vol_ratio_4h_d1_isnan
 vol_roc_1h
