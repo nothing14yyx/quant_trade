@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_latest_klines(engine, symbol: str, interval: str, limit: int = 1000) -> pd.DataFrame:
-    """从数据库加载指定周期的最新K线并返回DataFrame"""
+    """从数据库加载指定周期的最新K线并返回DataFrame，并加入 btc/eth 收盘价"""
     query = (
         "SELECT open_time, open, high, low, close, volume, fg_index, funding_rate, "
         "taker_buy_base,taker_buy_quote, cg_price, cg_market_cap, cg_total_volume "
@@ -35,7 +35,31 @@ def load_latest_klines(engine, symbol: str, interval: str, limit: int = 1000) ->
         f"ORDER BY open_time DESC LIMIT {limit}"
     )
     df = pd.read_sql(query, engine, parse_dates=["open_time"])
-    return df.sort_values("open_time")
+    df = df.sort_values("open_time")
+
+    if symbol != "BTCUSDT":
+        btc_q = (
+            "SELECT open_time, close FROM klines "
+            f"WHERE symbol='BTCUSDT' AND `interval`='{interval}' "
+            f"ORDER BY open_time DESC LIMIT {limit}"
+        )
+        btc_df = pd.read_sql(btc_q, engine, parse_dates=["open_time"])
+        if not btc_df.empty:
+            btc_df = btc_df.rename(columns={"close": "btc_close"}).sort_values("open_time")
+            df = pd.merge_asof(df, btc_df, on="open_time", direction="backward")
+
+    if symbol != "ETHUSDT":
+        eth_q = (
+            "SELECT open_time, close FROM klines "
+            f"WHERE symbol='ETHUSDT' AND `interval`='{interval}' "
+            f"ORDER BY open_time DESC LIMIT {limit}"
+        )
+        eth_df = pd.read_sql(eth_q, engine, parse_dates=["open_time"])
+        if not eth_df.empty:
+            eth_df = eth_df.rename(columns={"close": "eth_close"}).sort_values("open_time")
+            df = pd.merge_asof(df, eth_df, on="open_time", direction="backward")
+
+    return df
 
 
 def prepare_features(
