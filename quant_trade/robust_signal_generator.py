@@ -194,6 +194,7 @@ class RobustSignalGeneratorConfig:
     min_weight_ratio: float = 0.6
     th_window: int = 60
     th_decay: float = 2.0
+    enable_ai: bool = True
 
     @classmethod
     def from_file(cls, path: str | Path):
@@ -210,6 +211,9 @@ class RobustSignalGeneratorConfig:
         """从字典创建配置对象."""
         path = path or cfg.get("config_path", CONFIG_PATH)
         db_cfg = cfg.get("delta_boost", {})
+        enable_ai = cfg.get("enable_ai")
+        if enable_ai is None:
+            enable_ai = os.environ.get("ENABLE_AI", "1") == "1"
         return cls(
             model_paths=cfg.get("models", {}),
             feature_cols_1h=collect_feature_cols(cfg, "1h"),
@@ -223,6 +227,7 @@ class RobustSignalGeneratorConfig:
             min_weight_ratio=cfg.get("min_weight_ratio", 0.6),
             th_window=cfg.get("th_window", 60),
             th_decay=cfg.get("th_decay", 2.0),
+            enable_ai=enable_ai,
         )
 
 
@@ -541,14 +546,14 @@ class RobustSignalGenerator:
         min_weight_ratio = config.min_weight_ratio
         th_window = config.th_window
         th_decay = config.th_decay
+        self.enable_ai = config.enable_ai
 
         # 多线程访问历史数据时的互斥锁
         # 使用 RLock 以便在部分函数中嵌套调用
         self._lock = threading.RLock()
 
-        # 使用独立模块加载 AI 模型
-        # 默认为禁用, 设置环境变量 ``ENABLE_AI=1`` 时启用
-        if os.environ.get("ENABLE_AI", "0") == "1":
+        # 使用独立模块加载 AI 模型，可通过 ``enable_ai`` 配置或环境变量控制
+        if self.enable_ai:
             self.ai_predictor = AIModelPredictor(model_paths)
             self.models = self.ai_predictor.models
             self.calibrators = self.ai_predictor.calibrators

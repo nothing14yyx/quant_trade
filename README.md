@@ -183,6 +183,17 @@ risk_filters_enabled: false
 ```
 关闭后 `apply_risk_filters` 会直接返回得分，`compute_position_size` 也不会再根据风险值提高仓位下限。
 
+### 启用或禁用 AI 模型
+
+`RobustSignalGenerator` 默认会根据配置加载 AI 模型，可在 `utils/config.yaml` 的
+`enable_ai` 字段中控制，示例：
+
+```yaml
+enable_ai: true  # 设为 false 时跳过模型加载
+```
+
+也可通过环境变量 `ENABLE_AI=0` 临时关闭。
+
 ### 动态阈值调节
 `compute_dynamic_threshold` 会根据近期得分历史计算出门槛基准。其中
 `th_window` 决定统计多少条 `history_scores`，窗口越短反应越灵敏；
