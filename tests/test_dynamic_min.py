@@ -31,3 +31,9 @@ def test_dynamic_min_risk_scaling():
     assert pos_high == 0.0
     assert direction_high == 0
     assert zero_reason_high == ZeroReason.MIN_POS.value
+
+    rsg.risk_filters_enabled = False
+    pos_off, direction_off, _, zero_reason_off = rsg.compute_position_size(**params)
+    assert pos_off > 0
+    assert direction_off != 0
+    assert zero_reason_off is None

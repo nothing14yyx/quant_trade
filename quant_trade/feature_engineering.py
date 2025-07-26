@@ -707,19 +707,25 @@ class FeatureEngineer:
             else:
                 existing_cols = {c["name"] for c in inspector.get_columns("features")}
                 missing = [c for c in df.columns if c not in existing_cols]
+                dialect = self.engine.url.get_backend_name()
                 for col in missing:
                     dtype = df[col].dtype
-                    if pd.api.types.is_float_dtype(dtype):
-                        sql_type = "DOUBLE"
-                    elif pd.api.types.is_integer_dtype(dtype):
+                    if pd.api.types.is_integer_dtype(dtype):
                         sql_type = "BIGINT"
+                    elif (
+                        pd.api.types.is_float_dtype(dtype)
+                        or all(
+                            (isinstance(v, (float, int)) or v is None)
+                            for v in df[col]
+                        )
+                    ):
+                        sql_type = "REAL" if dialect == "sqlite" else "DOUBLE"
                     elif pd.api.types.is_datetime64_any_dtype(dtype):
                         sql_type = "DATETIME"
                     else:
                         sql_type = "TEXT"
                     with self.engine.begin() as conn:
                         conn.execute(text(f"ALTER TABLE features ADD COLUMN `{col}` {sql_type}"))
-                dialect = self.engine.url.get_backend_name()
                 cols = ", ".join(f"`{c}`" for c in df.columns)
                 placeholders = ", ".join(f":{c}" for c in df.columns)
                 if dialect == "sqlite":
