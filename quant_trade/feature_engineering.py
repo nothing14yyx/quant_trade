@@ -770,11 +770,11 @@ class FeatureEngineer:
         if len(df_1h) < 50 or len(df_4h) < 50 or len(df_1d) < 50:
             return None
 
-        f1h = calc_features_raw(df_1h, "1h")
-        f4h = calc_features_raw(df_4h, "4h")
-        f1d = calc_features_raw(df_1d, "d1")
-        f5m = calc_features_raw(df_5m, "5m") if df_5m is not None else None
-        f15m = calc_features_raw(df_15m, "15m") if df_15m is not None else None
+        f1h = calc_features_raw(df_1h, "1h", symbol=sym)
+        f4h = calc_features_raw(df_4h, "4h", symbol=sym)
+        f1d = calc_features_raw(df_1d, "d1", symbol=sym)
+        f5m = calc_features_raw(df_5m, "5m", symbol=sym) if df_5m is not None else None
+        f15m = calc_features_raw(df_15m, "15m", symbol=sym) if df_15m is not None else None
 
         if f5m is not None:
             chg5 = f5m["pct_chg1_5m"].shift(1)
