@@ -548,7 +548,7 @@ class RobustSignalGenerator:
 
         # 使用独立模块加载 AI 模型
         # 默认为禁用, 设置环境变量 ``ENABLE_AI=1`` 时启用
-        if os.environ.get("ENABLE_AI", "0") == "1":
+        if os.environ.get("ENABLE_AI", "1") == "1":
             self.ai_predictor = AIModelPredictor(model_paths)
             self.models = self.ai_predictor.models
             self.calibrators = self.ai_predictor.calibrators
