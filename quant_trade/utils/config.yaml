@@ -91,6 +91,9 @@ feature_engineering:
       smooth_window: 3
 
 feature_selector:
+  rows: 200000        # 仅读取最近 20 万行，可根据实际内存调整
+  # 或
+  # start_time: "2024-01-01"
   target:
   - target_1h
   - future_volatility_1h

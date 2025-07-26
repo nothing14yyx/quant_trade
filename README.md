@@ -144,6 +144,16 @@ flowchart TD
 `merge_features(topn=20)`。此外，`data_loader` 区段的 `start` 与 `end`
 参数也可限定日期范围，以减少同步的历史数据行数。
 
+若只需处理近期样本，可在 `feature_selector` 区段设置 `rows` 或 `start_time`
+限制加载的数据量，例如：
+
+```yaml
+feature_selector:
+  rows: 200000        # 仅读取最近 20 万行，可根据实际内存调整
+  # 或
+  # start_time: "2024-01-01"
+```
+
 ## 风险参数调整
 
 默认 `risk_adjust.factor` 为 0.3，`risk_adjust_threshold` 为 0.03。若发现信号过少，可在 `utils/config.yaml` 放宽以下阈值：
