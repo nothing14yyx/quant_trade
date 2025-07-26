@@ -2848,6 +2848,7 @@ class RobustSignalGenerator:
                 "fused_score": fused_score,
                 "risk_score": 0.0,
                 "crowding_factor": 1.0,
+                "base_th": self.signal_params.base_th,
             }
         atr_1h = raw_f1h.get("atr_pct_1h", 0) if raw_f1h else 0
         adx_1h = raw_f1h.get("adx_1h", 0) if raw_f1h else 0
