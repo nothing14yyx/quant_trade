@@ -42,6 +42,7 @@ def make_dummy_rsg():
     rsg.max_position = 0.3
     rsg.risk_scale = 1.0
     rsg.risk_filters_enabled = True
+    rsg.dynamic_threshold_enabled = True
     rsg.cycle_weight = {'strong': 1.0, 'weak': 1.0, 'opposite': 1.0}
     rsg.smooth_window = 20
     rsg.smooth_alpha = 0.2
