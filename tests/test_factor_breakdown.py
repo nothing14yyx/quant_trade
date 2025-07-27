@@ -48,3 +48,54 @@ def test_factor_breakdown_serializable():
     assert fb is not None
     assert set(fb) == {"ai", "trend", "momentum", "volatility", "volume", "sentiment", "funding"}
     json.dumps(res)
+
+
+def test_factor_breakdown_disabled(monkeypatch):
+    rsg = make_dummy_rsg()
+    rsg.enable_factor_breakdown = False
+
+    def fail_linear_explainer(*args, **kwargs):
+        raise AssertionError("SHAP should not be called")
+
+    monkeypatch.setattr("shap.LinearExplainer", fail_linear_explainer)
+
+    (
+        risk_info,
+        ai_scores,
+        fs,
+        scores,
+        std_1h,
+        std_4h,
+        std_d1,
+        std_15m,
+        raw_f1h,
+        raw_f4h,
+        raw_f15m,
+    ) = base_inputs()
+    res = rsg.finalize_position(
+        0.5,
+        risk_info,
+        risk_info["logic_score"],
+        risk_info["env_score"],
+        ai_scores,
+        fs,
+        scores,
+        std_1h,
+        std_4h,
+        std_d1,
+        std_15m,
+        raw_f1h,
+        raw_f4h,
+        {},
+        raw_f15m,
+        {},
+        {},
+        {},
+        short_mom=0,
+        ob_imb=0,
+        confirm_15m=0,
+        extreme_reversal=False,
+        cache=make_cache(),
+        symbol="BTCUSDT",
+    )
+    assert "factor_breakdown" not in res
