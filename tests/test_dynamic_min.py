@@ -37,3 +37,31 @@ def test_dynamic_min_risk_scaling():
     assert pos_off > 0
     assert direction_off != 0
     assert zero_reason_off is None
+
+
+def test_dyn_th_active_when_filters_off():
+    rsg = make_dummy_rsg()
+    rsg.risk_filters_enabled = False
+    rsg.dynamic_threshold_enabled = True
+    rsg.dynamic_threshold = lambda *a, **k: (0.2, 0.0)
+    rsg.detect_market_regime = lambda *a, **k: "range"
+    cache = {"history_scores": rsg.history_scores, "_raw_history": {"1h": []}, "oi_change_history": []}
+    res = rsg.apply_risk_filters(
+        fused_score=0.1,
+        logic_score=0.1,
+        env_score=0.0,
+        std_1h={},
+        std_4h={},
+        std_d1={},
+        raw_f1h={},
+        raw_f4h={},
+        raw_fd1={},
+        vol_preds={},
+        open_interest=None,
+        all_scores_list=None,
+        rev_dir=0,
+        cache=cache,
+        global_metrics=None,
+        symbol=None,
+    )
+    assert res["base_th"] == 0.2

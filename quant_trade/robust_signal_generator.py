@@ -75,6 +75,7 @@ DEFAULTS = {
     "low_vol_ratio": DEFAULT_LOW_VOL_RATIO,
     "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
     "risk_filters_enabled": True,
+    "dynamic_threshold_enabled": True,
 }
 
 SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
@@ -117,6 +118,7 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
     "rebound_cooldown",
     "last_rebound_ts",
     "risk_filters_enabled",
+    "dynamic_threshold_enabled",
 }
 
 from dataclasses import dataclass
@@ -580,6 +582,7 @@ class RobustSignalGenerator:
         cfg = self.config_manager.cfg
         self.cfg = cfg
         self.risk_filters_enabled = cfg.get("risk_filters_enabled", True)
+        self.dynamic_threshold_enabled = cfg.get("dynamic_threshold_enabled", True)
         fe_cfg = cfg.get("feature_engineering", {})
         self.rise_transform = fe_cfg.get("rise_transform", "none")
         self.boxcox_lambda_path = Path(
@@ -2812,7 +2815,7 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """执行风险限制与拥挤度检查"""
-        if not self.risk_filters_enabled:
+        if not self.risk_filters_enabled and not self.dynamic_threshold_enabled:
             return {
                 "fused_score": fused_score,
                 "risk_score": 0.0,
@@ -2847,29 +2850,41 @@ class RobustSignalGenerator:
             regime = "range"
             rev_dir = 1
         cfg_th = self.signal_threshold_cfg
-        base_th, rev_boost = self.dynamic_threshold(
-            atr_1h,
-            adx_1h,
-            funding_1h,
-            atr_4h=atr_4h,
-            adx_4h=adx_4h,
-            atr_d1=atr_d1,
-            adx_d1=adx_d1,
-            bb_width_chg=bb_chg,
-            channel_pos=channel_pos,
-            pred_vol=vol_preds.get("1h"),
-            pred_vol_4h=vol_preds.get("4h"),
-            pred_vol_d1=vol_preds.get("d1"),
-            vix_proxy=vix_p,
-            regime=regime,
-            base=cfg_th.get("base_th", 0.08),
-            reversal=bool(rev_dir),
-            history_scores=cache["history_scores"],
-        )
+        if self.dynamic_threshold_enabled:
+            base_th, rev_boost = self.dynamic_threshold(
+                atr_1h,
+                adx_1h,
+                funding_1h,
+                atr_4h=atr_4h,
+                adx_4h=adx_4h,
+                atr_d1=atr_d1,
+                adx_d1=adx_d1,
+                bb_width_chg=bb_chg,
+                channel_pos=channel_pos,
+                pred_vol=vol_preds.get("1h"),
+                pred_vol_4h=vol_preds.get("4h"),
+                pred_vol_d1=vol_preds.get("d1"),
+                vix_proxy=vix_p,
+                regime=regime,
+                base=cfg_th.get("base_th", 0.08),
+                reversal=bool(rev_dir),
+                history_scores=cache["history_scores"],
+            )
+        else:
+            base_th = cfg_th.get("base_th", 0.08)
+            rev_boost = cfg_th.get("rev_boost", 0.0)
         base_th *= getattr(self, "phase_th_mult", 1.0)
         if rev_dir != 0:
             fused_score += rev_boost * rev_dir
             self._cooldown = 0
+
+        if not self.risk_filters_enabled:
+            return {
+                "fused_score": fused_score,
+                "risk_score": 0.0,
+                "crowding_factor": 1.0,
+                "base_th": base_th,
+            }
 
         funding_conflicts = 0
         for p, raw_f in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:

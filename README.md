@@ -180,9 +180,9 @@ risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
 
 ```yaml
 risk_filters_enabled: false
+dynamic_threshold_enabled: true
 ```
-关闭后 `apply_risk_filters` 会直接返回得分，`compute_position_size` 也不会再根据风险值提高仓位下限。
-注意，此时系统也会跳过 `compute_dynamic_threshold`，`base_th` 将保持上一轮计算的数值。如果该静态门槛较高，融合后的得分可能始终无法超过阈值，最终不会产生任何交易。
+关闭后 `apply_risk_filters` 会直接返回得分，`compute_position_size` 也不会再根据风险值提高仓位下限。默认情况下仍会执行 `compute_dynamic_threshold` 更新 `base_th`；若希望保持固定阈值，可同时将 `dynamic_threshold_enabled` 设为 `false`。
 
 ### 启用或禁用 AI 模型
 
@@ -219,6 +219,8 @@ signal_threshold:
 dynamic_threshold:
   atr_mult: 3.0
   atr_cap: 0.15
+
+`dynamic_threshold_enabled` 控制上述逻辑是否生效，默认值为 `true`。
 
 ## 数据库初始化
 
