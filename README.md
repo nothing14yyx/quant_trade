@@ -182,6 +182,7 @@ risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
 risk_filters_enabled: false
 ```
 关闭后 `apply_risk_filters` 会直接返回得分，`compute_position_size` 也不会再根据风险值提高仓位下限。
+注意，此时系统也会跳过 `compute_dynamic_threshold`，`base_th` 将保持上一轮计算的数值。如果该静态门槛较高，融合后的得分可能始终无法超过阈值，最终不会产生任何交易。
 
 ### 启用或禁用 AI 模型
 
