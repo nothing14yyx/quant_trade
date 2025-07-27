@@ -156,12 +156,12 @@ feature_selector:
 
 ## 风险参数调整
 
-默认 `risk_adjust.factor` 为 0.3，`risk_adjust_threshold` 为 0.03。若发现信号过少，可在 `utils/config.yaml` 放宽以下阈值：
+默认 `risk_adjust.factor` 为 0.15，`risk_adjust_threshold` 为 0.02。若发现信号过少，可在 `utils/config.yaml` 放宽以下阈值：
 
 ```yaml
 risk_adjust:
-  factor: 0.3        # 风险惩罚系数，值越低得分扣减越轻
-risk_adjust_threshold: 0.03     # 调整后的得分绝对值必须高于该值才会生成信号
+  factor: 0.15        # 风险惩罚系数，值越低得分扣减越轻
+risk_adjust_threshold: 0.02     # 调整后的得分绝对值必须高于该值才会生成信号
 veto_conflict_count: 2         # funding 冲突达到此数目直接放弃信号
 min_trend_align: 2             # 趋势方向至少在 N 个周期保持一致
 protection_limits:
