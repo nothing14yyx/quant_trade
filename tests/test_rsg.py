@@ -100,6 +100,18 @@ def test_dynamic_weight_recent_ic_priority():
     assert weights['ai'] == pytest.approx(expected_ai)
 
 
+def test_dynamic_weight_handles_nan_history():
+    rsg = make_rsg()
+    for k in rsg.ic_history:
+        rsg.ic_history[k].extend([float('nan'), 0.5])
+    rsg.ic_history['ai'] = deque([float('nan'), float('nan')], maxlen=500)
+
+    weights = rsg.dynamic_weight_update()
+
+    assert all(np.isfinite(w) for w in weights.values())
+    assert pytest.approx(sum(weights.values()), rel=1e-6) == 1.0
+
+
 def test_compute_tp_sl_fallback():
     rsg = make_rsg()
     tp, sl = rsg.compute_tp_sl(100, 0, 1)

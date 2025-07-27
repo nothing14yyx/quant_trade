@@ -156,12 +156,12 @@ feature_selector:
 
 ## 风险参数调整
 
-默认 `risk_adjust.factor` 为 0.3，`risk_adjust_threshold` 为 0.03。若发现信号过少，可在 `utils/config.yaml` 放宽以下阈值：
+默认 `risk_adjust.factor` 为 0.15，`risk_adjust_threshold` 为 0.02。若发现信号过少，可在 `utils/config.yaml` 放宽以下阈值：
 
 ```yaml
 risk_adjust:
-  factor: 0.3        # 风险惩罚系数，值越低得分扣减越轻
-risk_adjust_threshold: 0.03     # 调整后的得分绝对值必须高于该值才会生成信号
+  factor: 0.15        # 风险惩罚系数，值越低得分扣减越轻
+risk_adjust_threshold: 0.02     # 调整后的得分绝对值必须高于该值才会生成信号
 veto_conflict_count: 2         # funding 冲突达到此数目直接放弃信号
 min_trend_align: 2             # 趋势方向至少在 N 个周期保持一致
 protection_limits:
@@ -180,8 +180,9 @@ risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
 
 ```yaml
 risk_filters_enabled: false
+dynamic_threshold_enabled: true
 ```
-关闭后 `apply_risk_filters` 会直接返回得分，`compute_position_size` 也不会再根据风险值提高仓位下限。
+关闭后 `apply_risk_filters` 会直接返回得分，`compute_position_size` 也不会再根据风险值提高仓位下限。默认情况下仍会执行 `compute_dynamic_threshold` 更新 `base_th`；若希望保持固定阈值，可同时将 `dynamic_threshold_enabled` 设为 `false`。
 
 ### 启用或禁用 AI 模型
 
@@ -218,6 +219,20 @@ signal_threshold:
 dynamic_threshold:
   atr_mult: 3.0
   atr_cap: 0.15
+
+`dynamic_threshold_enabled` 控制上述逻辑是否生效，默认值为 `true`。
+
+### AI 评分后无信号解决方案
+
+若在启用 AI 得分后发现始终没有交易信号，可能是阈值过高或风险过滤被关闭。
+可在 `utils/config.yaml` 调低 `signal_threshold.base_th`，或保持风险过滤开启：
+
+```yaml
+signal_threshold:
+  base_th: 0.06
+risk_filters_enabled: true
+```
+这样能降低触发门槛，并利用风险过滤动态调整得分。
 
 ## 数据库初始化
 
