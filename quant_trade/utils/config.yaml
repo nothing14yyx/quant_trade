@@ -1,6 +1,6 @@
 risk_filters_enabled: false
 dynamic_threshold_enabled: false
-direction_filters_enabled: true
+direction_filters_enabled: false
 enable_ai: true
 binance:
   api_key: "${BINANCE_API_KEY}"
@@ -458,7 +458,7 @@ ic_scores:
   4h: 0.2
   d1: 0.1
   base_weights:
-    ai: 0.2
+    ai: 0.0
     trend: 0.15
     momentum: 0.2
     volatility: 0.35
