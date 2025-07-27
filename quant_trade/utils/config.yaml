@@ -1,5 +1,6 @@
 risk_filters_enabled: false
 dynamic_threshold_enabled: false
+direction_filters_enabled: true
 enable_ai: true
 binance:
   api_key: "${BINANCE_API_KEY}"

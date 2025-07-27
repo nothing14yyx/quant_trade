@@ -76,6 +76,7 @@ DEFAULTS = {
     "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
     "risk_filters_enabled": True,
     "dynamic_threshold_enabled": True,
+    "direction_filters_enabled": True,
 }
 
 SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
@@ -119,6 +120,7 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
     "last_rebound_ts",
     "risk_filters_enabled",
     "dynamic_threshold_enabled",
+    "direction_filters_enabled",
 }
 
 from dataclasses import dataclass
@@ -583,6 +585,7 @@ class RobustSignalGenerator:
         self.cfg = cfg
         self.risk_filters_enabled = cfg.get("risk_filters_enabled", True)
         self.dynamic_threshold_enabled = cfg.get("dynamic_threshold_enabled", True)
+        self.direction_filters_enabled = cfg.get("direction_filters_enabled", True)
         fe_cfg = cfg.get("feature_engineering", {})
         self.rise_transform = fe_cfg.get("rise_transform", "none")
         self.boxcox_lambda_path = Path(
@@ -848,6 +851,7 @@ class RobustSignalGenerator:
             "phase_th_mult": 1.0,
             "phase_dir_mult": {"long": 1.0, "short": 1.0},
             "risk_filters_enabled": True,
+            "direction_filters_enabled": True,
         }
         if name in defaults:
             val = defaults[name]
@@ -3017,6 +3021,9 @@ class RobustSignalGenerator:
     ) -> int:
         """Determine final trade direction."""
 
+        if not self.direction_filters_enabled:
+            return 0 if grad_dir == 0 else int(np.sign(grad_dir))
+
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
         if weak_vote:
             direction = 0
@@ -3074,6 +3081,9 @@ class RobustSignalGenerator:
         zero_reason: str | None,
     ) -> tuple[float, int, str | None]:
         """Apply filters to position size and direction."""
+
+        if not self.direction_filters_enabled:
+            return pos_size, direction, zero_reason
 
         if weak_vote:
             direction = 0

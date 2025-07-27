@@ -181,8 +181,10 @@ risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
 ```yaml
 risk_filters_enabled: false
 dynamic_threshold_enabled: true
+direction_filters_enabled: true
 ```
 关闭后 `apply_risk_filters` 会直接返回得分，`compute_position_size` 也不会再根据风险值提高仓位下限。默认情况下仍会执行 `compute_dynamic_threshold` 更新 `base_th`；若希望保持固定阈值，可同时将 `dynamic_threshold_enabled` 设为 `false`。
+`direction_filters_enabled` 则控制是否执行方向与仓位过滤，设为 `false` 时 `_determine_direction` 和 `_apply_position_filters` 将直接返回原始结果。
 
 ### 启用或禁用 AI 模型
 
