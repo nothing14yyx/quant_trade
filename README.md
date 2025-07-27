@@ -222,6 +222,18 @@ dynamic_threshold:
 
 `dynamic_threshold_enabled` 控制上述逻辑是否生效，默认值为 `true`。
 
+### AI 评分后无信号解决方案
+
+若在启用 AI 得分后发现始终没有交易信号，可能是阈值过高或风险过滤被关闭。
+可在 `utils/config.yaml` 调低 `signal_threshold.base_th`，或保持风险过滤开启：
+
+```yaml
+signal_threshold:
+  base_th: 0.06
+risk_filters_enabled: true
+```
+这样能降低触发门槛，并利用风险过滤动态调整得分。
+
 ## 数据库初始化
 
 执行 `mysql < scripts/init_db.sql` 即可创建所需表格。
