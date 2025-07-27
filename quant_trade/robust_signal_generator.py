@@ -199,6 +199,7 @@ class RobustSignalGeneratorConfig:
     th_window: int = 60
     th_decay: float = 2.0
     enable_ai: bool = True
+    enable_factor_breakdown: bool = True
 
     @classmethod
     def from_file(cls, path: str | Path):
@@ -218,6 +219,7 @@ class RobustSignalGeneratorConfig:
         enable_ai = cfg.get("enable_ai")
         if enable_ai is None:
             enable_ai = os.environ.get("ENABLE_AI", "1") == "1"
+        enable_fb = cfg.get("enable_factor_breakdown", True)
         return cls(
             model_paths=cfg.get("models", {}),
             feature_cols_1h=collect_feature_cols(cfg, "1h"),
@@ -232,6 +234,7 @@ class RobustSignalGeneratorConfig:
             th_window=cfg.get("th_window", 60),
             th_decay=cfg.get("th_decay", 2.0),
             enable_ai=enable_ai,
+            enable_factor_breakdown=enable_fb,
         )
 
 
@@ -551,6 +554,7 @@ class RobustSignalGenerator:
         th_window = config.th_window
         th_decay = config.th_decay
         self.enable_ai = config.enable_ai
+        self.enable_factor_breakdown = config.enable_factor_breakdown
 
         # 多线程访问历史数据时的互斥锁
         # 使用 RLock 以便在部分函数中嵌套调用
@@ -852,6 +856,7 @@ class RobustSignalGenerator:
             "phase_dir_mult": {"long": 1.0, "short": 1.0},
             "risk_filters_enabled": True,
             "direction_filters_enabled": True,
+            "enable_factor_breakdown": True,
         }
         if name in defaults:
             val = defaults[name]
@@ -3171,8 +3176,10 @@ class RobustSignalGenerator:
             包含 ``signal``、``score`` 等字段的结果字典。
         """
         base_th = risk_info.get("base_th", self.signal_params.base_th)
-        factor_breakdown = self._compute_factor_breakdown(ai_scores, fs)
-        self._save_factor_breakdown(factor_breakdown, symbol, ts)
+        factor_breakdown = None
+        if self.enable_factor_breakdown:
+            factor_breakdown = self._compute_factor_breakdown(ai_scores, fs)
+            self._save_factor_breakdown(factor_breakdown, symbol, ts)
         if not risk_info.get("crowding_adjusted"):
             fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
                 fused_score,
@@ -3276,7 +3283,7 @@ class RobustSignalGenerator:
             fused_score *= max(1, conf_vote)
 
         if weak_vote:
-            return {
+            res = {
                 "signal": 0,
                 "score": fused_score,
                 "position_size": 0.0,
@@ -3287,8 +3294,10 @@ class RobustSignalGenerator:
                     "vote": {"value": vote, "confidence": conf_vote, "ob_th": ob_th},
                     "zero_reason": "vote_filter",
                 },
-                "factor_breakdown": factor_breakdown,
             }
+            if factor_breakdown is not None:
+                res["factor_breakdown"] = factor_breakdown
+            return res
 
         vote_sign = int(np.sign(vote))
         if vote_sign != 0 and np.sign(fused_score) != vote_sign:
@@ -3504,7 +3513,7 @@ class RobustSignalGenerator:
         }
         final_details.update(risk_info.get("local_details", {}))
 
-        return {
+        res = {
             "signal": int(direction),
             "score": final_score,
             "position_size": float(round(pos_size, 4)),
@@ -3513,8 +3522,10 @@ class RobustSignalGenerator:
             "take_profit": take_profit,
             "stop_loss": stop_loss,
             "details": final_details,
-            "factor_breakdown": factor_breakdown,
         }
+        if factor_breakdown is not None:
+            res["factor_breakdown"] = factor_breakdown
+        return res
 
     def _precheck_and_direction(
         self,
@@ -3557,8 +3568,10 @@ class RobustSignalGenerator:
                     self._update_history(cache, p, raw, prev)
             self._last_signal = 0
             self._cooldown = 0
-            fb_nan = self._compute_factor_breakdown(ai_scores, fs)
-            self._save_factor_breakdown(fb_nan, None)
+            fb_nan = None
+            if self.enable_factor_breakdown:
+                fb_nan = self._compute_factor_breakdown(ai_scores, fs)
+                self._save_factor_breakdown(fb_nan, None)
             result = {
                 "signal": 0,
                 "score": float("nan"),
@@ -3591,8 +3604,9 @@ class RobustSignalGenerator:
                     "confirm_15m": confirm_15m,
                     "note": "fused_score was NaN",
                 },
-                "factor_breakdown": fb_nan,
             }
+            if fb_nan is not None:
+                result["factor_breakdown"] = fb_nan
             return result, 0, True
 
         direction = int(np.sign(fused_score)) if fused_score else 0
