@@ -1553,11 +1553,16 @@ class RobustSignalGenerator:
                 hist = self.ic_history.get(k)
                 if hist:
                     arr = np.array(hist, dtype=float)
+                    arr = np.nan_to_num(arr, nan=0.0)
                     weights = np.exp(decay * np.arange(len(arr))[::-1])
                     weights /= weights.sum()
-                    ic_avg.append(float(np.nansum(arr * weights)))
+                    ic_val = float(np.nansum(arr * weights))
                 else:
-                    ic_avg.append(self.ic_scores[k])
+                    ic_val = float(self.ic_scores[k])
+                if math.isnan(ic_val):
+                    logger.debug("IC value for %s is NaN, set to 0", k)
+                    ic_val = 0.0
+                ic_avg.append(ic_val)
 
             raw = {}
             for k, ic_val in zip(self.ic_scores.keys(), ic_avg):
