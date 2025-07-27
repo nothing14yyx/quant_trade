@@ -275,25 +275,26 @@ def run_backtest(
         raw4h_list = aligned_4h.to_dict('records')
         rawd1_list = aligned_d1.to_dict('records')
 
-        # 回测主循环：每根K线跑融合信号
+        # 收集特征并批量生成信号
+        feats_1h_list = [
+            {c: df_sym.at[i, c] for c in FEATURE_COLS_1H}
+            for i in range(1, len(df_sym))
+        ]
+        feats_4h_list = [
+            {c: df_sym.at[i, c] for c in FEATURE_COLS_4H}
+            for i in range(1, len(df_sym))
+        ]
+        feats_d1_list = [
+            {c: df_sym.at[i, c] for c in FEATURE_COLS_D1}
+            for i in range(1, len(df_sym))
+        ]
+
+        batch_results = sg.generate_signal_batch(
+            feats_1h_list, feats_4h_list, feats_d1_list
+        )
+
         signals = []
-        for i in range(1, len(df_sym)):   # i=0没法t+1建仓
-            feats_1h = {c: df_sym.at[i, c] for c in FEATURE_COLS_1H}
-            feats_4h = {c: df_sym.at[i, c] for c in FEATURE_COLS_4H}
-            feats_d1 = {c: df_sym.at[i, c] for c in FEATURE_COLS_D1}
-
-            raw1h = raw1h_list[i]
-            raw4h = raw4h_list[i]
-            rawd1 = rawd1_list[i]
-
-            result = sg.generate_signal(
-                feats_1h,
-                feats_4h,
-                feats_d1,
-                raw_features_1h=raw1h,
-                raw_features_4h=raw4h,
-                raw_features_d1=rawd1,
-            )
+        for idx, result in enumerate(batch_results):
             if result is None:
                 result = {
                     'signal': 0,
@@ -304,14 +305,15 @@ def run_backtest(
                     'details': None,
                 }
             signals.append({
-                'open_time': df_sym.at[i, 'open_time'],
-                'signal': result['signal'],
-                'score': result['score'],
-                'position_size': result['position_size'],
-                'take_profit': result['take_profit'],
-                'stop_loss': result['stop_loss'],
+                'open_time': df_sym.at[idx + 1, 'open_time'],
+                'signal': result.get('signal', 0),
+                'score': result.get('score'),
+                'position_size': result.get('position_size', 0.0),
+                'take_profit': result.get('take_profit'),
+                'stop_loss': result.get('stop_loss'),
                 'details': result.get('details'),
             })
+
         sig_df = pd.DataFrame(signals)
         sig_df['symbol'] = symbol
 

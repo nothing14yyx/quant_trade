@@ -221,6 +221,9 @@ def test_run_backtest_recent_days(monkeypatch):
                 "stop_loss": None,
             }
 
+        def generate_signal_batch(self, f1, f4, fd, *a, **k):
+            return [self.generate_signal()] * len(f1)
+
     class DummyCfg:
         @staticmethod
         def from_cfg(cfg):
@@ -285,6 +288,9 @@ def test_run_backtest_skip_invalid_features(monkeypatch, caplog):
                 "take_profit": None,
                 "stop_loss": None,
             }
+
+        def generate_signal_batch(self, f1, f4, fd, *a, **k):
+            return [self.generate_signal()] * len(f1)
 
     class DummyCfg:
         @staticmethod
