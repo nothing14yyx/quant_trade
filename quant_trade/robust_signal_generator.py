@@ -10,7 +10,6 @@
 
 import numpy as np
 import math
-import shap
 from quant_trade.utils.soft_clip import soft_clip
 
 import pandas as pd
@@ -1848,6 +1847,20 @@ class RobustSignalGenerator:
 
     def _compute_factor_breakdown(self, ai_scores: dict, fs: dict) -> dict:
         """使用 SHAP 计算各因子贡献度"""
+        keys = [
+            "ai",
+            "trend",
+            "momentum",
+            "volatility",
+            "volume",
+            "sentiment",
+            "funding",
+        ]
+        if not self.enable_factor_breakdown:
+            return {k: 0.0 for k in keys}
+
+        import shap
+
         with self._lock:
             weights = self.current_weights.copy()
         w1 = weights.copy()
@@ -1891,16 +1904,6 @@ class RobustSignalGenerator:
         if isinstance(sv, list):
             sv = sv[0]
         sv = sv[0]
-
-        keys = [
-            "ai",
-            "trend",
-            "momentum",
-            "volatility",
-            "volume",
-            "sentiment",
-            "funding",
-        ]
 
         return {k: float(v) for k, v in zip(keys, sv)}
 

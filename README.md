@@ -197,6 +197,15 @@ enable_ai: true  # 设为 false 时跳过模型加载
 
 也可通过环境变量 `ENABLE_AI=0` 临时关闭。
 
+### 因子贡献度分解开关
+
+`RobustSignalGenerator` 会在生成信号时计算各因子对最终得分的贡献度，可在
+`utils/config.yaml` 中配置：
+
+```yaml
+enable_factor_breakdown: true  # 设为 false 可提升回测速度
+```
+
 ### 动态阈值调节
 `compute_dynamic_threshold` 会根据近期得分历史计算出门槛基准。其中
 `th_window` 决定统计多少条 `history_scores`，窗口越短反应越灵敏；
