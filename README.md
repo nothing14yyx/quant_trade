@@ -54,7 +54,7 @@ market_phase:
 -   新增 `th_window` 与 `th_decay` 参数，用于控制动态阈值参考的历史得分
     数量及衰减程度，默认 `th_window=150`、`th_decay=1.0`，
     可根据策略需求适当调小窗口或衰减系数。
--   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.80`，数值越高代表触发门槛越严格。
+-   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.78`，数值越高代表触发门槛越严格。
 -   `compute_dynamic_threshold` 会依据最近 `history_scores` 计算分位数，并结合 `atr_4h`、`adx_4h`、`atr_d1`、`adx_d1` 与 `pred_vol`、`vix_proxy` 等指标自适应调整门槛，`regime` 与 `reversal` 还能微调阈值和 `rev_boost`，参数统一封装在 `DynamicThresholdInput` 中。
 -   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
 -   新增 `dynamic_threshold` 配置项，可自定义 ATR、ADX 与 funding 对阈值的影响系数及上限。
@@ -168,6 +168,19 @@ protection_limits:
   risk_score: 1.0    # 允许的风险得分上限
 crowding_limit: 1.05     # 允许的拥挤度上限
 risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
+risk_filters_enabled: true
+max_stop_loss_pct: 0.05     # 单笔最大止损比例
+trailing_stop_pct: 0.03     # 移动止损触发比例
+risk_budget_per_trade: 0.01 # 每笔占用的风险预算
+crowding_protection:
+  enabled: true
+  same_side_limit: 5
+  cool_down_minutes: 45
+
+- `max_stop_loss_pct` 控制单笔交易最大的允许亏损比例。
+- `trailing_stop_pct` 在获利回撤超过该比例时触发移动止损。
+- `risk_budget_per_trade` 定义每笔交易可占用的风险预算上限。
+- `crowding_protection` 用于监控市场同向拥挤度并在过热时暂停开仓。
 
 自 v2.6 起，`risk_score` 仅在計算倉位時生效，不再在得分階段二次扣減。
 自 v2.7 起，引入 `RiskManager.calc_risk`，根据环境得分、预测波动率与 OI 变化率
