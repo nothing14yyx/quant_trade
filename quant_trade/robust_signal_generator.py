@@ -2074,9 +2074,13 @@ class RobustSignalGenerator:
         details['ma_cross'] = int(np.sign(ma_coeff - 1.0))
 
         if rise_pred_1h is not None and drawdown_pred_1h is not None:
-            adj = np.tanh((rise_pred_1h - abs(drawdown_pred_1h)) * 5) * 0.5
-            adjusted['1h'] *= 1 + adj
-            details['rise_drawdown_adj'] = adj
+            delta = rise_pred_1h - abs(drawdown_pred_1h)
+            if delta >= 0.01:
+                adj = np.tanh(delta * 5) * 0.5
+                adjusted['1h'] *= 1 + adj
+                details['rise_drawdown_adj'] = adj
+            else:
+                details['rise_drawdown_adj'] = 0.0
 
         strong_confirm_4h = (
             factor_scores['4h']['trend'] > 0
