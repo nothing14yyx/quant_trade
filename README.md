@@ -181,6 +181,8 @@ crowding_protection:
 - `trailing_stop_pct` 在获利回撤超过该比例时触发移动止损。
 - `risk_budget_per_trade` 定义每笔交易可占用的风险预算上限。
 - `crowding_protection` 用于监控市场同向拥挤度并在过热时暂停开仓。
+- `risk_adjust.factor` 控制风险值对 `fused_score` 的削减力度，公式为
+  `fused_score *= 1 - factor * risk_score`，一般建议取值在 `0.1`～`0.3` 之间。
 
 自 v2.6 起，`risk_score` 仅在計算倉位時生效，不再在得分階段二次扣減。
 自 v2.7 起，引入 `RiskManager.calc_risk`，根据环境得分、预测波动率与 OI 变化率

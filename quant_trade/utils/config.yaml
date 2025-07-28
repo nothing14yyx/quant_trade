@@ -482,9 +482,9 @@ regime:
   adx_range: 20
 
 risk_adjust:
-  factor: 0.15
+  factor: 0.15  # 衰减系数，fused_score *= 1 - factor * risk_score，建议 0.1~0.3
 #  threshold: 0.01
-risk_adjust_threshold: 0.02
+risk_adjust_threshold: 0.02  # 绝对得分低于此值时不生成信号
 
 protection_limits:
   risk_score: 1.0
