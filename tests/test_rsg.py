@@ -56,6 +56,7 @@ def make_rsg():
     rsg.flip_confirm_bars = 3
     rsg.cfg = {'signal_threshold': {'base_th': 0.12, 'quantile': 0.8}}
     rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
+    rsg.w_ai = rsg.current_weights['ai']
     return rsg
 
 
@@ -227,3 +228,16 @@ def test_dynamic_threshold_smoothing():
         base=0.05,
     )
     assert th_sm < th_raw
+
+
+def test_update_dynamic_weights_sets_w_ai():
+    rsg = make_rsg()
+    for k in rsg.ic_history:
+        rsg.ic_history[k].extend([0.0, 0.0, 0.0])
+    rsg.ic_history['ai'] = deque([2.0, 2.0, 2.0], maxlen=500)
+
+    prev = rsg.w_ai
+    weights = rsg._update_dynamic_weights()
+
+    assert rsg.w_ai == pytest.approx(weights['ai'])
+    assert rsg.w_ai > prev
