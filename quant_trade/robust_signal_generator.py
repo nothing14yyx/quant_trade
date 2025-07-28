@@ -3177,6 +3177,13 @@ class RobustSignalGenerator:
         Returns:
             包含 ``signal``、``score`` 等字段的结果字典。
         """
+        if getattr(self, "account", None) is not None:
+            try:
+                if self.account.day_loss_pct() > 0.04:
+                    return None
+            except Exception:
+                pass
+
         base_th = risk_info.get("base_th", self.signal_params.base_th)
         factor_breakdown = None
         if self.enable_factor_breakdown:
