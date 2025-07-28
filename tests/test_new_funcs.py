@@ -1,7 +1,7 @@
 import pytest
 
 from quant_trade.tests.test_utils import make_dummy_rsg
-from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import RobustSignalGenerator, PeriodFeatures
 
 
 def test_calc_factor_scores():
@@ -49,6 +49,60 @@ def test_apply_local_adjustments():
     assert adjusted['1h'] != scores['1h']
 
 
+def test_rise_drawdown_adj_threshold():
+    rsg = make_dummy_rsg()
+    scores = {'1h': 0.2, '4h': 0.2, 'd1': 0.2}
+    raw = {
+        '1h': {
+            'sma_5_1h': 1.05,
+            'sma_20_1h': 1.0,
+            'ma_ratio_5_20': 1.05,
+            'sma_20_1h_prev': 0.98,
+            'vol_ma_ratio_1h': 2.0,
+            'boll_perc_1h': 0.99,
+            'vol_roc_1h': 0.0,
+        },
+        '4h': {'vol_ma_ratio_4h': 1.0, 'vol_roc_4h': 0.0},
+        'd1': {'vol_ma_ratio_d1': 1.0, 'vol_roc_d1': 0.0},
+    }
+    fs = {
+        '1h': {'sentiment': 0},
+        '4h': {'trend': 1, 'momentum': 1, 'volatility': 1, 'sentiment': 0},
+        'd1': {'sentiment': 0},
+    }
+    deltas = {}
+    adj_high, det_high = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.02, -0.005)
+    assert det_high['rise_drawdown_adj'] > 0
+    adj_low, det_low = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.008, -0.0)
+    assert det_low['rise_drawdown_adj'] == 0
+
+
+def test_rise_drawdown_adj_threshold_exact():
+    rsg = make_dummy_rsg()
+    scores = {'1h': 0.2, '4h': 0.2, 'd1': 0.2}
+    raw = {
+        '1h': {
+            'sma_5_1h': 1.05,
+            'sma_20_1h': 1.0,
+            'ma_ratio_5_20': 1.05,
+            'sma_20_1h_prev': 0.98,
+            'vol_ma_ratio_1h': 2.0,
+            'boll_perc_1h': 0.99,
+            'vol_roc_1h': 0.0,
+        },
+        '4h': {'vol_ma_ratio_4h': 1.0, 'vol_roc_4h': 0.0},
+        'd1': {'vol_ma_ratio_d1': 1.0, 'vol_roc_d1': 0.0},
+    }
+    fs = {
+        '1h': {'sentiment': 0},
+        '4h': {'trend': 1, 'momentum': 1, 'volatility': 1, 'sentiment': 0},
+        'd1': {'sentiment': 0},
+    }
+    deltas = {}
+    _, det_eq = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.02, 0.01)
+    assert det_eq['rise_drawdown_adj'] > 0
+
+
 def test_fuse_multi_cycle():
     rsg = make_dummy_rsg()
     rsg.cycle_weight = {'strong': 2.0, 'weak': 0.5, 'opposite': 0.5}
@@ -64,6 +118,54 @@ def test_fuse_multi_cycle():
     fused3, a3, b3, c3 = rsg.fuse_multi_cycle(scores, (0.5, 0.3, 0.2), False)
     assert fused3 == pytest.approx(0.035)
     assert c3
+
+
+def test_ai_dir_inconsistent_returns_none():
+    rsg = make_dummy_rsg()
+    rsg.ai_dir_eps = 0.1
+    rsg.calc_factor_scores = lambda ai, fs, w: ai
+    rsg.apply_local_adjustments = lambda s, *a, **k: (s, {})
+    pf = PeriodFeatures({}, {})
+    res = rsg.compute_factor_scores(
+        {"1h": 0.3, "4h": -0.3, "d1": 0.3},
+        pf,
+        pf,
+        pf,
+        pf,
+        {},
+        {},
+        {},
+        {},
+        None,
+        None,
+        None,
+        None,
+    )
+    assert res is None
+
+
+def test_ai_dir_eps_threshold_check():
+    rsg = make_dummy_rsg()
+    rsg.ai_dir_eps = 0.2
+    rsg.calc_factor_scores = lambda ai, fs, w: ai
+    rsg.apply_local_adjustments = lambda s, *a, **k: (s, {})
+    pf = PeriodFeatures({}, {})
+    res = rsg.compute_factor_scores(
+        {"1h": 0.15, "4h": -0.3, "d1": 0.25},
+        pf,
+        pf,
+        pf,
+        pf,
+        {},
+        {},
+        {},
+        {},
+        None,
+        None,
+        None,
+        None,
+    )
+    assert res is None
 
 
 def test_compute_exit_multiplier():

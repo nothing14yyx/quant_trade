@@ -11,7 +11,12 @@ class AIModelPredictor:
         self.models: dict = {}
         self.calibrators: dict = {}
         base_dir = Path(__file__).resolve().parent
+
+        allowed = {"1h", "4h"}
         for period, path_dict in model_paths.items():
+            if period not in allowed:
+                continue
+
             self.models[period] = {}
             self.calibrators[period] = {}
             for direction, path in path_dict.items():

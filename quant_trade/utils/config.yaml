@@ -1,9 +1,12 @@
-risk_filters_enabled: false
+risk_filters_enabled: true
 dynamic_threshold_enabled: false
-direction_filters_enabled: false
+direction_filters_enabled: true
 enable_ai: true
 # 设置为 false 可跳过因子贡献度计算以提升回测速度
-enable_factor_breakdown: false
+enable_factor_breakdown: true
+max_stop_loss_pct: 0.05
+trailing_stop_pct: 0.03
+risk_budget_per_trade: 0.01
 binance:
   api_key: "${BINANCE_API_KEY}"
   api_secret: "${BINANCE_API_SECRET}"
@@ -126,10 +129,10 @@ models:
     rise: models/model_4h_rise.pkl
     drawdown: models/model_4h_drawdown.pkl
   d1:
-    cls: models/model_d1_cls.pkl
-    vol: models/model_d1_vol.pkl
-    rise: models/model_d1_rise.pkl
-    drawdown: models/model_d1_drawdown.pkl
+    cls: ""
+    vol: ""
+    rise: ""
+    drawdown: ""
 
 
 feature_cols:
@@ -389,7 +392,7 @@ vote_system:
 #  weight_ai: 2          # 已由 vote_weights.ai 定义
   strong_min: 2
   conf_min: 0.25
-  ai_dir_eps: 0.02
+  ai_dir_eps: 0.10
 vote_weights:
   ai: 2
   short_mom: 1
@@ -435,7 +438,7 @@ signal_threshold:
   base_th: 0.09125270660476172      # 原 dynamic_th_final 的初始值
   gamma: 0.9        # 过渡宽度
   min_pos: 0.05      # pos_size < 0.10 则 direction = 0
-  quantile: 0.65
+  quantile: 0.78
   low_base: 0.06
   # base_th / low_base 单位为 fused_score
   rev_boost: 0.15      # detect_reversal 命中时加分
@@ -457,10 +460,10 @@ ic_update_rows: 2000          # 从 features 表读取的记录数
 ic_update_interval_hours: 24  # 多少小时刷新一次权重，默认为每日
 ic_scores:
   1h: 1.0
-  4h: 0.2
-  d1: 0.1
+  4h: 0.20
+  d1: 0.0
   base_weights:
-    ai: 0.0
+    ai: 0.2
     trend: 0.15
     momentum: 0.2
     volatility: 0.35
@@ -485,6 +488,11 @@ risk_adjust_threshold: 0.02
 protection_limits:
   risk_score: 1.0
 crowding_limit: 1.15
+
+crowding_protection:
+  enabled: true
+  same_side_limit: 5
+  cool_down_minutes: 45
 
 min_trend_align: 2
 

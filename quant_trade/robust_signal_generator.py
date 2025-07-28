@@ -724,6 +724,8 @@ class RobustSignalGenerator:
 
         # 当前权重，初始与 base_weights 相同
         self.current_weights = self.base_weights.copy()
+        # 同步 ai 权重方便访问
+        self.w_ai = self.current_weights.get("ai", 0.0)
 
         # 初始化各因子对应的IC分数，可在配置文件中覆盖
         cfg_ic = cfg.get("ic_scores")
@@ -853,6 +855,7 @@ class RobustSignalGenerator:
             "market_phase": "range",
             "phase_th_mult": 1.0,
             "phase_dir_mult": {"long": 1.0, "short": 1.0},
+            "w_ai": 0.0,
             "risk_filters_enabled": True,
             "direction_filters_enabled": True,
             "enable_factor_breakdown": True,
@@ -1013,55 +1016,28 @@ class RobustSignalGenerator:
         if atr == 0:
             atr = 0.005 * price
 
-        cfg = getattr(self, "tp_sl_cfg", {})
-        range_cfg = get_cfg_value(cfg, "range", {})
-        trend_cfg = get_cfg_value(cfg, "trend", {})
-        sl_min_pct = get_cfg_value(cfg, "sl_min_pct", 0.005)
+        cfg = getattr(self, "cfg", {})
+        max_sl_pct = get_cfg_value(cfg, "max_stop_loss_pct", 0.05)
 
-        if regime == "range":
-            tp_mult = get_cfg_value(range_cfg, "tp_mult", 1.0)
-            sl_mult = get_cfg_value(range_cfg, "sl_mult", 0.8)
-        elif regime == "trend":
-            tp_mult = get_cfg_value(trend_cfg, "tp_mult", 1.8)
-            sl_mult = get_cfg_value(trend_cfg, "sl_mult", 1.2)
+        if rise_pred is None:
+            rise_pred = 0.0
+        if drawdown_pred is None:
+            drawdown_pred = 0.0
 
-        # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
-        tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
-        sl_mult = float(np.clip(sl_mult, 0.5, 2.0))
-
-        if rise_pred is not None and drawdown_pred is not None:
-            if direction == 1:
-                take_profit = price * (1 + max(rise_pred, 0))
-                stop_loss = price * (1 + min(drawdown_pred, 0))
-            else:
-                take_profit = price * (1 - max(drawdown_pred, 0))
-                stop_loss = price * (1 - min(rise_pred, 0))
-
-            # 若预测值过小导致 tp/sl 等于入场价，退回 ATR 模式
-            if abs(take_profit - price) < 1e-8 and abs(stop_loss - price) < 1e-8:
-                if direction == 1:
-                    take_profit = price + tp_mult * atr
-                    stop_loss = price - sl_mult * atr
-                else:
-                    take_profit = price - tp_mult * atr
-                    stop_loss = price + sl_mult * atr
-        else:
-            if direction == 1:
-                take_profit = price + tp_mult * atr
-                stop_loss = price - sl_mult * atr
-            else:
-                take_profit = price - tp_mult * atr
-                stop_loss = price + sl_mult * atr
-
-        min_sl_dist = max(sl_min_pct * price, 0.7 * atr)
         if direction == 1:
-            if price - stop_loss < min_sl_dist:
-                stop_loss = price - min_sl_dist
+            max_sl = price * (1 - max_sl_pct)
+            tp0 = price * (1 + min(rise_pred, 0.10))
+            sl0 = price * (1 + max(drawdown_pred, -max_sl_pct))
+            tp = max(tp0, price * 1.02)
+            sl = min(sl0, max_sl)
         else:
-            if stop_loss - price < min_sl_dist:
-                stop_loss = price + min_sl_dist
+            max_sl = price * (1 + max_sl_pct)
+            tp0 = price * (1 - min(rise_pred, 0.10))
+            sl0 = price * (1 - max(drawdown_pred, -max_sl_pct))
+            tp = min(tp0, price * 0.98)
+            sl = max(sl0, max_sl)
 
-        return float(take_profit), float(stop_loss)
+        return float(tp), float(sl)
 
     def _base_key(self, k: str) -> str:
         for key in self.delta_params:
@@ -1589,11 +1565,17 @@ class RobustSignalGenerator:
         logger.debug("current_weights: %s", self.current_weights)
         return self.current_weights
 
+    def _update_dynamic_weights(self):
+        """刷新权重并同步 AI 权重"""
+        weights = self.dynamic_weight_update()
+        self.w_ai = self.current_weights.get("ai", 0.0)
+        return weights
+
     def _weight_update_loop(self, interval):
         """定时更新权重，日志记录在 DEBUG 级别"""
         while True:
             try:
-                self.dynamic_weight_update()
+                self._update_dynamic_weights()
             except Exception as e:
                 logger.warning("weight update failed: %s", e)
             if self._stop_event.wait(interval):
@@ -2065,9 +2047,13 @@ class RobustSignalGenerator:
         details['ma_cross'] = int(np.sign(ma_coeff - 1.0))
 
         if rise_pred_1h is not None and drawdown_pred_1h is not None:
-            adj = np.tanh((rise_pred_1h - abs(drawdown_pred_1h)) * 5) * 0.5
-            adjusted['1h'] *= 1 + adj
-            details['rise_drawdown_adj'] = adj
+            delta = rise_pred_1h - abs(drawdown_pred_1h)
+            if delta >= 0.01:
+                adj = np.tanh(delta * 5) * 0.5
+                adjusted['1h'] *= 1 + adj
+                details['rise_drawdown_adj'] = adj
+            else:
+                details['rise_drawdown_adj'] = 0.0
 
         strong_confirm_4h = (
             factor_scores['4h']['trend'] > 0
@@ -2538,6 +2524,17 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """计算多因子得分并输出相关中间结果"""
+        ai_scores = ai_scores.copy()
+        cfg_vote = getattr(self, "cfg", {}).get("vote_system", {})
+        th = get_cfg_value(cfg_vote, "ai_dir_eps", getattr(self, "ai_dir_eps", DEFAULT_AI_DIR_EPS))
+        for p, val in list(ai_scores.items()):
+            if abs(val) < th:
+                ai_scores[p] = 0.0
+
+        signs = {int(np.sign(v)) for v in ai_scores.values() if v != 0}
+        if len(signs) > 1:
+            return None
+
         raw_dict = {
             "1h": feats_1h.raw,
             "4h": feats_4h.raw,
@@ -2777,6 +2774,8 @@ class RobustSignalGenerator:
             ob_imb,
             symbol,
         )
+        if result is None:
+            return None
         result.update(
             {
                 "ai_scores": ai_scores,
@@ -3178,6 +3177,13 @@ class RobustSignalGenerator:
         Returns:
             包含 ``signal``、``score`` 等字段的结果字典。
         """
+        if getattr(self, "account", None) is not None:
+            try:
+                if self.account.day_loss_pct() > 0.04:
+                    return None
+            except Exception:
+                pass
+
         base_th = risk_info.get("base_th", self.signal_params.base_th)
         factor_breakdown = None
         if self.enable_factor_breakdown:
@@ -3455,6 +3461,19 @@ class RobustSignalGenerator:
             # 超跌反弹时强制给最小仓位并清除归零原因
             pos_size = tier * 0.2
             zero_reason = None
+
+        # >>> 新增：根据止损和账户资金限制仓位大小
+        if stop_loss is not None and direction != 0:
+            equity = getattr(getattr(self, "account", None), "equity", None)
+            if equity is None:
+                equity = getattr(self, "equity", None)
+            cfg_local = getattr(self, "cfg", {})
+            risk_budget = get_cfg_value(cfg_local, "risk_budget_per_trade", None)
+            max_pos_pct = get_cfg_value(cfg_local, "max_pos_pct", 1.0)
+            if risk_budget is not None and equity is not None and price != stop_loss:
+                size = risk_budget * equity / abs(price - stop_loss)
+                size = min(size, max_pos_pct * equity / price)
+                pos_size = min(pos_size, size)
 
         # 使用传入的逻辑与环境得分计算最终得分
         score_raw = logic_score * env_score
@@ -3860,6 +3879,8 @@ class RobustSignalGenerator:
             prepared["ob_imb"],
             symbol,
         )
+        if scores is None:
+            return None
 
         fused_score = scores["fused_score"]
         logic_score = scores["logic_score"]
