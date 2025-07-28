@@ -2491,6 +2491,12 @@ class RobustSignalGenerator:
             if drawdown is not None:
                 drawdown_preds[p] = drawdown
 
+        for p in ("1h", "4h", "d1"):
+            ai_scores.setdefault(p, 0.0)
+            vol_preds.setdefault(p, None)
+            rise_preds.setdefault(p, None)
+            drawdown_preds.setdefault(p, None)
+
         extreme_reversal = False
         rsi = feats_d1.raw.get("rsi_d1", 50)
         cci = feats_d1.raw.get("cci_d1", 0)
