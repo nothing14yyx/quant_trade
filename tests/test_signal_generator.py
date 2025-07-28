@@ -1011,7 +1011,7 @@ def test_position_size_range_regime():
         raw_features_4h=f4h,
         raw_features_d1=fd1,
     )
-    assert res['position_size'] == 0
+    assert res is None
 
 
 def test_generate_signal_with_cls_model():

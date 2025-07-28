@@ -2547,6 +2547,16 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """计算多因子得分并输出相关中间结果"""
+        ai_scores = ai_scores.copy()
+        th = self.ai_dir_eps
+        for p in list(ai_scores):
+            if abs(ai_scores[p]) < th:
+                ai_scores[p] = 0.0
+
+        signs = {int(np.sign(v)) for v in ai_scores.values() if v != 0}
+        if len(signs) > 1:
+            return None
+
         raw_dict = {
             "1h": feats_1h.raw,
             "4h": feats_4h.raw,
@@ -2786,6 +2796,8 @@ class RobustSignalGenerator:
             ob_imb,
             symbol,
         )
+        if result is None:
+            return None
         result.update(
             {
                 "ai_scores": ai_scores,
@@ -3869,6 +3881,8 @@ class RobustSignalGenerator:
             prepared["ob_imb"],
             symbol,
         )
+        if scores is None:
+            return None
 
         fused_score = scores["fused_score"]
         logic_score = scores["logic_score"]
