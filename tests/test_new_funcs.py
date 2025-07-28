@@ -1,7 +1,7 @@
 import pytest
 
 from quant_trade.tests.test_utils import make_dummy_rsg
-from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.robust_signal_generator import RobustSignalGenerator, PeriodFeatures
 
 
 def test_calc_factor_scores():
@@ -64,6 +64,30 @@ def test_fuse_multi_cycle():
     fused3, a3, b3, c3 = rsg.fuse_multi_cycle(scores, (0.5, 0.3, 0.2), False)
     assert fused3 == pytest.approx(0.035)
     assert c3
+
+
+def test_ai_dir_inconsistent_returns_none():
+    rsg = make_dummy_rsg()
+    rsg.ai_dir_eps = 0.1
+    rsg.calc_factor_scores = lambda ai, fs, w: ai
+    rsg.apply_local_adjustments = lambda s, *a, **k: (s, {})
+    pf = PeriodFeatures({}, {})
+    res = rsg.compute_factor_scores(
+        {"1h": 0.3, "4h": -0.3, "d1": 0.3},
+        pf,
+        pf,
+        pf,
+        pf,
+        {},
+        {},
+        {},
+        {},
+        None,
+        None,
+        None,
+        None,
+    )
+    assert res is None
 
 
 def test_compute_exit_multiplier():
