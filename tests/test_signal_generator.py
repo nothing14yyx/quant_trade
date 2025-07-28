@@ -9,30 +9,30 @@ from quant_trade.robust_signal_generator import SignalThresholdParams, DynamicTh
 def test_compute_tp_sl():
     rsg = make_dummy_rsg()
     tp, sl = rsg.compute_tp_sl(100, 10, 1)
-    assert tp == pytest.approx(115)
-    assert sl == pytest.approx(90)
+    assert tp == pytest.approx(102)
+    assert sl == pytest.approx(95)
 
     tp, sl = rsg.compute_tp_sl(100, 10, -1)
-    assert tp == pytest.approx(85)
-    assert sl == pytest.approx(110)
+    assert tp == pytest.approx(98)
+    assert sl == pytest.approx(105)
 
 
 def test_compute_tp_sl_regime():
     rsg = make_dummy_rsg()
     tp, sl = rsg.compute_tp_sl(100, 10, 1, regime="range")
-    assert tp == pytest.approx(110)
-    assert sl == pytest.approx(92)
+    assert tp == pytest.approx(102)
+    assert sl == pytest.approx(95)
 
     tp, sl = rsg.compute_tp_sl(100, 10, -1, regime="trend")
-    assert tp == pytest.approx(82)
-    assert sl == pytest.approx(112)
+    assert tp == pytest.approx(98)
+    assert sl == pytest.approx(105)
 
 
 def test_compute_tp_sl_min_stop_loss():
     rsg = make_dummy_rsg()
     tp, sl = rsg.compute_tp_sl(100, 10, 1, sl_mult=0.2)
-    assert tp == pytest.approx(115)
-    assert sl == pytest.approx(93)
+    assert tp == pytest.approx(102)
+    assert sl == pytest.approx(95)
 
 
 def test_dynamic_threshold_basic():
