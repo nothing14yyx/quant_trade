@@ -77,6 +77,32 @@ def test_rise_drawdown_adj_threshold():
     assert det_low['rise_drawdown_adj'] == 0
 
 
+def test_rise_drawdown_adj_threshold_exact():
+    rsg = make_dummy_rsg()
+    scores = {'1h': 0.2, '4h': 0.2, 'd1': 0.2}
+    raw = {
+        '1h': {
+            'sma_5_1h': 1.05,
+            'sma_20_1h': 1.0,
+            'ma_ratio_5_20': 1.05,
+            'sma_20_1h_prev': 0.98,
+            'vol_ma_ratio_1h': 2.0,
+            'boll_perc_1h': 0.99,
+            'vol_roc_1h': 0.0,
+        },
+        '4h': {'vol_ma_ratio_4h': 1.0, 'vol_roc_4h': 0.0},
+        'd1': {'vol_ma_ratio_d1': 1.0, 'vol_roc_d1': 0.0},
+    }
+    fs = {
+        '1h': {'sentiment': 0},
+        '4h': {'trend': 1, 'momentum': 1, 'volatility': 1, 'sentiment': 0},
+        'd1': {'sentiment': 0},
+    }
+    deltas = {}
+    _, det_eq = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.02, 0.01)
+    assert det_eq['rise_drawdown_adj'] > 0
+
+
 def test_fuse_multi_cycle():
     rsg = make_dummy_rsg()
     rsg.cycle_weight = {'strong': 2.0, 'weak': 0.5, 'opposite': 0.5}
