@@ -1,5 +1,5 @@
-risk_filters_enabled: false
-dynamic_threshold_enabled: false
+risk_filters_enabled: true
+dynamic_threshold_enabled: true
 direction_filters_enabled: false
 enable_ai: true
 # 设置为 false 可跳过因子贡献度计算以提升回测速度
