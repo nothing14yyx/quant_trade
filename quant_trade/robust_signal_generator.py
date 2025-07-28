@@ -724,6 +724,8 @@ class RobustSignalGenerator:
 
         # 当前权重，初始与 base_weights 相同
         self.current_weights = self.base_weights.copy()
+        # 同步 ai 权重方便访问
+        self.w_ai = self.current_weights.get("ai", 0.0)
 
         # 初始化各因子对应的IC分数，可在配置文件中覆盖
         cfg_ic = cfg.get("ic_scores")
@@ -853,6 +855,7 @@ class RobustSignalGenerator:
             "market_phase": "range",
             "phase_th_mult": 1.0,
             "phase_dir_mult": {"long": 1.0, "short": 1.0},
+            "w_ai": 0.0,
             "risk_filters_enabled": True,
             "direction_filters_enabled": True,
             "enable_factor_breakdown": True,
@@ -1589,11 +1592,17 @@ class RobustSignalGenerator:
         logger.debug("current_weights: %s", self.current_weights)
         return self.current_weights
 
+    def _update_dynamic_weights(self):
+        """刷新权重并同步 AI 权重"""
+        weights = self.dynamic_weight_update()
+        self.w_ai = self.current_weights.get("ai", 0.0)
+        return weights
+
     def _weight_update_loop(self, interval):
         """定时更新权重，日志记录在 DEBUG 级别"""
         while True:
             try:
-                self.dynamic_weight_update()
+                self._update_dynamic_weights()
             except Exception as e:
                 logger.warning("weight update failed: %s", e)
             if self._stop_event.wait(interval):
