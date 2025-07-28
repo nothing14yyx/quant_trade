@@ -2834,6 +2834,7 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """执行风险限制与拥挤度检查"""
+        penalties: list[str] = []
         if not self.risk_filters_enabled and not self.dynamic_threshold_enabled:
             return {
                 "fused_score": fused_score,
@@ -2917,6 +2918,7 @@ class RobustSignalGenerator:
         if funding_conflicts >= self.veto_conflict_count:
             if self.filter_penalty_mode:
                 fused_score *= self.penalty_factor
+                penalties.append(ZeroReason.FUNDING_PENALTY.value)
             else:
                 return None
 
@@ -2967,6 +2969,7 @@ class RobustSignalGenerator:
         ):
             if self.filter_penalty_mode:
                 fused_score *= self.penalty_factor
+                penalties.append(ZeroReason.RISK_PENALTY.value)
             else:
                 return None
 
@@ -2985,6 +2988,7 @@ class RobustSignalGenerator:
             "regime": regime,
             "rev_dir": rev_dir,
             "funding_conflicts": funding_conflicts,
+            "details": {"penalties": penalties} if penalties else {},
         }
 
     def _compute_vote(
@@ -3102,15 +3106,18 @@ class RobustSignalGenerator:
         base_th: float,
         conflict_filter_triggered: bool,
         zero_reason: str | None,
-    ) -> tuple[float, int, str | None]:
+    ) -> tuple[float, int, str | None, list[str]]:
         """Apply filters to position size and direction."""
 
+        penalties: list[str] = []
+
         if not self.direction_filters_enabled:
-            return pos_size, direction, zero_reason
+            return pos_size, direction, zero_reason, penalties
 
         if weak_vote:
             if self.filter_penalty_mode:
                 pos_size *= self.penalty_factor
+                penalties.append(ZeroReason.VOTE_PENALTY.value)
                 zero_reason = None
             else:
                 direction = 0
@@ -3120,6 +3127,7 @@ class RobustSignalGenerator:
         if funding_conflicts > self.veto_level:
             if self.filter_penalty_mode:
                 pos_size *= self.penalty_factor
+                penalties.append(ZeroReason.FUNDING_PENALTY.value)
                 zero_reason = None
             else:
                 direction = 0
@@ -3137,13 +3145,14 @@ class RobustSignalGenerator:
         if conflict_filter_triggered:
             if self.filter_penalty_mode:
                 pos_size *= self.penalty_factor
+                penalties.append(ZeroReason.CONFLICT_PENALTY.value)
                 zero_reason = None
             else:
                 pos_size = 0.0
                 direction = 0
                 zero_reason = zero_reason or ZeroReason.CONFLICT_FILTER.value
 
-        return pos_size, direction, zero_reason
+        return pos_size, direction, zero_reason, penalties
 
     def finalize_position(
         self,
@@ -3437,7 +3446,7 @@ class RobustSignalGenerator:
             consensus_all=risk_info.get("consensus_all", False),
         )
 
-        pos_size, direction, zero_reason = self._apply_position_filters(
+        pos_size, direction, zero_reason, penalties = self._apply_position_filters(
             pos_size,
             direction,
             weak_vote=weak_vote,
@@ -3562,6 +3571,14 @@ class RobustSignalGenerator:
             "reb_boost_applied": reb_boost_applied,
         }
         final_details.update(risk_info.get("local_details", {}))
+        if penalties:
+            final_details.setdefault("penalties", []).extend(penalties)
+        if risk_info.get("details"):
+            for k, v in risk_info["details"].items():
+                if k == "penalties":
+                    final_details.setdefault("penalties", []).extend(v)
+                else:
+                    final_details[k] = v
 
         res = {
             "signal": int(direction),

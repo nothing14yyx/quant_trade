@@ -3,6 +3,7 @@ from collections import deque
 
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.robust_signal_generator import SignalThresholdParams
+from quant_trade.constants import ZeroReason
 
 
 def make_cache():
@@ -44,6 +45,9 @@ def test_penalty_on_risk_filters():
     )
     assert res is not None
     assert pytest.approx(res["fused_score"], rel=1e-6) == 0.01225
+    penalties = res["details"]["penalties"]
+    assert ZeroReason.FUNDING_PENALTY.value in penalties
+    assert ZeroReason.RISK_PENALTY.value in penalties
 
 
 def test_position_penalty_mode():
@@ -51,7 +55,7 @@ def test_position_penalty_mode():
     rsg.filter_penalty_mode = True
     rsg.penalty_factor = 0.5
     rsg.veto_level = 0.4
-    pos, direction, zr = rsg._apply_position_filters(
+    pos, direction, zr, p1 = rsg._apply_position_filters(
         0.2,
         1,
         weak_vote=True,
@@ -66,8 +70,9 @@ def test_position_penalty_mode():
     assert pos == pytest.approx(0.1)
     assert direction == 1
     assert zr is None
+    assert p1 == [ZeroReason.VOTE_PENALTY.value]
 
-    pos2, direction2, zr2 = rsg._apply_position_filters(
+    pos2, direction2, zr2, p2 = rsg._apply_position_filters(
         0.2,
         1,
         weak_vote=False,
@@ -82,3 +87,4 @@ def test_position_penalty_mode():
     assert pos2 == pytest.approx(0.2 * 0.5 * 0.5)
     assert direction2 == 1
     assert zr2 is None
+    assert set(p2) == {ZeroReason.FUNDING_PENALTY.value, ZeroReason.CONFLICT_PENALTY.value}
