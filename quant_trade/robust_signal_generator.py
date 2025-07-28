@@ -1016,53 +1016,26 @@ class RobustSignalGenerator:
         if atr == 0:
             atr = 0.005 * price
 
-        cfg = getattr(self, "tp_sl_cfg", {})
-        range_cfg = get_cfg_value(cfg, "range", {})
-        trend_cfg = get_cfg_value(cfg, "trend", {})
-        sl_min_pct = get_cfg_value(cfg, "sl_min_pct", 0.005)
+        cfg = getattr(self, "cfg", {})
+        max_sl_pct = get_cfg_value(cfg, "max_stop_loss_pct", 0.05)
 
-        if regime == "range":
-            tp_mult = get_cfg_value(range_cfg, "tp_mult", 1.0)
-            sl_mult = get_cfg_value(range_cfg, "sl_mult", 0.8)
-        elif regime == "trend":
-            tp_mult = get_cfg_value(trend_cfg, "tp_mult", 1.8)
-            sl_mult = get_cfg_value(trend_cfg, "sl_mult", 1.2)
+        if rise_pred is None:
+            rise_pred = 0.0
+        if drawdown_pred is None:
+            drawdown_pred = 0.0
 
-        # 限制倍数范围，防止 ATR 极端波动导致止盈/止损过远或过近
-        tp_mult = float(np.clip(tp_mult, 0.5, 3.0))
-        sl_mult = float(np.clip(sl_mult, 0.5, 2.0))
-
-        if rise_pred is not None and drawdown_pred is not None:
-            if direction == 1:
-                take_profit = price * (1 + max(rise_pred, 0))
-                stop_loss = price * (1 + min(drawdown_pred, 0))
-            else:
-                take_profit = price * (1 - max(drawdown_pred, 0))
-                stop_loss = price * (1 - min(rise_pred, 0))
-
-            # 若预测值过小导致 tp/sl 等于入场价，退回 ATR 模式
-            if abs(take_profit - price) < 1e-8 and abs(stop_loss - price) < 1e-8:
-                if direction == 1:
-                    take_profit = price + tp_mult * atr
-                    stop_loss = price - sl_mult * atr
-                else:
-                    take_profit = price - tp_mult * atr
-                    stop_loss = price + sl_mult * atr
-        else:
-            if direction == 1:
-                take_profit = price + tp_mult * atr
-                stop_loss = price - sl_mult * atr
-            else:
-                take_profit = price - tp_mult * atr
-                stop_loss = price + sl_mult * atr
-
-        min_sl_dist = max(sl_min_pct * price, 0.7 * atr)
         if direction == 1:
-            if price - stop_loss < min_sl_dist:
-                stop_loss = price - min_sl_dist
+            max_sl = price * (1 - max_sl_pct)
+            tp0 = price * (1 + min(rise_pred, 0.10))
+            sl0 = price * (1 + max(drawdown_pred, -max_sl_pct))
+            take_profit = max(tp0, price * 1.02)
+            stop_loss = min(sl0, max_sl)
         else:
-            if stop_loss - price < min_sl_dist:
-                stop_loss = price + min_sl_dist
+            max_sl = price * (1 + max_sl_pct)
+            tp0 = price * (1 - min(rise_pred, 0.10))
+            sl0 = price * (1 - max(drawdown_pred, -max_sl_pct))
+            take_profit = min(tp0, price * 0.98)
+            stop_loss = max(sl0, max_sl)
 
         return float(take_profit), float(stop_loss)
 
