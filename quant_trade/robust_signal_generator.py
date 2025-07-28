@@ -1028,16 +1028,16 @@ class RobustSignalGenerator:
             max_sl = price * (1 - max_sl_pct)
             tp0 = price * (1 + min(rise_pred, 0.10))
             sl0 = price * (1 + max(drawdown_pred, -max_sl_pct))
-            take_profit = max(tp0, price * 1.02)
-            stop_loss = min(sl0, max_sl)
+            tp = max(tp0, price * 1.02)
+            sl = min(sl0, max_sl)
         else:
             max_sl = price * (1 + max_sl_pct)
             tp0 = price * (1 - min(rise_pred, 0.10))
             sl0 = price * (1 - max(drawdown_pred, -max_sl_pct))
-            take_profit = min(tp0, price * 0.98)
-            stop_loss = max(sl0, max_sl)
+            tp = min(tp0, price * 0.98)
+            sl = max(sl0, max_sl)
 
-        return float(take_profit), float(stop_loss)
+        return float(tp), float(sl)
 
     def _base_key(self, k: str) -> str:
         for key in self.delta_params:
