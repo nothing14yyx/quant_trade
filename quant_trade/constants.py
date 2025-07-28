@@ -8,5 +8,9 @@ class ZeroReason(StrEnum):
     VOTE_FILTER = "vote_filter"
     FUNDING_CONFLICT = "funding_conflict"
     CONFLICT_FILTER = "conflict_filter"
+    VOTE_PENALTY = "vote_penalty"
+    FUNDING_PENALTY = "funding_penalty"
+    CONFLICT_PENALTY = "conflict_penalty"
+    RISK_PENALTY = "risk_penalty"
 
 __all__ = ["ZeroReason"]
