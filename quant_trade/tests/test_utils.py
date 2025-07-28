@@ -57,6 +57,8 @@ def make_dummy_rsg():
             'quantile': 0.80,
         },
         'ob_threshold': {'min_ob_th': 0.10},
+        'risk_budget_per_trade': 0.01,
+        'max_pos_pct': 0.3,
     }
     rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
     rsg.min_trend_align = 1

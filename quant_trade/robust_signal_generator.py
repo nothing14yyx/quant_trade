@@ -3462,6 +3462,19 @@ class RobustSignalGenerator:
             pos_size = tier * 0.2
             zero_reason = None
 
+        # >>> 新增：根据止损和账户资金限制仓位大小
+        if stop_loss is not None and direction != 0:
+            equity = getattr(getattr(self, "account", None), "equity", None)
+            if equity is None:
+                equity = getattr(self, "equity", None)
+            cfg_local = getattr(self, "cfg", {})
+            risk_budget = get_cfg_value(cfg_local, "risk_budget_per_trade", None)
+            max_pos_pct = get_cfg_value(cfg_local, "max_pos_pct", 1.0)
+            if risk_budget is not None and equity is not None and price != stop_loss:
+                size = risk_budget * equity / abs(price - stop_loss)
+                size = min(size, max_pos_pct * equity / price)
+                pos_size = min(pos_size, size)
+
         # 使用传入的逻辑与环境得分计算最终得分
         score_raw = logic_score * env_score
         score_raw *= 1 - self.risk_adjust_factor * risk_score
