@@ -20,13 +20,13 @@ import shap
 import logging
 from sqlalchemy import create_engine
 from statsmodels.stats.outliers_influence import variance_inflation_factor
+from quant_trade.utils.db import load_config
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 logger = logging.getLogger(__name__)
 
 # ---------- 0. 读取配置 ----------
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    cfg = yaml.safe_load(f)
+cfg = load_config(CONFIG_PATH)
 
 mysql_cfg = cfg["mysql"]
 engine = create_engine(

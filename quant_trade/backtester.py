@@ -3,7 +3,6 @@ from pathlib import Path
 import logging
 import pandas as pd
 import numpy as np
-import yaml
 from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
@@ -21,9 +20,8 @@ BACKTEST_LOG_DIR = BASE_DIR / "backtest_logs"
 # 配置文件路径
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
-# ====== 配置特征字段（从 config.yaml 读取）======
-with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
-    _cfg = yaml.safe_load(_f)
+# ====== 配置特征字段（从 config.yaml 读取，若不存在则使用默认配置）======
+_cfg = load_config(CONFIG_PATH)
 FEATURE_COLS_1H = collect_feature_cols(_cfg, "1h")
 FEATURE_COLS_4H = collect_feature_cols(_cfg, "4h")
 FEATURE_COLS_D1 = collect_feature_cols(_cfg, "d1")

@@ -6,7 +6,7 @@
 - **CoinMetricsLoader**：批量获取更多链上指标。
   新增 `community_metrics(asset)` 用于查询社区版可用指标，
   `update_cm_metrics(community_only=True)` 可仅抓取这些指标。
-- **Market Phase Detection**：根据活跃地址与市值判断牛市、熊市或震荡阶段，可在 `utils/config.yaml` 的 `market_phase.symbols` 列表（或单个 `symbol`）指定参与判断的交易对，默认仅使用 BTCUSDT。若填写多个币种，函数会分别返回各链的得分 `S` 与阶段，并按市值加权给出整体结果，例如：
+- **Market Phase Detection**：根据活跃地址与市值判断牛市、熊市或震荡阶段，可在 `utils/default_config.yaml`（或自定义 `config.yaml`） 的 `market_phase.symbols` 列表（或单个 `symbol`）指定参与判断的交易对，默认仅使用 BTCUSDT。若填写多个币种，函数会分别返回各链的得分 `S` 与阶段，并按市值加权给出整体结果，例如：
 
 ```python
 {
@@ -91,7 +91,7 @@ ic_scores:
   d1: 0.1
 这样 `RobustSignalGenerator` 在融合多周期分数时将更侧重 1h 模型。
 
-运行各组件前，请在 `utils/config.yaml` 中填写数据库与 API 配置，
+运行各组件前，可将 `utils/default_config.yaml` 复制为 `utils/config.yaml`，并填写数据库与 API 配置。
 其中 `api_key`、`api_secret`、`COINGECKO_API_KEY` 与 MySQL `password` 均可通过环境变量设置。例如：
 
 
@@ -100,7 +100,7 @@ ic_scores:
 CoinMetrics 提供的社区版接口无需 API key，但只能访问部分公开链上指标，且
 对同一 IP 每 6 秒最多接受 10 次请求。项目中 `CoinMetricsLoader` 默认
 `rate_limit=10`、`period=6.0`，以免触发限速。若想调整抓取指标，请在
-`utils/config.yaml` 的 `coinmetrics.metrics` 中填写 `community_metrics()`
+`utils/default_config.yaml` 的 `coinmetrics.metrics` 中填写 `community_metrics()`
 返回的名称，避免使用未开放的字段。
 
 ```python

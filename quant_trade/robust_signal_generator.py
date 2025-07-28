@@ -16,6 +16,7 @@ import pandas as pd
 from collections import Counter, deque, OrderedDict
 from pathlib import Path
 import yaml
+from quant_trade.utils.db import load_config
 import json
 import threading
 import logging
@@ -50,8 +51,7 @@ EXIT_LAG_BARS_DEFAULT = 0
 def _load_default_ai_dir_eps(path: Path) -> float:
     """从配置文件读取 ai_dir_eps，若失败则返回 0.04"""
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+        cfg = load_config(path)
         return cfg.get("vote_system", {}).get("ai_dir_eps", 0.04)
     except Exception:
         return 0.04
