@@ -3,7 +3,7 @@ dynamic_threshold_enabled: false
 direction_filters_enabled: false
 enable_ai: true
 # 设置为 false 可跳过因子贡献度计算以提升回测速度
-enable_factor_breakdown: true
+enable_factor_breakdown: false
 binance:
   api_key: "${BINANCE_API_KEY}"
   api_secret: "${BINANCE_API_SECRET}"
