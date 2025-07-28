@@ -2525,9 +2525,10 @@ class RobustSignalGenerator:
     ):
         """计算多因子得分并输出相关中间结果"""
         ai_scores = ai_scores.copy()
-        th = self.ai_dir_eps
-        for p in list(ai_scores):
-            if abs(ai_scores[p]) < th:
+        cfg_vote = getattr(self, "cfg", {}).get("vote_system", {})
+        th = get_cfg_value(cfg_vote, "ai_dir_eps", getattr(self, "ai_dir_eps", DEFAULT_AI_DIR_EPS))
+        for p, val in list(ai_scores.items()):
+            if abs(val) < th:
                 ai_scores[p] = 0.0
 
         signs = {int(np.sign(v)) for v in ai_scores.values() if v != 0}

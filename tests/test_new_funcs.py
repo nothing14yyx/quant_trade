@@ -118,6 +118,30 @@ def test_ai_dir_inconsistent_returns_none():
     assert res is None
 
 
+def test_ai_dir_eps_threshold_check():
+    rsg = make_dummy_rsg()
+    rsg.ai_dir_eps = 0.2
+    rsg.calc_factor_scores = lambda ai, fs, w: ai
+    rsg.apply_local_adjustments = lambda s, *a, **k: (s, {})
+    pf = PeriodFeatures({}, {})
+    res = rsg.compute_factor_scores(
+        {"1h": 0.15, "4h": -0.3, "d1": 0.25},
+        pf,
+        pf,
+        pf,
+        pf,
+        {},
+        {},
+        {},
+        {},
+        None,
+        None,
+        None,
+        None,
+    )
+    assert res is None
+
+
 def test_compute_exit_multiplier():
     rsg = make_dummy_rsg()
     rsg._exit_lag = 0
