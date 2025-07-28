@@ -3031,13 +3031,14 @@ class RobustSignalGenerator:
         std_1h: dict,
         ts,
         symbol,
-    ) -> int:
-        """Determine final trade direction."""
+    ) -> tuple[int, float]:
+        """Determine final trade direction and alignment penalty."""
 
         if not self.direction_filters_enabled:
-            return 0 if grad_dir == 0 else int(np.sign(grad_dir))
+            return (0 if grad_dir == 0 else int(np.sign(grad_dir)), 1.0)
 
         direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
+        penalty = 1.0
         if weak_vote:
             direction = 0
 
@@ -3074,10 +3075,10 @@ class RobustSignalGenerator:
             min_align = self.min_trend_align if regime == "trend" else max(
                 self.min_trend_align - 1, 0
             )
-            if align_count < min_align:
-                direction = 0
+            if min_align > 0 and align_count < min_align:
+                penalty = max(0.0, align_count / float(min_align))
 
-        return direction
+        return direction, penalty
 
     def _apply_position_filters(
         self,
@@ -3367,7 +3368,7 @@ class RobustSignalGenerator:
         st_sum = st1 + st4 + stdir
         st_dir = int(np.sign(st_sum)) if st_sum != 0 else 0
 
-        direction = self._determine_direction(
+        direction, align_penalty = self._determine_direction(
             grad_dir,
             regime,
             fs,
@@ -3414,6 +3415,8 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
+
+        pos_size *= align_penalty
 
         pos_size, direction, zero_reason = self._apply_position_filters(
             pos_size,
