@@ -2952,7 +2952,9 @@ class RobustSignalGenerator:
             hist, quantile=self.signal_params.quantile
         ) if hist else float("nan")
         risk_th = self.risk_adjust_threshold
-        if not math.isnan(dyn_risk_th):
+        if math.isnan(dyn_risk_th):
+            logging.warning("历史数据不足，继续使用固定风险阈值")
+        else:
             risk_th = max(risk_th, dyn_risk_th)
 
         if abs(fused_score) < risk_th:
