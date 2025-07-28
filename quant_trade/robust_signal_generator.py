@@ -589,6 +589,8 @@ class RobustSignalGenerator:
         self.risk_filters_enabled = cfg.get("risk_filters_enabled", True)
         self.dynamic_threshold_enabled = cfg.get("dynamic_threshold_enabled", True)
         self.direction_filters_enabled = cfg.get("direction_filters_enabled", True)
+        self.filter_penalty_mode = cfg.get("filter_penalty_mode", False)
+        self.penalty_factor = get_cfg_value(cfg, "penalty_factor", 0.5)
         fe_cfg = cfg.get("feature_engineering", {})
         self.rise_transform = fe_cfg.get("rise_transform", "none")
         self.boxcox_lambda_path = Path(
@@ -2913,7 +2915,10 @@ class RobustSignalGenerator:
                 fused_score *= 1 - penalty
                 funding_conflicts += 1
         if funding_conflicts >= self.veto_conflict_count:
-            return None
+            if self.filter_penalty_mode:
+                fused_score *= self.penalty_factor
+            else:
+                return None
 
         fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
             fused_score,
@@ -2958,7 +2963,10 @@ class RobustSignalGenerator:
             or crowding_factor < 0
             or crowding_factor > self.crowding_limit
         ):
-            return None
+            if self.filter_penalty_mode:
+                fused_score *= self.penalty_factor
+            else:
+                return None
 
         with self._lock:
             cache["history_scores"].append(fused_score)
@@ -3099,14 +3107,22 @@ class RobustSignalGenerator:
             return pos_size, direction, zero_reason
 
         if weak_vote:
-            direction = 0
-            pos_size = 0.0
-            zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
+            if self.filter_penalty_mode:
+                pos_size *= self.penalty_factor
+                zero_reason = None
+            else:
+                direction = 0
+                pos_size = 0.0
+                zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
 
         if funding_conflicts > self.veto_level:
-            direction = 0
-            pos_size = 0.0
-            zero_reason = zero_reason or ZeroReason.FUNDING_CONFLICT.value
+            if self.filter_penalty_mode:
+                pos_size *= self.penalty_factor
+                zero_reason = None
+            else:
+                direction = 0
+                pos_size = 0.0
+                zero_reason = zero_reason or ZeroReason.FUNDING_CONFLICT.value
 
         if oi_overheat:
             pos_size *= 0.5
@@ -3117,9 +3133,13 @@ class RobustSignalGenerator:
         pos_size = min(pos_size, pos_map)
 
         if conflict_filter_triggered:
-            pos_size = 0.0
-            direction = 0
-            zero_reason = zero_reason or ZeroReason.CONFLICT_FILTER.value
+            if self.filter_penalty_mode:
+                pos_size *= self.penalty_factor
+                zero_reason = None
+            else:
+                pos_size = 0.0
+                direction = 0
+                zero_reason = zero_reason or ZeroReason.CONFLICT_FILTER.value
 
         return pos_size, direction, zero_reason
 
