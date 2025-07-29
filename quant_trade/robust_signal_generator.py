@@ -691,8 +691,9 @@ class RobustSignalGenerator:
         self.risk_adjust_threshold = get_cfg_value(
             cfg,
             "risk_adjust_threshold",
-            0.03,
+            None,
         )
+        self.risk_th_quantile = float(get_cfg_value(cfg, "risk_th_quantile", 0.6))
 
         protect_cfg = get_cfg_value(cfg, "protection_limits", {})
         self.risk_score_limit = get_cfg_value(protect_cfg, "risk_score", 1.0)
@@ -2950,10 +2951,20 @@ class RobustSignalGenerator:
         hist = [abs(v) for v in atr_hist if v is not None]
         if not hist:
             hist = [abs(v) for v in oi_hist if v is not None]
-        dyn_risk_th = risk_budget_threshold(
-            hist, quantile=self.signal_params.quantile
-        ) if hist else float("nan")
+        dyn_risk_th = (
+            risk_budget_threshold(hist, quantile=self.signal_params.quantile)
+            if hist
+            else float("nan")
+        )
         risk_th = self.risk_adjust_threshold
+        if risk_th is None:
+            with self._lock:
+                hist_scores = list(cache.get("history_scores", []))
+            risk_th = risk_budget_threshold(
+                hist_scores, quantile=self.risk_th_quantile
+            )
+            if math.isnan(risk_th):
+                risk_th = 0.0
         if math.isnan(dyn_risk_th):
             logging.warning("历史数据不足，继续使用固定风险阈值")
         else:
