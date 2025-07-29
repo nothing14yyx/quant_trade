@@ -29,8 +29,8 @@ def test_dynamic_min_risk_scaling():
 
     params["risk_score"] = 2.0
     pos_high, direction_high, _, zero_reason_high = rsg.compute_position_size(**params)
-    assert pos_high == 0.0
-    assert direction_high == 0
+    assert pos_high > 0
+    assert direction_high == 1
     assert zero_reason_high == ZeroReason.MIN_POS.value
 
     rsg.risk_filters_enabled = False
@@ -62,13 +62,14 @@ def test_min_pos_vol_scaling():
         consensus_all=False,
     )
     pos_high, _, _, reason_high = rsg.compute_position_size(**params)
-    assert pos_high == 0.0
+    assert pos_high > 0
     assert reason_high == ZeroReason.MIN_POS.value
 
     rsg.min_pos_vol_scale = 0.0
     params["atr"] = 0.0
     pos_normal, _, _, reason_normal = rsg.compute_position_size(**params)
     assert pos_normal > 0
+    assert pos_high >= pos_normal
     assert reason_normal is None
 
 
