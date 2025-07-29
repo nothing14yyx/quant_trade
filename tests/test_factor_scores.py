@@ -22,6 +22,9 @@ def make_rsg():
     rsg.ic_history = {k: deque(maxlen=500) for k in rsg.base_weights}
     rsg.symbol_categories = {}
     rsg._prev_raw = {p: None for p in ("1h", "4h", "d1")}
+    rsg.volume_quantile_low = 0.2
+    rsg.volume_quantile_high = 0.8
+    rsg.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     return rsg
 
 

@@ -40,6 +40,9 @@ def make_rsg():
     r.crowding_limit = 1.1
     r.max_position = 0.3
     r.risk_scale = 1.0
+    r.volume_quantile_low = 0.2
+    r.volume_quantile_high = 0.8
+    r.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     r.flip_confirm_bars = 3
     return r
 

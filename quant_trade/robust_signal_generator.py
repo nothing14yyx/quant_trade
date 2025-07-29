@@ -102,6 +102,7 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
     "_exit_lag",
     "_cooldown",
     "_volume_checked",
+    "volume_ratio_history",
     "_stop_event",
     "_weight_thread",
     "cycle_weight",
@@ -661,6 +662,13 @@ class RobustSignalGenerator:
             "roc_low": get_cfg_value(vg_cfg, "roc_low", -20),
             "roc_high": get_cfg_value(vg_cfg, "roc_high", 100),
         }
+        self.volume_quantile_low = float(
+            get_cfg_value(vg_cfg, "volume_quantile_low", 0.2)
+        )
+        self.volume_quantile_high = float(
+            get_cfg_value(vg_cfg, "volume_quantile_high", 0.8)
+        )
+        self.volume_ratio_history = deque(maxlen=history_window)
         ob_cfg = get_cfg_value(cfg, "ob_threshold", {})
         self.ob_th_params = {
             "min_ob_th": get_cfg_value(ob_cfg, "min_ob_th", 0.15),
@@ -834,6 +842,9 @@ class RobustSignalGenerator:
             "_exit_lag": 0,
             "_cooldown": 0,
             "_volume_checked": False,
+            "volume_ratio_history": deque(maxlen=3000),
+            "volume_quantile_low": 0.2,
+            "volume_quantile_high": 0.8,
             "_stop_event": threading.Event(),
             "_weight_thread": None,
             "pos_coeff_range": DEFAULT_POS_K_RANGE,
@@ -1079,6 +1090,7 @@ class RobustSignalGenerator:
                 return {
                     "history_scores": self.history_scores,
                     "oi_change_history": self.oi_change_history,
+                    "volume_ratio_history": self.volume_ratio_history,
                     "_raw_history": self._raw_history,
                     "_prev_raw": self._prev_raw,
                     "last_rebound_ts": self.last_rebound_ts,
@@ -1087,6 +1099,7 @@ class RobustSignalGenerator:
                 self.symbol_data[symbol] = {
                     "history_scores": deque(maxlen=self.history_scores.maxlen),
                     "oi_change_history": deque(maxlen=self.oi_change_history.maxlen),
+                    "volume_ratio_history": deque(maxlen=self.volume_ratio_history.maxlen),
                     "_raw_history": {
                         "15m": deque(maxlen=4),
                         "1h": deque(maxlen=4),
@@ -1119,6 +1132,40 @@ class RobustSignalGenerator:
         maxlen = 4 if period in ("15m", "1h") else 2
         cache.setdefault("_raw_history", {}).setdefault(period, deque(maxlen=maxlen)).append(raw)
         cache.setdefault("_prev_raw", {})[period] = prev
+        if period == "1h":
+            ratio = raw.get("vol_ma_ratio_1h")
+            if ratio is not None:
+                cache.setdefault(
+                    "volume_ratio_history",
+                    deque(maxlen=self.volume_ratio_history.maxlen),
+                ).append(float(ratio))
+
+    def record_volume_ratio(self, ratio: float | None, symbol: str | None = None):
+        if ratio is None:
+            return
+        cache = self._get_symbol_cache(symbol)
+        cache.setdefault(
+            "volume_ratio_history", deque(maxlen=self.volume_ratio_history.maxlen)
+        ).append(float(ratio))
+
+    def get_volume_ratio_thresholds(self, symbol: str | None = None) -> tuple[float, float]:
+        cache = self._get_symbol_cache(symbol)
+        hist = cache.get("volume_ratio_history")
+        if not hist or len(hist) < 10:
+            return (
+                self.volume_guard_params["ratio_low"],
+                self.volume_guard_params["ratio_high"],
+            )
+        arr = np.asarray(hist, dtype=float)
+        arr = arr[~np.isnan(arr)]
+        if arr.size < 10:
+            return (
+                self.volume_guard_params["ratio_low"],
+                self.volume_guard_params["ratio_high"],
+            )
+        low = float(np.quantile(arr, self.volume_quantile_low))
+        high = float(np.quantile(arr, self.volume_quantile_high))
+        return low, high
 
     def _normalize_features(self, feats, period: str) -> dict:
         """将 DataFrame/Series 输入转为字典, 并缓存列索引"""
@@ -2035,6 +2082,7 @@ class RobustSignalGenerator:
         deltas: dict,
         rise_pred_1h: float | None = None,
         drawdown_pred_1h: float | None = None,
+        symbol: str | None = None,
     ) -> tuple[dict, dict]:
         """应用本地逻辑修正分数并返回细节"""
 
@@ -2115,7 +2163,10 @@ class RobustSignalGenerator:
                     adjusted[p],
                 )
 
-        params = self.volume_guard_params
+        params = self.volume_guard_params.copy()
+        q_low, q_high = self.get_volume_ratio_thresholds(symbol)
+        params["ratio_low"] = q_low
+        params["ratio_high"] = q_high
         r1 = raw_feats['1h'].get('vol_ma_ratio_1h')
         roc1 = raw_feats['1h'].get('vol_roc_1h')
         before = adjusted['1h']
@@ -2592,6 +2643,7 @@ class RobustSignalGenerator:
             deltas,
             rise_preds.get("1h"),
             drawdown_preds.get("1h"),
+            symbol,
         )
 
         ic_periods = {
