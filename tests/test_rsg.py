@@ -50,6 +50,9 @@ def make_rsg():
     rsg.crowding_limit = 1.1
     rsg.max_position = 0.3
     rsg.risk_scale = 1.0
+    rsg.volume_quantile_low = 0.2
+    rsg.volume_quantile_high = 0.8
+    rsg.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     rsg.smooth_window = 20
     rsg.smooth_alpha = 0.2
     rsg.smooth_limit = 1.0

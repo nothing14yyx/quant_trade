@@ -417,6 +417,8 @@ volume_guard:
   ratio_high: 2.0
   roc_low: -20
   roc_high: 100
+  volume_quantile_low: 0.2
+  volume_quantile_high: 0.8
 ob_threshold:
   min_ob_th: 0.10
   dynamic_factor: 0.08
