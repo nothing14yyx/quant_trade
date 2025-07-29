@@ -1,5 +1,6 @@
 import yaml
 from pathlib import Path
+from .utils.db import DEFAULT_CONFIG_PATH
 
 
 class ConfigManager:
@@ -13,6 +14,8 @@ class ConfigManager:
         path = self.config_path
         if not path.is_absolute():
             path = Path(__file__).resolve().parent / path
+        if not path.is_file() and path.name == "config.yaml":
+            path = DEFAULT_CONFIG_PATH
         if path.is_file():
             with open(path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}

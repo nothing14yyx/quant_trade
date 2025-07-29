@@ -24,6 +24,7 @@ from sqlalchemy import create_engine, text, bindparam
 from sqlalchemy.exc import IntegrityError
 from quant_trade.utils.ratelimiter import RateLimiter  # 你的限速器
 from quant_trade.utils.helper import calc_order_book_features
+from quant_trade.utils.db import load_config
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -87,8 +88,7 @@ class DataLoader:
 
 
     def __init__(self, config_path: str = "utils/config.yaml") -> None:
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+        cfg = load_config(config_path)
 
 
         # Binance client

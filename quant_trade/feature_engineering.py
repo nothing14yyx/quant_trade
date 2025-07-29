@@ -18,6 +18,7 @@ from tqdm import tqdm
 from joblib import Parallel, delayed
 from sqlalchemy import create_engine, text, bindparam, inspect
 from sqlalchemy.exc import IntegrityError
+from quant_trade.utils.db import load_config
 from sklearn.metrics import mutual_info_score
 from scipy import stats
 import json
@@ -268,11 +269,7 @@ class FeatureEngineer:
     """
 
     def __init__(self, config_path: str | os.PathLike = "utils/config.yaml", *, include_order_book: bool = False) -> None:
-        path = Path(config_path)
-        if not path.is_absolute() and not path.is_file():
-            path = Path(__file__).resolve().parent / path
-        with open(path, "r", encoding="utf-8") as f:
-            self.cfg = yaml.safe_load(f) or {}
+        self.cfg = load_config(config_path)
 
         # MySQL 连接配置
         mysql_cfg = self.cfg.get("mysql", {})

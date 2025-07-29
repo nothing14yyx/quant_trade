@@ -1,0 +1,519 @@
+risk_filters_enabled: true
+dynamic_threshold_enabled: false
+direction_filters_enabled: true
+enable_ai: true
+# 设置为 false 可跳过因子贡献度计算以提升回测速度
+enable_factor_breakdown: true
+max_stop_loss_pct: 0.05
+trailing_stop_pct: 0.03
+risk_budget_per_trade: 0.01
+binance:
+  api_key: "${BINANCE_API_KEY}"
+  api_secret: "${BINANCE_API_SECRET}"
+  proxy:
+    http: "http://127.0.0.1:7890"
+    https: "http://127.0.0.1:7890"
+
+coingecko:
+  api_key: "${COINGECKO_API_KEY}"  # 可为空或填写公共 API 密钥
+
+coinmetrics:
+  api_key: "${COINMETRICS_API_KEY}"
+  community_only: true
+  metrics:
+  - AdrActCnt
+  - AdrNewCnt
+  - TxCnt
+  - CapMrktCurUSD
+  - CapRealUSD
+  - FeeTotUSD
+  - SplyCur
+
+market_phase:
+  # 指标列表，可按需增删
+  metrics:
+  - AdrActCnt
+  - CapMrktCurUSD
+  - FeeTotUSD
+  # 每个指标的权重示例，若省略则均分
+  weights:
+    AdrActCnt: 1.0
+    CapMrktCurUSD: 1.0
+    FeeTotUSD: 1.0
+  # 计算滚动 Z 分数的窗口
+  window: 30
+  # 默认仅使用单个 symbol，可填写 symbols 列表以同时参考多个交易对
+#  symbol: "BTCUSDT"
+  symbols: ["BTCUSDT", "ETHUSDT"]
+  # 不同市场阶段对阈值的系数，可在此调整
+  phase_th_mult:
+    bull: 0.9
+    bear: 1.1
+    range: 1.0
+  phase_dir_mult:
+    bull:
+      long: 1.0
+      short: 1.0
+    bear:
+      long: 1.0
+      short: 1.0
+    range:
+      long: 1.0
+      short: 1.0
+  # symbols: ["BTCUSDT", "ETHUSDT"]
+
+mysql:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "${MYSQL_PASSWORD}"
+  database: "quant_trading"
+  charset: "utf8mb4"
+
+data_loader:
+  topn: 150             # 获取成交额排名前N的合约
+  interval: "1h"       # 主周期K线
+  aux_interval: ["5m", "15m", "4h", "d1"]   # 辅助周期K线
+  start: "2024-06-09"  # 起始日期 例如"2024-06-01" 默认获取一年
+  end:     # 结束日期
+  cache_dir: "data/klines"
+  sentiment_cache: "data/sentiment"
+  rate_limit_sleep: 0.05   # 每次请求后休息 50ms，1s 20 次 ≪ 2400/min
+  excluded_list: ["BUSDT", "NEIROETHUSDT", "HUSDT", "SAHARAUSDT", "RAREUSDT"]
+
+feature_engineering:
+#  cache_dir: "quant_trade/data/klines"
+#  merged_dir: "quant_trade/data/merged"
+#  merged_table_path: "quant_trade/data/merged/merged_table.csv"
+  feature_cols_path: "data/merged/feature_cols.txt"
+  topn: 120
+  mode: train                        # train 或 inference
+  scaler_path: scalers/all_features_scaler.json
+  btc_symbol: "BTCUSDT"
+  eth_symbol: "ETHUSDT"
+  rise_transform: none               # none | log | boxcox
+  boxcox_lambda_path: scalers/rise_boxcox_lambda.json
+  # 周期参数示例，可在 d1 周期平滑 future_max_drawdown
+  period_cfg:
+    d1:
+      smooth_window: 3
+
+feature_selector:
+  rows: 200000        # 仅读取最近 20 万行，可根据实际内存调整
+  # 或
+  # start_time: "2024-01-01"
+  target:
+  - target_1h
+  - future_volatility_1h
+  - future_max_rise_1h
+  - future_max_drawdown_1h
+  - target_4h
+  - future_volatility_4h
+  - future_max_rise_4h
+  - future_max_drawdown_4h
+  - target_d1
+  - future_volatility_d1
+  - future_max_rise_d1
+  - future_max_drawdown_d1
+  top_n: 50             # 每周期保留前 N
+
+models:
+  1h:
+    cls: models/model_1h_cls.pkl
+    vol: models/model_1h_vol.pkl
+    rise: models/model_1h_rise.pkl
+    drawdown: models/model_1h_drawdown.pkl
+  4h:
+    cls: models/model_4h_cls.pkl
+    vol: models/model_4h_vol.pkl
+    rise: models/model_4h_rise.pkl
+    drawdown: models/model_4h_drawdown.pkl
+  d1:
+    cls: ""
+    vol: ""
+    rise: ""
+    drawdown: ""
+
+
+feature_cols:
+  1h:
+    cls:
+    - atr_pct_1h
+    - day_of_week
+    - hour_of_day
+    - hv_14d_1h
+    - atr_pct_ratio_1h_4h
+    - macd_hist_diff_1h_4h
+    - ma_ratio_1h_d1
+    - rsi_1h_mul_vol_ma_ratio_4h
+    - hv_7d_1h
+    - rsi_diff_1h_d1
+    vol:
+    - hour_of_day
+    - rsi_bear_div_1h
+    - long_upper_shadow_1h
+    - break_support_1h
+    - long_lower_shadow_1h
+    - day_of_week
+    - cg_total_volume_roc_1h
+    - ma_ratio_1h_d1
+    - eth_correlation_1h_1h
+    - rsi_bull_div_1h
+    rise:
+    - hv_14d_1h
+    - hv_7d_1h
+    - rsi_diff_1h_4h
+    - day_of_week
+    - ma_ratio_1h_4h
+    - price_ratio_cg_1h
+    - vol_ma_ratio_1h
+    - adx_delta_1h
+    - btc_correlation_1h_4h
+    - break_support_1h
+    drawdown:
+    - hour_of_day
+    - day_of_week
+    - long_upper_shadow_1h
+    - macd_hist_diff_1h_4h
+    - rsi_1h_mul_vol_ma_ratio_4h
+    - vol_ratio_1h_4h
+    - ma_ratio_1h_d1
+    - atr_pct_1h
+    - vpoc_1h
+    - rsi_diff_1h_4h
+  4h:
+    cls:
+    - atr_pct_4h
+    - atr_pct_ratio_1h_4h
+    - day_of_week
+    - hv_14d_4h
+    - rsi_diff_4h_d1
+    - bb_width_ratio_4h_d1
+    - hour_of_day
+    - hv_7d_4h
+    - boll_perc_4h
+    - atr_pct_ratio_4h_d1
+    vol:
+    - atr_pct_4h
+    - long_lower_shadow_4h
+    - break_support_4h
+    - atr_pct_ratio_1h_4h
+    - day_of_week
+    - break_resistance_4h
+    - long_upper_shadow_4h
+    - hour_of_day
+    - price_ratio_cg_4h
+    - donchian_delta_4h
+    rise:
+    - atr_pct_4h
+    - hv_14d_4h
+    - break_support_4h
+    - vwap_4h
+    - long_lower_shadow_4h
+    - pct_chg6_4h
+    - day_of_week
+    - atr_pct_ratio_1h_4h
+    - rsi_diff_1h_4h
+    - btc_correlation_1h_4h
+    drawdown:
+    - stoch_d_4h
+    - rsi_diff_4h_d1
+    - day_of_week
+    - bb_width_ratio_4h_d1
+    - long_lower_shadow_4h
+    - hv_14d_4h
+    - ema_diff_4h
+    - long_upper_shadow_4h
+    - break_support_4h
+    - rsi_1h_mul_vol_ma_ratio_4h
+  d1:
+    cls:
+    - fg_index_d1
+    - bid_ask_spread_pct_d1
+    - boll_perc_d1
+    - vwap_d1
+    - hv_7d_d1
+    - close_spread_1h_d1
+    - bear_streak_d1
+    - bb_width_chg_d1
+    - ema_diff_d1_isnan
+    - hv_14d_d1
+    vol:
+    - long_lower_shadow_d1
+    - fg_index_d1
+    - bid_ask_spread_pct_d1
+    - bb_squeeze_d1
+    - pct_chg3_d1
+    - break_support_d1
+    - willr_d1
+    - vol_breakout_d1
+    - hour_of_day
+    - price_diff_cg_d1
+    rise:
+    - fg_index_d1_y
+    - vwap_d1
+    - funding_rate_anom_d1
+    - pct_chg3_d1
+    - atr_pct_d1
+    - day_of_week
+    - bear_streak_d1
+    - bid_ask_spread_pct_d1
+    - bb_squeeze_d1
+    - hv_7d_d1
+    drawdown:
+    - fg_index_d1
+    - donchian_perc_d1
+    - kc_width_pct_chg_d1
+    - day_of_week
+    - ema_diff_d1_isnan
+    - ma_ratio_4h_d1
+    - skewness_d1
+    - cci_d1
+    - hv_7d_d1
+    - bb_width_chg_d1
+train_settings:
+  by_symbol: false
+  min_rows: 500
+  min_samples: 2000
+  time_ranges: []
+  ts_smote: false
+  ts_smote_group_freq: "1d"
+  hold_days: 7
+  periods: ["1h", "4h", "d1"]      # 例: ["4h", "d1"] 为空则训练全部
+  tags: []          # 例: ["up", "down"] 为空则训练全部
+  n_trials:
+    1h: 40
+    4h: 40
+    d1: 50
+
+param_space:
+  1h:
+    lr: [0.03, 0.08]
+    nl: [31, 95]
+    ne: [400, 800]
+    md: [4, 12]
+    mcs: [50, 150]
+    subsample: [0.8, 0.95]
+    lambda_l2: [0.5, 1.5]
+    scale_pos_weight: [1.1, 1.5]
+  4h:
+    lr: [0.02, 0.06]       # 学习率保持
+    nl: [31, 127]
+    ne: [200, 400]         # 上调范围以允许更多迭代
+    md: [4, 10]
+    mcs: [1500, 3000]      # ← 原 50-120，增大叶子样本
+    subsample: [0.70, 0.9]
+    lambda_l2: [1.0, 4.0]   # 略增正则化强度
+    scale_pos_weight: [1.1, 1.5]
+  d1:
+    lr: [0.02, 0.06]
+    nl: [64, 128]
+    ne: [180, 260]
+    md: [4, 10]
+    mcs: [400, 800]
+    subsample: [0.75, 0.9]
+    lambda_l2: [0.5, 2.0]
+    scale_pos_weight: [4, 8]   # 让 Optuna 一起调
+
+fixed_params:
+  objective:
+    cls: "multiclass"
+    vol: "regression"
+    rise: "regression"
+    drawdown: "regression"
+  metric:
+    cls: "multi_logloss"
+    vol: "l1"
+    rise: "l1"
+    drawdown: "l1"
+  early_stopping_rounds: 40
+  n_jobs: -1
+
+model_params:
+  1h:                       # ≈55 万行
+    num_boost_round: 600
+    min_data_in_leaf: 700
+    feature_fraction: 0.80
+    bagging_fraction: 0.85
+    bagging_freq: 1
+  4h:                       # ≈13 万行
+    num_boost_round: 300      # 与新 ne 范围匹配
+    min_data_in_leaf: 2200    # 不变
+    feature_fraction: 0.48    # ← 原 0.50
+    bagging_fraction: 0.70
+    bagging_freq: 1
+  d1:                       # ≈2.2 万行
+    num_boost_round: 260
+    min_data_in_leaf: 600
+    feature_fraction: 0.58
+    bagging_fraction: 0.80
+    bagging_freq: 1
+    scale_pos_weight: 6       # ★ 新增，补偿空头稀缺
+
+history_window: 355
+th_window: 80
+th_decay: 0.5
+
+optimizer:
+  method: optuna         # 搜索算法，可选 optuna 或 ga
+  interval_hours: 24     # 多久重新搜索一次
+  rows: 50000            # 回测读取的最近行数
+  trials: 30             # 搜索迭代次数
+
+
+# Δ-boost 配置：关键指标与参数
+delta_boost:
+  core_keys:
+    "1h":
+    - rsi_1h
+    - macd_hist_1h
+    - ema_diff_1h
+    - atr_pct_1h
+    - vol_ma_ratio_long_1h
+    - funding_rate_1h
+    "4h":
+    - rsi_4h
+    - macd_hist_4h
+    - ema_diff_4h
+    d1:
+    - rsi_d1
+    - macd_hist_d1
+    - ema_diff_d1
+  params:
+    rsi: [5, 1.0, 0.028899473694350645]
+    macd_hist: [0.002, 100.0, 0.028942909266482065]
+    ema_diff: [0.001, 100.0, 0.046287294659927015]
+    atr_pct: [0.002, 100.0, 0.02793080911149214]
+    vol_ma_ratio: [0.2, 1.0, 0.02557424610265277]
+    funding_rate: [0.0005, 10000, 0.04561010131390353]
+
+
+vote_system:
+#  weight_ai: 2          # 已由 vote_weights.ai 定义
+  strong_min: 2
+  conf_min: 0.25
+  ai_dir_eps: 0.10
+vote_weights:
+  ai: 2
+  short_mom: 1
+  vol_breakout: 1
+  trend: 1
+  confirm_15m: 1
+
+regime_vote_weights:
+  trend:
+    trend: 2
+  range:
+    vol_breakout: 2
+
+# === 调参选项 ===
+sentiment_alpha: 0.5
+cap_positive_scale: 0.85
+volume_guard:
+  weak_scale: 0.93
+  over_scale: 0.9
+  ratio_low: 0.45
+  ratio_high: 2.0
+  roc_low: -20
+  roc_high: 100
+ob_threshold:
+  min_ob_th: 0.10
+  dynamic_factor: 0.08
+exit_lag_bars: 1
+
+# quantile: 0.88
+signal_filters:
+  min_vote: 1
+  confidence_vote: 0.12
+  conf_min: 0.25
+oi_protection:
+  scale: 0.9
+  crowding_threshold: 0.98
+veto_level: 0.9
+veto_conflict_count: 1
+flip_coeff: 0.6
+th_down_d1: 0.74  # d1空头AI模型阈值，后续可灵活调整
+signal_threshold:
+  # mode: sigmoid      # 可选：sigmoid / double
+  base_th: 0.09125270660476172      # 原 dynamic_th_final 的初始值
+  gamma: 0.9        # 过渡宽度
+  min_pos: 0.05      # pos_size < 0.10 则 direction = 0
+  quantile: 0.78
+  low_base: 0.06
+  # base_th / low_base 单位为 fused_score
+  rev_boost: 0.15      # detect_reversal 命中时加分
+  rev_th_mult: 0.60    # 急反转时降低门槛
+dynamic_threshold:
+  atr_mult: 3.0
+  atr_cap: 0.10
+  funding_mult: 6.0
+  funding_cap: 0.08
+  adx_div: 100.0
+  adx_cap: 0.04
+position_coeff:
+  range: 0.40
+  trend: 0.60
+  low_vol_ratio: 0.3
+
+# 因子 IC 分数更新设置
+ic_update_rows: 2000          # 从 features 表读取的记录数
+ic_update_interval_hours: 24  # 多少小时刷新一次权重，默认为每日
+ic_scores:
+  1h: 1.0
+  4h: 0.20
+  d1: 0.0
+  base_weights:
+    ai: 0.2
+    trend: 0.15
+    momentum: 0.2
+    volatility: 0.35
+    volume: 0.15
+    sentiment: 0.1
+    funding: 0.15
+cycle_weight:
+  strong: 1.2
+  weak: 0.8
+  opposite: 0.5
+
+# ===== 新增风险与仓位参数 =====
+regime:
+  adx_trend: 25
+  adx_range: 20
+
+risk_adjust:
+  factor: 0.15
+#  threshold: 0.01
+risk_adjust_threshold: 0.02
+
+protection_limits:
+  risk_score: 1.0
+crowding_limit: 1.15
+
+crowding_protection:
+  enabled: true
+  same_side_limit: 5
+  cool_down_minutes: 45
+
+min_trend_align: 2
+
+max_position: 0.3
+risk_scale: 0.8
+
+# 交易成本设置
+costs:
+  fee_rate: 0.0005     # 0.05% 单边
+  slippage: 0.0003     # 0.03%
+
+# ATR 倍数及止盈止损参数
+tp_sl:
+  trend:
+    tp_mult: 1.8
+    sl_mult: 1.2
+  range:
+    tp_mult: 1.0
+    sl_mult: 0.8
+  sl_min_pct: 0.005     # 最小止损百分比
+
+# 调度器设置
+scheduler:
+  topn: 100         # run_scheduler 监控的币种数量

@@ -31,6 +31,7 @@ import optuna
 optuna.logging.set_verbosity(optuna.logging.ERROR)
 from lightgbm.callback import CallbackEnv
 from sqlalchemy import create_engine
+from quant_trade.utils.db import load_config
 
 
 if __name__ == "__main__":
@@ -216,8 +217,7 @@ class OffsetLightGBMPruningCallback:
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
 # ---------- 1. 读取配置 ----------
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    cfg = yaml.safe_load(f)
+cfg = load_config(CONFIG_PATH)
 
 mysql_cfg = cfg["mysql"]
 engine = create_engine(
