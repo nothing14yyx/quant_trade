@@ -3030,7 +3030,11 @@ class RobustSignalGenerator:
             if math.isnan(risk_th):
                 risk_th = 0.0
         if math.isnan(dyn_risk_th):
-            logging.warning("历史数据不足，继续使用固定风险阈值")
+            logging.warning(
+                "历史数据不足，继续使用固定风险阈值；atr_hist=%s，oi_hist=%s",
+                atr_hist,
+                oi_hist,
+            )
         else:
             risk_th = max(risk_th, dyn_risk_th)
 
