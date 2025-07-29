@@ -711,6 +711,7 @@ class RobustSignalGenerator:
 
         self.max_position = get_cfg_value(cfg, "max_position", 0.3)
         self.risk_scale = get_cfg_value(cfg, "risk_scale", 1.0)
+        self.min_pos_vol_scale = get_cfg_value(cfg, "min_pos_vol_scale", 0.0)
         self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 3)
         self.th_down_d1 = get_cfg_value(self.cfg, "th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
@@ -1316,6 +1317,15 @@ class RobustSignalGenerator:
             pos_size *= max(0.4, 1 - min(0.6, vol_p))
         return pos_size
 
+    def _adjust_min_pos_vol(self, min_pos: float, atr: float | None, vol_p: float | None) -> float:
+        """根据历史 ATR 或预测波动率调节仓位下限"""
+        vol_ref = 0.0
+        if vol_p is not None and np.isfinite(vol_p):
+            vol_ref = abs(vol_p)
+        elif atr is not None and np.isfinite(atr):
+            vol_ref = abs(atr)
+        return min_pos * (1 + self.min_pos_vol_scale * vol_ref)
+
     def compute_position_size(
         self,
         *,
@@ -1327,6 +1337,7 @@ class RobustSignalGenerator:
         base_th: float,
         regime: str,
         vol_p: float | None,
+        atr: float | None,
         risk_score: float,
         crowding_factor: float,
         cfg_th_sig: dict,
@@ -1370,6 +1381,7 @@ class RobustSignalGenerator:
 
         # ↓ 允许极小仓位，交由风险控制模块再裁剪
         min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
+        min_pos = self._adjust_min_pos_vol(min_pos, atr, vol_p)
         # 当风险评分升高时提升仓位下限，确保高风险环境下更谨慎
         dynamic_min = min_pos * math.exp(self.risk_scale * risk_score)
         if self.risk_filters_enabled and pos_size < dynamic_min:
@@ -3488,6 +3500,7 @@ class RobustSignalGenerator:
         vol_ratio = get_feat(raw_f1h, std_1h, "vol_ma_ratio_1h")
         tier = None
         fused_score = soft_clip(fused_score, k=1.0)
+        atr_raw_pre = (raw_f1h or std_1h).get("atr_pct_1h")
         pos_size, direction, tier, zero_reason = self.compute_position_size(
             grad_dir=grad_dir,
             base_coeff=base_coeff,
@@ -3497,6 +3510,7 @@ class RobustSignalGenerator:
             base_th=base_th,
             regime=regime,
             vol_p=vol_preds.get("1h"),
+            atr=atr_raw_pre,
             risk_score=risk_score,
             crowding_factor=crowding_factor,
             cfg_th_sig=cfg_th_sig,

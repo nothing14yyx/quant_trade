@@ -57,6 +57,7 @@ def test_crowding_factor_reduces_position():
         base_th=0.1,
         regime='trend',
         vol_p=None,
+        atr=0.0,
         risk_score=0.3,
         cfg_th_sig=cfg,
         direction=1,
