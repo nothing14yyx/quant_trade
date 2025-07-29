@@ -967,7 +967,7 @@ def test_step_exit_with_order_book_flip():
         order_book_imbalance=-0.3,
     )
     assert res2['signal'] == 0
-    assert res2['position_size'] == 0
+    assert res2['position_size'] == pytest.approx(0.2)
 
 
 def test_position_size_range_regime():
@@ -1091,7 +1091,7 @@ def test_conflict_filter_and_pos_size():
     )
 
     assert res['details']['vote']['value'] == 0
-    assert res['position_size'] == pytest.approx(0.0)
+    assert res['position_size'] == pytest.approx(0.2)
 
 
 def test_extreme_indicator_scales_down():

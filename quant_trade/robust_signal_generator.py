@@ -1385,13 +1385,9 @@ class RobustSignalGenerator:
         # 当风险评分升高时提升仓位下限，确保高风险环境下更谨慎
         dynamic_min = min_pos * math.exp(self.risk_scale * risk_score)
         if self.risk_filters_enabled and pos_size < dynamic_min:
-            direction, pos_size = 0, 0.0
-            if low_vol_flag:
-                # 低量能环境触发减半，最终仓位仍低于下限
-                zero_reason = ZeroReason.VOL_RATIO.value
-            else:
-                # 仓位低于动态下限
-                zero_reason = ZeroReason.MIN_POS.value
+            # 保留原方向, 仓位限制在动态下限与最大仓位之间
+            pos_size = min(max(pos_size, dynamic_min), self.max_position)
+            zero_reason = ZeroReason.MIN_POS.value
 
         # 4h 周期 veto 逻辑已停用
         # if direction == 1 and scores.get("4h", 0) < -self.veto_level:
