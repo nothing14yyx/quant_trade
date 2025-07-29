@@ -1,9 +1,9 @@
 risk_filters_enabled: false
 dynamic_threshold_enabled: false
 direction_filters_enabled: false
-filter_penalty_mode: true
+filter_penalty_mode: false
 penalty_factor: 0.5
-enable_ai: true
+enable_ai: false
 # 设置为 false 可跳过因子贡献度计算以提升回测速度
 enable_factor_breakdown: false
 max_stop_loss_pct: 0.05
