@@ -711,7 +711,7 @@ class RobustSignalGenerator:
 
         self.max_position = get_cfg_value(cfg, "max_position", 0.3)
         self.risk_scale = get_cfg_value(cfg, "risk_scale", 1.0)
-        self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 3)
+        self.min_trend_align = get_cfg_value(cfg, "min_trend_align", 2)
         self.th_down_d1 = get_cfg_value(self.cfg, "th_down_d1", 0.74)
         self.min_weight_ratio = min_weight_ratio
         self.th_window = th_window
@@ -857,7 +857,7 @@ class RobustSignalGenerator:
             "veto_conflict_count": 1,
             "ic_scores": {},
             "th_down_d1": 0.74,
-            "min_trend_align": 3,
+            "min_trend_align": 2,
             "_ai_score_cache": OrderedDict(),
             "_factor_cache": OrderedDict(),
             "_factor_score_cache": OrderedDict(),
