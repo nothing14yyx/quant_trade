@@ -35,7 +35,8 @@ def _safe_ta(func, *args, index=None, cols=None, **kwargs):
     """调用 pandas_ta 指标函数, 在数据不足时返回指定 dtype 的 DataFrame。"""
     try:
         res = func(*args, **kwargs)
-    except Exception:
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        logger.exception("ta function %s failed: %s", getattr(func, "__name__", str(func)), exc)
         res = None
 
     if res is None:

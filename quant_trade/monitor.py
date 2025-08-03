@@ -3,9 +3,13 @@ import json
 import pandas as pd
 import altair as alt
 from sqlalchemy import text
+import json
+import logging
 
 from quant_trade.utils import load_config, connect_mysql
 from quant_trade.utils.db import CONFIG_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_recent(engine, limit=1000):
@@ -23,7 +27,8 @@ def fetch_recent(engine, limit=1000):
         try:
             data = json.loads(ind or "{}")
             fac_dict = data.get("details", {}).get("factors", {})
-        except Exception:
+        except json.JSONDecodeError as exc:
+            logger.exception("parse indicators failed: %s", exc)
             fac_dict = {}
         factors.append(fac_dict)
 

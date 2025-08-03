@@ -53,7 +53,8 @@ def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
                     status = getattr(resp, "status_code", "?")
                     try:
                         body = resp.text[:200]
-                    except Exception:
+                    except (AttributeError, UnicodeDecodeError) as text_exc:
+                        logger.exception("Failed to extract response body: %s", text_exc)
                         body = ""
                     msg = f"{msg} [status={status} body={body}]"
                 logger.warning(
@@ -71,7 +72,8 @@ def compute_vix_proxy(funding_rate: Optional[float], oi_chg: Optional[float]) ->
         return None
     try:
         return 0.5 * float(funding_rate) + 0.5 * float(oi_chg)
-    except Exception:
+    except (TypeError, ValueError) as exc:
+        logger.exception("compute_vix_proxy error: %s", exc)
         return None
 
 
@@ -110,8 +112,8 @@ class DataLoader:
             try:
                 with open(self.cg_id_file, "r", encoding="utf-8") as f:
                     self._cg_id_map = json.load(f)
-            except Exception as e:
-                logger.warning("[coingecko] load id map fail: %s", e)
+            except (OSError, JSONDecodeError) as exc:
+                logger.exception("[coingecko] load id map fail")
                 self._cg_id_map = {}
         else:
             self._cg_id_map: Dict[str, str] = {}
@@ -391,6 +393,7 @@ class DataLoader:
     def _cg_get_id(self, symbol: str) -> Optional[str]:
         if symbol in self._cg_id_map:
             return self._cg_id_map[symbol]
+        cg_id_file = getattr(self, "cg_id_file", os.path.join(os.path.dirname(__file__), "coingecko_ids.json"))
         base = re.sub("USDT$", "", symbol).lower()
         self.cg_rate_limiter.acquire()
         res = _safe_retry(
@@ -402,19 +405,19 @@ class DataLoader:
                 cid = coin["id"]
                 self._cg_id_map[symbol] = cid
                 try:
-                    with open(self.cg_id_file, "w", encoding="utf-8") as f:
+                    with open(cg_id_file, "w", encoding="utf-8") as f:
                         json.dump(self._cg_id_map, f, ensure_ascii=False, indent=2)
-                except Exception as e:
-                    logger.warning("[coingecko] save id map fail: %s", e)
+                except OSError as exc:
+                    logger.exception("[coingecko] save id map fail")
                 return cid
         if res.get("coins"):
             cid = res["coins"][0]["id"]
             self._cg_id_map[symbol] = cid
             try:
-                with open(self.cg_id_file, "w", encoding="utf-8") as f:
+                with open(cg_id_file, "w", encoding="utf-8") as f:
                     json.dump(self._cg_id_map, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                logger.warning("[coingecko] save id map fail: %s", e)
+            except OSError as exc:
+                logger.exception("[coingecko] save id map fail")
             return cid
         return None
 
@@ -486,8 +489,8 @@ class DataLoader:
             for f in as_completed(futures):
                 try:
                     rows.extend(f.result())
-                except Exception as e:  # pragma: no cover - unexpected errors
-                    logger.exception("[cg_market] worker err: %s", e)
+                except (requests.exceptions.RequestException, ValueError, KeyError) as exc:  # pragma: no cover - unexpected errors
+                    logger.exception("[cg_market] worker err: %s", exc)
 
         if not rows:
             logger.info("[cg_market] no new rows")
@@ -781,8 +784,8 @@ class DataLoader:
                 endTime=int(end.timestamp() * 1000),
                 limit=1000,
             )
-        except Exception as e:
-            logger.warning(f"[{symbol}] K线API请求直接抛异常: {e}")
+        except (requests.exceptions.RequestException, BinanceAPIException) as exc:
+            logger.exception("[%s] K线API请求直接抛异常", symbol)
             raise
 
         if isinstance(res, dict):
@@ -954,12 +957,12 @@ class DataLoader:
             self.update_cg_market_data(symbols)
             self.update_cg_coin_categories(symbols)
             self.update_cg_category_stats()
-        except Exception as e:
-            logger.exception("[coingecko] err: %s", e)
+        except (requests.exceptions.RequestException, ValueError, OSError) as exc:
+            logger.exception("[coingecko] err: %s", exc)
         try:
             self.update_cm_metrics(symbols)
-        except Exception as e:
-            logger.exception("[coinmetrics] err: %s", e)
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            logger.exception("[coinmetrics] err: %s", exc)
         # self.update_social_sentiment()  # disabled
         # 2. 更新 funding rate / open interest（并发）
         logger.info("[sync] funding/openInterest … (%s)", len(symbols))
@@ -971,8 +974,8 @@ class DataLoader:
             for f in as_completed(futures):
                 try:
                     f.result()
-                except Exception as e:
-                    logger.exception("[funding] worker err: %s", e)
+                except (requests.exceptions.RequestException, BinanceAPIException, ValueError) as exc:
+                    logger.exception("[funding] worker err: %s", exc)
 
         # 3. 更新 K 线（并发）
         intervals = [self.main_iv] + self.aux_ivs + ["d1"]
@@ -985,8 +988,8 @@ class DataLoader:
             for f in as_completed(futures):
                 try:
                     f.result()
-                except Exception as e:
-                    logger.exception("[klines] worker err: %s", e)
+                except (requests.exceptions.RequestException, BinanceAPIException, ValueError) as exc:
+                    logger.exception("[klines] worker err: %s", exc)
 
 
 if __name__ == "__main__":

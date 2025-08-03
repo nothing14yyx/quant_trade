@@ -283,8 +283,8 @@ def select_features(
                 if isinstance(sv, list):
                     sv = np.mean([np.abs(s) for s in sv], axis=0)
                 shap_imp += np.abs(sv).mean(0)
-            except Exception as e:
-                logger.warning("SHAP failed: %s", e)
+            except (ValueError, RuntimeError) as exc:
+                logger.exception("SHAP failed: %s", exc)
                 shap_imp += pd.Series(gbm.feature_importances_, index=keep_cols)
 
             if use_permutation:

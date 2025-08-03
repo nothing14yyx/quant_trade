@@ -7,10 +7,16 @@ import logging
 import time
 import asyncio
 from datetime import datetime, timedelta, UTC
+
 import pandas as pd
 import numpy as np
+import requests
+from binance.exceptions import BinanceAPIException
 from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.utils.robust_scaler import load_scaler_params_from_json
+
+logger = logging.getLogger(__name__)
+
 try:  # Optional heavy imports for runtime use; tests can monkeypatch these
     from quant_trade.feature_loader import (
         load_symbol_categories,
@@ -19,7 +25,8 @@ try:  # Optional heavy imports for runtime use; tests can monkeypatch these
         load_latest_open_interest_async,
         load_order_book_imbalance_async,
     )
-except Exception:  # pragma: no cover - allow import without dependencies
+except ImportError:  # pragma: no cover - allow import without dependencies
+    logger.exception("feature_loader imports failed")
     load_symbol_categories = None
     prepare_all_features_async = None
     load_global_metrics_async = None
@@ -30,6 +37,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGeneratorConfig,
 )
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 
 
@@ -38,8 +46,8 @@ def _to_builtin(v):
     try:
         if np.isnan(v):
             return None
-    except Exception:
-        pass
+    except TypeError:
+        logger.exception("np.isnan failed for %r", v)
 
     if isinstance(v, (np.bool_, np.integer)):
         return int(v)
@@ -136,50 +144,50 @@ class Scheduler:
         """Execute func with error logging."""
         try:
             func(*args, **kwargs)
-        except Exception as e:
-            logging.exception("%s failed: %s", func.__name__, e)
+        except Exception as exc:
+            logger.exception("%s failed", func.__name__)
 
     def update_klines(self, symbols, interval):
         for sym in symbols:
             try:
                 self.dl.incremental_update_klines(sym, interval)
-            except Exception as e:
-                logging.exception("update %s %s failed: %s", sym, interval, e)
+            except (requests.exceptions.RequestException, BinanceAPIException, ValueError) as exc:
+                logger.exception("update %s %s failed", sym, interval)
 
     def update_oi_and_order_book(self, symbols):
         for sym in symbols:
             try:
                 self.dl.update_open_interest(sym)
-            except Exception as e:
-                logging.exception("update open interest %s failed: %s", sym, e)
+            except (requests.exceptions.RequestException, BinanceAPIException, ValueError) as exc:
+                logger.exception("update open interest %s failed", sym)
             try:
                 self.dl.update_order_book(sym)
-            except Exception as e:
-                logging.exception("update order book %s failed: %s", sym, e)
+            except (requests.exceptions.RequestException, BinanceAPIException, ValueError) as exc:
+                logger.exception("update order book %s failed", sym)
 
     def update_funding_rates(self, symbols):
         for sym in symbols:
             try:
                 self.dl.update_funding_rate(sym)
-            except Exception as e:
-                logging.exception("update funding rate %s failed: %s", sym, e)
+            except (requests.exceptions.RequestException, BinanceAPIException, ValueError) as exc:
+                logger.exception("update funding rate %s failed", sym)
 
     def update_daily_data(self, symbols):
         try:
             self.dl.update_sentiment()
-        except Exception as e:
-            logging.exception("update sentiment failed: %s", e)
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            logger.exception("update sentiment failed")
         try:
             self.dl.update_cg_global_metrics()
             self.dl.update_cg_market_data(symbols)
             self.dl.update_cg_coin_categories(symbols)
             self.dl.update_cg_category_stats()
-        except Exception as e:
-            logging.exception("update coingecko failed: %s", e)
+        except (requests.exceptions.RequestException, ValueError, OSError) as exc:
+            logger.exception("update coingecko failed")
         try:
             self.dl.update_cm_metrics(symbols)
-        except Exception as e:
-            logging.exception("update coinmetrics failed: %s", e)
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            logger.exception("update coinmetrics failed")
         # self.dl.update_social_sentiment()  # disabled
         # 更新市场阶段，便于根据新数据调整阈值
         self.sg.update_market_phase(self.engine)
@@ -199,8 +207,8 @@ class Scheduler:
                 save_to_db=True,
                 batch_size=1,
             )
-        except Exception as e:
-            logging.exception("update_features failed: %s", e)
+        except (requests.exceptions.RequestException, ValueError, OSError, BinanceAPIException) as exc:
+            logger.exception("update_features failed")
 
     def update_ic_scores_from_db(self):
         """Load recent features and update factor IC scores."""
@@ -220,8 +228,8 @@ class Scheduler:
             df = df.sort_values("open_time")
             self.sg.update_ic_scores(df, group_by="symbol")
             logging.info("[update_ic_scores] %s", self.sg.current_weights)
-        except Exception as e:
-            logging.exception("update_ic_scores_from_db failed: %s", e)
+        except (SQLAlchemyError, ValueError) as exc:
+            logger.exception("update_ic_scores_from_db failed")
 
     def _calc_next_ic_update(self, now):
         if self.ic_update_interval == 24:
@@ -245,8 +253,8 @@ class Scheduler:
             self.sg = RobustSignalGenerator(rsg_cfg)
             categories = load_symbol_categories(self.engine)
             self.sg.set_symbol_categories(categories)
-        except Exception as e:
-            logging.exception("search_and_reload_params failed: %s", e)
+        except (OSError, ValueError, RuntimeError) as exc:
+            logger.exception("search_and_reload_params failed")
 
     def generate_signals(self, symbols):
         logging.info("generating signals for %s symbols", len(symbols))
@@ -290,8 +298,14 @@ class Scheduler:
                     "raw4h": raw4h,
                     "rawd1": rawd1,
                 }
-            except Exception as exc:
-                logging.exception("signal for %s failed: %s", sym, exc)
+            except (
+                requests.exceptions.RequestException,
+                ValueError,
+                TypeError,
+                asyncio.TimeoutError,
+                AttributeError,
+            ) as exc:
+                logger.exception("signal for %s failed", sym)
                 return None
 
         async def runner():
@@ -412,8 +426,8 @@ class Scheduler:
                     rows,
                 )
             logging.info("[monitor] wrote %s rows", len(rows))
-        except Exception as e:
-            logging.exception("write_monitor_data failed: %s", e)
+        except (SQLAlchemyError, ValueError) as exc:
+            logger.exception("write_monitor_data failed")
 
     def schedule_next(self):
         next_run = (datetime.now(UTC) + timedelta(minutes=1)).replace(
@@ -490,8 +504,8 @@ class Scheduler:
         for f in tasks:
             try:
                 f.result()
-            except Exception as e:
-                logging.exception("task failed: %s", e)
+            except (requests.exceptions.RequestException, ValueError, BinanceAPIException) as exc:
+                logger.exception("task failed")
 
         self.schedule_next()
 
