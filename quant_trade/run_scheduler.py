@@ -43,11 +43,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 def _to_builtin(v):
     """Convert numpy scalar types to builtin Python types and handle NaN."""
+    if v is None:
+        return None
     try:
         if np.isnan(v):
             return None
     except TypeError:
-        logger.exception("np.isnan failed for %r", v)
+        logger.debug("np.isnan failed for %r", v)
 
     if isinstance(v, (np.bool_, np.integer)):
         return int(v)
