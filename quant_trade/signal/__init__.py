@@ -1,6 +1,6 @@
-"""Backward-compatible imports for signal generation utilities."""
+"""Signal generation subpackage exports."""
 
-from .signal.core import (
+from .core import (
     SignalThresholdParams,
     DynamicThresholdParams,
     RobustSignalGeneratorConfig,
@@ -16,7 +16,7 @@ from .signal.core import (
     DEFAULTS,
     SAFE_FALLBACKS,
 )
-from .signal.utils import (
+from .utils import (
     softmax,
     sigmoid,
     smooth_score,
