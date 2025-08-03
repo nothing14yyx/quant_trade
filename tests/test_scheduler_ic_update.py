@@ -1,8 +1,9 @@
 import datetime as dt
-from types import SimpleNamespace
 from concurrent.futures import Future
+from types import SimpleNamespace
 
 from quant_trade import run_scheduler
+
 
 class DummyExecutor:
     def submit(self, func, *args, **kwargs):
