@@ -31,13 +31,37 @@ def collect_feature_cols(cfg: dict, period: str) -> list[str]:
     return cols
 
 
-def _safe_ta(func, *args, index=None, cols=None, **kwargs):
-    """调用 pandas_ta 指标函数, 在数据不足时返回指定 dtype 的 DataFrame。"""
-    try:
-        res = func(*args, **kwargs)
-    except (ValueError, KeyError, TypeError, AttributeError) as exc:
-        logger.exception("ta function %s failed: %s", getattr(func, "__name__", str(func)), exc)
+def _safe_ta(func, *args, index=None, cols=None, min_len=None, **kwargs):
+    """调用 pandas_ta 指标函数, 在数据不足时返回指定 dtype 的 DataFrame。
+
+    Parameters
+    ----------
+    func : callable
+        pandas_ta 指标函数。
+    min_len : int, optional
+        调用 ``func`` 所需的最小输入长度。当提供且输入长度不足时，
+        直接返回零 DataFrame，并记录调试日志而非错误日志。
+    """
+
+    need_len_check = min_len is not None and len(args) > 0 and hasattr(args[0], "__len__")
+    if need_len_check and len(args[0]) < min_len:
+        logger.debug(
+            "ta function %s skipped: input length %s < min_len %s",
+            getattr(func, "__name__", str(func)),
+            len(args[0]),
+            min_len,
+        )
         res = None
+    else:
+        try:
+            res = func(*args, **kwargs)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            logger.exception(
+                "ta function %s failed: %s",
+                getattr(func, "__name__", str(func)),
+                exc,
+            )
+            res = None
 
     if res is None:
         res = pd.DataFrame(
@@ -709,6 +733,7 @@ def calc_features_raw(
         feats["close"],
         index=df.index,
         cols=["MACD_12_26_9", "MACDh_12_26_9", "MACDs_12_26_9"],
+        min_len=35,
     )
     assign_safe(feats, f"macd_{period}", macd["MACD_12_26_9"])
     assign_safe(feats, f"macd_signal_{period}", macd["MACDs_12_26_9"])
