@@ -25,14 +25,15 @@ def test_base_weights_from_config(tmp_path, monkeypatch):
     cfg_path = tmp_path / "cfg.yml"
     cfg_path.write_text(
         """
-base_weights:
-  ai: 1
-  trend: 1
-  momentum: 2
-  volatility: 2
-  volume: 1
-  sentiment: 1
-  funding: 3
+ic_scores:
+  base_weights:
+    ai: 1
+    trend: 1
+    momentum: 2
+    volatility: 2
+    volume: 1
+    sentiment: 1
+    funding: 3
 """,
         encoding="utf-8",
     )

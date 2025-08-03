@@ -557,11 +557,17 @@ class RobustSignalGenerator:
             "sentiment": 0.0,
             "funding": 0.15,
         }
-        cfg_bw = get_cfg_value(cfg, "base_weights", _base_weights)
+        cfg_ic = cfg.get("ic_scores", {})
+        if not isinstance(cfg_ic, dict):
+            cfg_ic = {}
+        cfg_bw = cfg_ic.get("base_weights", _base_weights)
         total_w = sum(cfg_bw.values())
         if total_w <= 0:
             total_w = 1.0
-        self.base_weights = {k: float(cfg_bw.get(k, _base_weights.get(k, 0.0))) / total_w for k in _base_weights.keys()}
+        self.base_weights = {
+            k: float(cfg_bw.get(k, _base_weights.get(k, 0.0))) / total_w
+            for k in _base_weights.keys()
+        }
 
         # 当前权重，初始与 base_weights 相同
         self.current_weights = self.base_weights.copy()
@@ -569,11 +575,9 @@ class RobustSignalGenerator:
         self.w_ai = self.current_weights.get("ai", 0.0)
 
         # 初始化各因子对应的IC分数，可在配置文件中覆盖
-        cfg_ic = cfg.get("ic_scores")
-        if isinstance(cfg_ic, dict):
-            self.ic_scores = {k: float(cfg_ic.get(k, 1.0)) for k in self.base_weights.keys()}
-        else:
-            self.ic_scores = {k: 1.0 for k in self.base_weights.keys()}
+        self.ic_scores = {
+            k: float(cfg_ic.get(k, 1.0)) for k in self.base_weights.keys()
+        }
         # 保存各因子IC的滑窗历史，便于做滚动平均
         self.ic_history = {k: deque(maxlen=history_window) for k in self.base_weights.keys()}
 
