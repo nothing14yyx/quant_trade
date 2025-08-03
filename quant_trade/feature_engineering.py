@@ -40,7 +40,6 @@ from quant_trade.utils.feature_health import health_check, apply_health_check_df
 from quant_trade.utils.soft_clip import soft_clip
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 # Future-related columns to drop for leakage prevention
 FUTURE_COLS = [

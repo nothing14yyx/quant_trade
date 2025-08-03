@@ -33,9 +33,6 @@ from scipy.special import inv_boxcox
 
 logger = logging.getLogger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
-# Set module logger to WARNING by default so importing modules can
-# configure their own verbosity without receiving this module's INFO logs.
-logger.setLevel(logging.WARNING)
 
 # 默认配置路径
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "utils" / "config.yaml"
