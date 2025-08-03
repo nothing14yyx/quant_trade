@@ -83,6 +83,6 @@ def main(symbol: str = "ETHUSDT") -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="从数据库获取数据生成交易信号")
-    parser.add_argument("--symbol", default="XRPUSDT", help="交易对，如 BTCUSDT")
+    parser.add_argument("--symbol", default="SOLUSDT", help="交易对，如 BTCUSDT")
     args = parser.parse_args()
     main(args.symbol)

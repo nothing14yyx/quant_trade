@@ -1,7 +1,7 @@
 risk_filters_enabled: true
 dynamic_threshold_enabled: true
 direction_filters_enabled: false
-filter_penalty_mode: false
+filter_penalty_mode: true
 penalty_factor: 0.5
 enable_ai: true
 # 设置为 false 可跳过因子贡献度计算以提升回测速度
@@ -466,12 +466,12 @@ ic_scores:
   4h: 0.20
   d1: 0.0
   base_weights:
-    ai: 0.2
+    ai: 0.0
     trend: 0.15
     momentum: 0.2
     volatility: 0.35
     volume: 0.15
-    sentiment: 0.1
+    sentiment: 0
     funding: 0.15
 cycle_weight:
   strong: 1.2

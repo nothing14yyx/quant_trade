@@ -304,5 +304,18 @@
   "QNTUSDT": "quant-network",
   "RUNEUSDT": "thorchain",
   "SXTUSDT": "space-and-time",
-  "SLPUSDT": "smooth-love-potion"
+  "SLPUSDT": "smooth-love-potion",
+  "ZORAUSDT": "zora",
+  "TREEUSDT": "treehouse",
+  "A2ZUSDT": "arena-z",
+  "NAORISUSDT": "naoris",
+  "ESPORTSUSDT": "yooldo-games",
+  "SPELLUSDT": "spell-token",
+  "ASRUSDT": "as-roma-fan-token",
+  "PLAYUSDT": "play-2",
+  "IOTXUSDT": "iotex",
+  "OGUSDT": "og-fan-token",
+  "FLOWUSDT": "flow",
+  "FORMUSDT": "form",
+  "FHEUSDT": "mind-network"
 }
