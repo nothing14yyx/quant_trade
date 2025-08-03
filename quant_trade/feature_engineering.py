@@ -17,7 +17,7 @@ import yaml
 from tqdm import tqdm
 from joblib import Parallel, delayed
 from sqlalchemy import create_engine, text, bindparam, inspect
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sklearn.metrics import mutual_info_score
 from scipy import stats
 import json
@@ -535,7 +535,8 @@ class FeatureEngineer:
                 )
             else:
                 cm_df = None
-        except Exception:  # pragma: no cover - optional table
+        except SQLAlchemyError:  # pragma: no cover - optional table
+            logger.exception("load cm_onchain_metrics failed")
             cm_df = None
 
         if cm_df is not None and not cm_df.empty:
@@ -561,7 +562,8 @@ class FeatureEngineer:
                 self.engine,
                 parse_dates=["date"],
             )
-        except Exception:  # pragma: no cover - optional table
+        except SQLAlchemyError:  # pragma: no cover - optional table
+            logger.exception("load social_sentiment failed")
             s_df = None
 
         if s_df is not None and not s_df.empty:
@@ -623,8 +625,8 @@ class FeatureEngineer:
                 df_all_pl = pl.concat([pl.from_pandas(df) for df in dfs])
                 df_all_pl = df_all_pl.replace([float("inf"), float("-inf")], None)
                 df_all = df_all_pl.to_pandas()
-            except Exception as e:  # pragma: no cover - optional dependency
-                logger.warning("polars 未安装或初始化失败，回退至 pandas：%s", e)
+            except (pl.exceptions.PolarsError, AttributeError, ImportError) as exc:  # pragma: no cover - optional dependency
+                logger.exception("polars 未安装或初始化失败，回退至 pandas：%s", exc)
                 df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
         else:
             df_all = pd.concat(dfs, ignore_index=True).replace([np.inf, -np.inf], np.nan)
@@ -764,11 +766,13 @@ class FeatureEngineer:
         df_1d = self.load_klines_db(sym, "d1")
         try:
             df_5m = self.load_klines_db(sym, "5m")
-        except Exception:
+        except (SQLAlchemyError, ValueError, KeyError) as exc:
+            logger.exception("load_klines_db 5m failed for %s: %s", sym, exc)
             df_5m = None
         try:
             df_15m = self.load_klines_db(sym, "15m")
-        except Exception:
+        except (SQLAlchemyError, ValueError, KeyError) as exc:
+            logger.exception("load_klines_db 15m failed for %s: %s", sym, exc)
             df_15m = None
 
         if not all([df_1h is not None, df_4h is not None, df_1d is not None]):
@@ -949,8 +953,8 @@ class FeatureEngineer:
                     df_all_pl = pl.concat([pl.from_pandas(df) for df in all_dfs])
                     df_all_pl = df_all_pl.replace([float("inf"), float("-inf")], None)
                     df_all = df_all_pl.to_pandas()
-                except Exception as e:  # pragma: no cover - optional dependency
-                    logger.warning("polars 未安装或初始化失败，回退至 pandas：%s", e)
+                except (pl.exceptions.PolarsError, AttributeError, ImportError) as exc:  # pragma: no cover - optional dependency
+                    logger.exception("polars 未安装或初始化失败，回退至 pandas：%s", exc)
                     df_all = pd.concat(all_dfs, ignore_index=True).replace([
                         np.inf,
                         -np.inf,

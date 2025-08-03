@@ -102,8 +102,8 @@ class CoinMetricsLoader:
             if community_only:
                 try:
                     cm_list = self.community_metrics(asset)
-                except Exception as exc:
-                    logger.warning("[coinmetrics] %s catalog error: %s", sym, exc)
+                except (requests.exceptions.RequestException, ValueError) as exc:
+                    logger.exception("[coinmetrics] %s catalog error: %s", sym, exc)
                     cm_list = []
                 metrics = [m for m in metrics if m in cm_list]
             if not metrics:

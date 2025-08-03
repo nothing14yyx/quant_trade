@@ -2,10 +2,13 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import text
 from pathlib import Path
+import logging
 
 from .config_manager import ConfigManager
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
+
+logger = logging.getLogger(__name__)
 
 
 class MarketPhaseCalculator:
@@ -124,7 +127,8 @@ def _classify_regime(adx: float | None, bb_width: float | None,
     try:
         adx = float(adx)
         bb_chg = float(bb_width)
-    except Exception:
+    except (TypeError, ValueError) as exc:
+        logger.exception("_classify_regime conversion error: %s", exc)
         return "unknown"
     if adx >= adx_trend and bb_chg > 0:
         return "trend"

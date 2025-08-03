@@ -11,6 +11,7 @@
 import numpy as np
 import math
 from quant_trade.utils.soft_clip import soft_clip
+import requests
 
 import pandas as pd
 from collections import Counter, deque, OrderedDict
@@ -53,7 +54,8 @@ def _load_default_ai_dir_eps(path: Path) -> float:
         with open(path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("vote_system", {}).get("ai_dir_eps", 0.04)
-    except Exception:
+    except (OSError, yaml.YAMLError, ValueError) as exc:
+        logger.exception("_load_default_ai_dir_eps error: %s", exc)
         return 0.04
 
 
@@ -780,7 +782,8 @@ class RobustSignalGenerator:
         try:
             adx = float(adx)
             bb_chg = float(bb_width)
-        except Exception:
+        except (TypeError, ValueError) as exc:
+            logger.exception("classify_regime conversion error: %s", exc)
             return "unknown"
         if adx >= self.regime_adx_trend and bb_chg > 0:
             return "trend"
@@ -1464,8 +1467,8 @@ class RobustSignalGenerator:
         while True:
             try:
                 self._update_dynamic_weights()
-            except Exception as e:
-                logger.warning("weight update failed: %s", e)
+            except (ValueError, RuntimeError) as exc:
+                logger.exception("weight update failed: %s", exc)
             if self._stop_event.wait(interval):
                 break
 
@@ -1485,8 +1488,8 @@ class RobustSignalGenerator:
 
             data = get_market_phase(engine)
             phase = data.get("phase") or data.get("TOTAL", {}).get("phase")
-        except Exception as e:
-            logger.warning("detect_market_phase failed: %s", e)
+        except (requests.exceptions.RequestException, ValueError, OSError) as exc:
+            logger.exception("detect_market_phase failed: %s", exc)
             phase = None
 
         phase = phase or "range"
@@ -3123,8 +3126,8 @@ class RobustSignalGenerator:
             try:
                 if self.account.day_loss_pct() > 0.04:
                     return None
-            except Exception:
-                pass
+            except (AttributeError, ValueError) as exc:
+                logger.exception("day_loss_pct check failed: %s", exc)
 
         base_th = risk_info.get("base_th", self.signal_params.base_th)
         factor_breakdown = None
