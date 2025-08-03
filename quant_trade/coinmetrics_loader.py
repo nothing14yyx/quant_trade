@@ -17,7 +17,6 @@ from .data_loader import _safe_retry
 from .utils.ratelimiter import RateLimiter
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 
 class CoinMetricsLoader:

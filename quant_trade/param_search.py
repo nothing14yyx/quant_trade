@@ -24,7 +24,6 @@ from quant_trade.backtester import (
 from quant_trade.utils.db import load_config, connect_mysql
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:

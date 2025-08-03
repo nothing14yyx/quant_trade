@@ -9,7 +9,6 @@ from .utils.helper import calc_features_raw
 from .utils.robust_scaler import compute_robust_z_params, save_scaler_params_to_json
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def generate_offline_price_table(
