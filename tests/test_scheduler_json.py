@@ -26,3 +26,7 @@ def test_dict_nan_conversion():
     data = {"val": np.nan, "num": np.float64(1.2)}
     converted = {k: _to_builtin(v) for k, v in data.items()}
     assert converted == {"val": None, "num": 1.2}
+
+
+def test_to_builtin_none_returns_none():
+    assert _to_builtin(None) is None
