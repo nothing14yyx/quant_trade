@@ -4,6 +4,7 @@ import pytest
 import importlib.util
 from pathlib import Path
 import numpy as np
+import logging
 
 helper_path = Path(__file__).resolve().parents[1] / "quant_trade" / "utils" / "helper.py"
 spec = importlib.util.spec_from_file_location("helper", helper_path)
@@ -27,11 +28,13 @@ def test_vwap_np_window():
     assert res_win2.tolist() == pytest.approx([0.5, 1.0, 2.0, 3.0])
 
 
-def test_safe_ta_with_short_series():
+def test_safe_ta_with_short_series(caplog):
     s = pd.Series([1, 2], index=pd.date_range('2020-01-01', periods=2, freq='h'))
-    df = _safe_ta(ta.macd, s, index=s.index)
+    with caplog.at_level(logging.DEBUG):
+        df = _safe_ta(ta.macd, s, index=s.index, min_len=35)
     assert isinstance(df, pd.DataFrame)
     assert (df == 0).all().all()
+    assert all(record.levelno < logging.ERROR for record in caplog.records)
 
 
 def test_calc_mfi_np_empty():
