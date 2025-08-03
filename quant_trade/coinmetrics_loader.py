@@ -4,14 +4,14 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import os
 import re
-import logging
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 import requests
-from sqlalchemy import text, bindparam
+from sqlalchemy import bindparam, text
 
 from .data_loader import _safe_retry
 from .utils.ratelimiter import RateLimiter
