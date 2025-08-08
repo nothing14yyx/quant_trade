@@ -466,12 +466,12 @@ ic_scores:
   4h: 0.20
   d1: 0.0
   base_weights:
-    ai: 0.0
+    ai: 0.1
     trend: 0.15
     momentum: 0.2
     volatility: 0.35
     volume: 0.15
-    sentiment: 0
+    sentiment: 0.1
     funding: 0.15
 cycle_weight:
   strong: 1.2
@@ -522,4 +522,4 @@ tp_sl:
 
 # 调度器设置
 scheduler:
-  topn: 100         # run_scheduler 监控的币种数量
+  topn: 50         # run_scheduler 监控的币种数量
