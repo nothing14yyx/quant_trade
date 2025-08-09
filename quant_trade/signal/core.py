@@ -141,6 +141,27 @@ from .utils import (
 )
 
 
+def compute_dynamic_threshold(history_scores, window, quantile):
+    """基于历史得分计算动态阈值。
+
+    Args:
+        history_scores: 历史 ``fused_score`` 列表或 deque。
+        window: 参与计算的窗口大小。
+        quantile: 取值分位数。
+
+    Returns:
+        对应分位数的绝对值得分；若数据不足则返回 ``None``。
+    """
+
+    if not history_scores:
+        return None
+
+    arr = np.abs(np.asarray(list(history_scores)[-window:], dtype=float))
+    if arr.size == 0:
+        return None
+    return float(np.quantile(arr, quantile))
+
+
 @dataclass
 class SignalThresholdParams:
     """Container for all signal threshold related parameters."""
@@ -155,6 +176,8 @@ class SignalThresholdParams:
     atr_mult: float = 4.0
     funding_mult: float = 8.0
     adx_div: float = 100.0
+    window: int = 60
+    dynamic_quantile: float = 0.8
 
     @classmethod
     def from_cfg(cls, cfg: dict | None):
@@ -170,6 +193,10 @@ class SignalThresholdParams:
             atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
             funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
             adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
+            window=int(get_cfg_value(cfg, "window", cls.window)),
+            dynamic_quantile=float(
+                get_cfg_value(cfg, "dynamic_quantile", cls.dynamic_quantile)
+            ),
         )
 
 
@@ -2765,7 +2792,13 @@ class RobustSignalGenerator:
             regime = "range"
             rev_dir = 1
         cfg_th = self.signal_threshold_cfg
+        params = self.signal_params
+        cfg_base = cfg_th.get("base_th", params.base_th)
         if self.dynamic_threshold_enabled:
+            dyn_base = compute_dynamic_threshold(
+                cache["history_scores"], params.window, params.dynamic_quantile
+            )
+            base_input = dyn_base if dyn_base is not None else cfg_base
             base_th, rev_boost = self.dynamic_threshold(
                 atr_1h,
                 adx_1h,
@@ -2781,13 +2814,13 @@ class RobustSignalGenerator:
                 pred_vol_d1=vol_preds.get("d1"),
                 vix_proxy=vix_p,
                 regime=regime,
-                base=cfg_th.get("base_th", 0.08),
+                base=base_input,
                 reversal=bool(rev_dir),
                 history_scores=cache["history_scores"],
             )
         else:
-            base_th = cfg_th.get("base_th", 0.08)
-            rev_boost = cfg_th.get("rev_boost", 0.0)
+            base_th = cfg_base
+            rev_boost = cfg_th.get("rev_boost", params.rev_boost)
         base_th *= getattr(self, "phase_th_mult", 1.0)
         if rev_dir != 0:
             fused_score += rev_boost * rev_dir

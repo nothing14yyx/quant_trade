@@ -4,6 +4,7 @@ import pytest
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.data_loader import compute_vix_proxy
 from quant_trade.robust_signal_generator import SignalThresholdParams, DynamicThresholdInput
+from quant_trade.signal.core import compute_dynamic_threshold
 
 
 def test_compute_tp_sl():
@@ -33,6 +34,18 @@ def test_compute_tp_sl_min_stop_loss():
     tp, sl = rsg.compute_tp_sl(100, 10, 1, sl_mult=0.2)
     assert tp == pytest.approx(102)
     assert sl == pytest.approx(95)
+
+
+def test_compute_dynamic_threshold_simple():
+    scores = [0.1, -0.2, 0.3, -0.4]
+    th = compute_dynamic_threshold(scores, window=3, quantile=0.5)
+    assert th == pytest.approx(0.3)
+
+
+def test_signal_params_window_quantile():
+    params = SignalThresholdParams.from_cfg({"window": 120, "dynamic_quantile": 0.7})
+    assert params.window == 120
+    assert params.dynamic_quantile == pytest.approx(0.7)
 
 
 def test_dynamic_threshold_basic():
