@@ -1,6 +1,27 @@
 import numpy as np
 
 
+def cvar_limit(pnl_history: list[float] | np.ndarray, alpha: float) -> float:
+    """计算给定损益序列在 ``alpha`` 分位下的 CVaR。
+
+    Args:
+        pnl_history: 账户历史损益列表，正为盈利、负为亏损。
+        alpha: 分位数（如 ``0.05`` 表示 5% 分位）。
+
+    Returns:
+        在 ``alpha`` 分位以下的平均损益，负值代表预期亏损。
+    """
+
+    arr = np.asarray(pnl_history, dtype=float)
+    if arr.size == 0:
+        return 0.0
+
+    var = np.quantile(arr, alpha)
+    tail = arr[arr <= var]
+    cvar = tail.mean() if tail.size else var
+    return float(cvar)
+
+
 class RiskManager:
     """风险控制逻辑"""
 
