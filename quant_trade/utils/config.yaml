@@ -1,6 +1,7 @@
 risk_filters_enabled: true
 dynamic_threshold_enabled: true
 direction_filters_enabled: false
+rsi_k: 1.5  # RSI 阈值标准差倍数
 filter_penalty_mode: true
 penalty_factor: 0.5
 enable_ai: true
