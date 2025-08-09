@@ -57,6 +57,20 @@ def _load_default_ai_dir_eps(path: Path) -> float:
 
 
 DEFAULT_AI_DIR_EPS = _load_default_ai_dir_eps(CONFIG_PATH)
+
+
+def _load_default_rsi_k(path: Path) -> float:
+    """从配置文件读取 rsi_k，若失败则返回 1.5"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("rsi_k", 1.5)
+    except (OSError, yaml.YAMLError, ValueError) as exc:
+        logger.exception("_load_default_rsi_k error: %s", exc)
+        return 1.5
+
+
+DEFAULT_RSI_K = _load_default_rsi_k(CONFIG_PATH)
 DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
 DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
 DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
@@ -75,6 +89,7 @@ DEFAULTS = {
     "risk_filters_enabled": True,
     "dynamic_threshold_enabled": True,
     "direction_filters_enabled": True,
+    "rsi_k": DEFAULT_RSI_K,
 }
 
 SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
@@ -161,6 +176,37 @@ def compute_dynamic_threshold(history_scores, window, quantile):
     if arr.size == 0:
         return None
     return float(np.quantile(arr, quantile))
+
+
+def adaptive_rsi_threshold(rsi_series, vol_series, k: float | None = None, window: int = 14):
+    """计算基于均值±k倍标准差的 RSI 动态阈值。
+
+    rsi_series 与 vol_series 应具有相同长度，对应同一时间序列。
+    vol_series 作为权重参与标准差计算。
+    """
+
+    if rsi_series is None or vol_series is None:
+        return 30.0, 70.0
+    rsi_series = pd.Series(rsi_series).astype(float)
+    vol_series = pd.Series(vol_series).astype(float)
+    df = pd.DataFrame({"rsi": rsi_series, "vol": vol_series}).dropna()
+    if df.empty or len(df) < window:
+        return 30.0, 70.0
+    roll = df.tail(window)
+    weights = roll["vol"].to_numpy()
+    rsi_vals = roll["rsi"].to_numpy()
+    if not np.isfinite(weights).all() or np.allclose(weights, 0):
+        mean = rsi_vals.mean()
+        std = rsi_vals.std(ddof=0)
+    else:
+        mean = np.average(rsi_vals, weights=weights)
+        var = np.average((rsi_vals - mean) ** 2, weights=weights)
+        std = float(np.sqrt(var))
+    if k is None:
+        k = DEFAULT_RSI_K
+    lower = float(mean - k * std)
+    upper = float(mean + k * std)
+    return lower, upper
 
 
 @dataclass
@@ -451,6 +497,7 @@ class RobustSignalGenerator:
         self.dynamic_threshold_enabled = cfg.get("dynamic_threshold_enabled", True)
         self.direction_filters_enabled = cfg.get("direction_filters_enabled", True)
         self.filter_penalty_mode = cfg.get("filter_penalty_mode", False)
+        self.rsi_k = get_cfg_value(cfg, "rsi_k", DEFAULT_RSI_K)
         self.penalty_factor = get_cfg_value(cfg, "penalty_factor", 0.5)
         fe_cfg = cfg.get("feature_engineering", {})
         self.rise_transform = fe_cfg.get("rise_transform", "none")
@@ -2432,8 +2479,16 @@ class RobustSignalGenerator:
         extreme_reversal = False
         rsi = feats_d1.raw.get("rsi_d1", 50)
         cci = feats_d1.raw.get("cci_d1", 0)
-        oversold = rsi < 25 or cci < -100
-        overbought = rsi > 75 or cci > 100
+        hist_d1 = self._raw_history.get("d1", [])
+        pairs = [
+            (h.get("rsi_d1"), h.get("vol_ma_ratio_d1"))
+            for h in hist_d1
+        ]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        lower, upper = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        oversold = rsi < lower or cci < -100
+        overbought = rsi > upper or cci > 100
         if oversold or overbought:
             ai_scores["d1"] *= 0.7
             extreme_reversal = True
@@ -2797,7 +2852,16 @@ class RobustSignalGenerator:
             bb_chg,
             channel_pos,
         )
-        if std_d1.get("break_support_d1", 0) > 0 and std_d1.get("rsi_d1", 50) < 30:
+        rsi_d1 = std_d1.get("rsi_d1", 50)
+        hist_d1 = cache.get("_raw_history", {}).get("d1", [])
+        pairs = [
+            (h.get("rsi_d1"), h.get("vol_ma_ratio_d1"))
+            for h in hist_d1
+        ]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        lower, _ = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        if std_d1.get("break_support_d1", 0) > 0 and rsi_d1 < lower:
             regime = "range"
             rev_dir = 1
         cfg_th = self.signal_threshold_cfg
@@ -3256,13 +3320,21 @@ class RobustSignalGenerator:
             prev15 = hist15[-1] if hist15 else None
             rsi_c = raw_f15m.get("rsi_fast_15m")
             stoch_c = raw_f15m.get("stoch_fast_15m")
+            rsi_hist = [r.get("rsi_fast_15m") for r in hist15]
+            vol_hist = [r.get("vol_ma_ratio_15m") for r in hist15]
+            if rsi_c is not None:
+                rsi_hist.append(rsi_c)
+            vol_c = raw_f15m.get("vol_ma_ratio_15m")
+            if vol_c is not None:
+                vol_hist.append(vol_c)
+            lower_fast, upper_fast = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
             if prev15 is not None:
                 rsi_p = prev15.get("rsi_fast_15m")
                 stoch_p = prev15.get("stoch_fast_15m")
                 if rsi_p is not None and rsi_c is not None:
-                    if rsi_p < 30 <= rsi_c:
+                    if rsi_p < lower_fast <= rsi_c:
                         fast_cross_dir += 1
-                    elif rsi_p > 70 and rsi_c <= 70:
+                    elif rsi_p > upper_fast and rsi_c <= upper_fast:
                         fast_cross_dir -= 1
                 if stoch_p is not None and stoch_c is not None:
                     if stoch_p < 20 <= stoch_c:
@@ -3343,11 +3415,18 @@ class RobustSignalGenerator:
         rebound_flag = False
         reb_boost_applied = False
         rebound_strength = 0.0
-        if rsi is not None and rsi < 30:
-            hist = cache.get("_raw_history", {}).get("1h", [])
-            rsi_hist = [r.get("rsi_1h") for r in hist]
-            if raw_f1h.get("rsi_1h") is not None:
-                rsi_hist.append(raw_f1h.get("rsi_1h"))
+        hist = cache.get("_raw_history", {}).get("1h", [])
+        pairs = [
+            (h.get("rsi_1h"), h.get("vol_ma_ratio_1h"))
+            for h in hist
+        ]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        if raw_f1h.get("rsi_1h") is not None and raw_f1h.get("vol_ma_ratio_1h") is not None:
+            rsi_hist.append(raw_f1h.get("rsi_1h"))
+            vol_hist.append(raw_f1h.get("vol_ma_ratio_1h"))
+        lower, _ = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        if rsi is not None and rsi < lower:
             price_seq = [r.get("close") for r in hist]
             if raw_f1h.get("close") is not None:
                 price_seq.append(raw_f1h.get("close"))
@@ -3360,7 +3439,7 @@ class RobustSignalGenerator:
                 rebound_flag = True
             hammer = raw_f1h.get("long_lower_shadow_1h", 0) > 0.6
             rebound_flag = rebound_flag or hammer
-            rebound_strength = max(0.0, min(1.0, (30 - float(rsi)) / 30))
+            rebound_strength = max(0.0, min(1.0, (lower - float(rsi)) / max(lower, 1)))
             if rebound_flag:
                 last_ts = cache.get("last_rebound_ts", 0)
                 cooldown = self.rebound_cooldown * 3600
@@ -3469,14 +3548,22 @@ class RobustSignalGenerator:
 
         rsi = raw_fd1.get("rsi_d1")
         adx = raw_fd1.get("adx_d1", 0)
-        if direction == 1 and rsi is not None and rsi > 70:
+        hist_d1 = cache.get("_raw_history", {}).get("d1", [])
+        pairs = [
+            (h.get("rsi_d1"), h.get("vol_ma_ratio_d1"))
+            for h in hist_d1
+        ]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        lower, upper = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        if direction == 1 and rsi is not None and rsi > upper:
             if adx < 25:
                 pos_size *= 0.5
             else:
                 pos_size *= 0.8
                 if stop_loss is not None:
                     stop_loss *= 1.2
-        elif direction == -1 and rsi is not None and rsi < 30:
+        elif direction == -1 and rsi is not None and rsi < lower:
             if adx < 25:
                 pos_size *= 0.5
             else:
