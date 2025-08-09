@@ -7,6 +7,7 @@ from .core import (
     DynamicThresholdInput,
     PeriodFeatures,
     RobustSignalGenerator,
+    compute_dynamic_threshold,
     DEFAULT_AI_DIR_EPS,
     DEFAULT_POS_K_RANGE,
     DEFAULT_POS_K_TREND,
@@ -31,6 +32,7 @@ from .utils import (
     sigmoid_dir,
     sigmoid_confidence,
 )
+from .voting_model import VotingModel, load_cached_model
 
 __all__ = [
     "SignalThresholdParams",
@@ -39,6 +41,7 @@ __all__ = [
     "DynamicThresholdInput",
     "PeriodFeatures",
     "RobustSignalGenerator",
+    "compute_dynamic_threshold",
     "DEFAULT_AI_DIR_EPS",
     "DEFAULT_POS_K_RANGE",
     "DEFAULT_POS_K_TREND",
@@ -60,4 +63,6 @@ __all__ = [
     "fused_to_risk",
     "sigmoid_dir",
     "sigmoid_confidence",
+    "VotingModel",
+    "load_cached_model",
 ]

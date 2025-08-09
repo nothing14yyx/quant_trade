@@ -26,7 +26,7 @@ import os
 
 from ..config_manager import ConfigManager
 from ..ai_model_predictor import AIModelPredictor
-from ..risk_manager import RiskManager
+from ..risk_manager import RiskManager, cvar_limit
 from ..feature_processor import FeatureProcessor
 from ..constants import ZeroReason
 from scipy.special import inv_boxcox
@@ -57,6 +57,20 @@ def _load_default_ai_dir_eps(path: Path) -> float:
 
 
 DEFAULT_AI_DIR_EPS = _load_default_ai_dir_eps(CONFIG_PATH)
+
+
+def _load_default_rsi_k(path: Path) -> float:
+    """从配置文件读取 rsi_k，若失败则返回 1.5"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("rsi_k", 1.5)
+    except (OSError, yaml.YAMLError, ValueError) as exc:
+        logger.exception("_load_default_rsi_k error: %s", exc)
+        return 1.5
+
+
+DEFAULT_RSI_K = _load_default_rsi_k(CONFIG_PATH)
 DEFAULT_POS_K_RANGE = 0.40    # 震荡市仓位乘数
 DEFAULT_POS_K_TREND = 0.60    # 趋势市仓位乘数
 DEFAULT_LOW_BASE = 0.06       # 动态阈值下限
@@ -75,6 +89,7 @@ DEFAULTS = {
     "risk_filters_enabled": True,
     "dynamic_threshold_enabled": True,
     "direction_filters_enabled": True,
+    "rsi_k": DEFAULT_RSI_K,
 }
 
 SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
@@ -139,6 +154,59 @@ from .utils import (
     sigmoid_dir,
     sigmoid_confidence,
 )
+from .voting_model import load_cached_model
+
+
+def compute_dynamic_threshold(history_scores, window, quantile):
+    """基于历史得分计算动态阈值。
+
+    Args:
+        history_scores: 历史 ``fused_score`` 列表或 deque。
+        window: 参与计算的窗口大小。
+        quantile: 取值分位数。
+
+    Returns:
+        对应分位数的绝对值得分；若数据不足则返回 ``None``。
+    """
+
+    if not history_scores:
+        return None
+
+    arr = np.abs(np.asarray(list(history_scores)[-window:], dtype=float))
+    if arr.size == 0:
+        return None
+    return float(np.quantile(arr, quantile))
+
+
+def adaptive_rsi_threshold(rsi_series, vol_series, k: float | None = None, window: int = 14):
+    """计算基于均值±k倍标准差的 RSI 动态阈值。
+
+    rsi_series 与 vol_series 应具有相同长度，对应同一时间序列。
+    vol_series 作为权重参与标准差计算。
+    """
+
+    if rsi_series is None or vol_series is None:
+        return 30.0, 70.0
+    rsi_series = pd.Series(rsi_series).astype(float)
+    vol_series = pd.Series(vol_series).astype(float)
+    df = pd.DataFrame({"rsi": rsi_series, "vol": vol_series}).dropna()
+    if df.empty or len(df) < window:
+        return 30.0, 70.0
+    roll = df.tail(window)
+    weights = roll["vol"].to_numpy()
+    rsi_vals = roll["rsi"].to_numpy()
+    if not np.isfinite(weights).all() or np.allclose(weights, 0):
+        mean = rsi_vals.mean()
+        std = rsi_vals.std(ddof=0)
+    else:
+        mean = np.average(rsi_vals, weights=weights)
+        var = np.average((rsi_vals - mean) ** 2, weights=weights)
+        std = float(np.sqrt(var))
+    if k is None:
+        k = DEFAULT_RSI_K
+    lower = float(mean - k * std)
+    upper = float(mean + k * std)
+    return lower, upper
 
 
 @dataclass
@@ -155,6 +223,8 @@ class SignalThresholdParams:
     atr_mult: float = 4.0
     funding_mult: float = 8.0
     adx_div: float = 100.0
+    window: int = 60
+    dynamic_quantile: float = 0.8
 
     @classmethod
     def from_cfg(cls, cfg: dict | None):
@@ -170,6 +240,10 @@ class SignalThresholdParams:
             atr_mult=float(get_cfg_value(cfg, "atr_mult", cls.atr_mult)),
             funding_mult=float(get_cfg_value(cfg, "funding_mult", cls.funding_mult)),
             adx_div=float(get_cfg_value(cfg, "adx_div", cls.adx_div)),
+            window=int(get_cfg_value(cfg, "window", cls.window)),
+            dynamic_quantile=float(
+                get_cfg_value(cfg, "dynamic_quantile", cls.dynamic_quantile)
+            ),
         )
 
 
@@ -361,6 +435,9 @@ class RobustSignalGenerator:
         "weight_ai": 3,
         "strong_min": 3,
         "conf_min": 0.30,
+        "prob_th": 0.5,
+        "prob_margin": 0.1,
+        "strong_prob_th": 0.8,
     }
 
     def __init__(self, config: RobustSignalGeneratorConfig, *, cache_maxsize: int = DEFAULT_CACHE_MAXSIZE):
@@ -420,6 +497,7 @@ class RobustSignalGenerator:
         self.dynamic_threshold_enabled = cfg.get("dynamic_threshold_enabled", True)
         self.direction_filters_enabled = cfg.get("direction_filters_enabled", True)
         self.filter_penalty_mode = cfg.get("filter_penalty_mode", False)
+        self.rsi_k = get_cfg_value(cfg, "rsi_k", DEFAULT_RSI_K)
         self.penalty_factor = get_cfg_value(cfg, "penalty_factor", 0.5)
         fe_cfg = cfg.get("feature_engineering", {})
         self.rise_transform = fe_cfg.get("rise_transform", "none")
@@ -447,6 +525,11 @@ class RobustSignalGenerator:
             "weight_ai": vote_cfg.get("weight_ai", self.VOTE_PARAMS["weight_ai"]),
             "strong_min": vote_cfg.get("strong_min", self.VOTE_PARAMS["strong_min"]),
             "conf_min": vote_cfg.get("conf_min", self.VOTE_PARAMS["conf_min"]),
+            "prob_th": vote_cfg.get("prob_th", self.VOTE_PARAMS["prob_th"]),
+            "prob_margin": vote_cfg.get("prob_margin", self.VOTE_PARAMS["prob_margin"]),
+            "strong_prob_th": vote_cfg.get(
+                "strong_prob_th", self.VOTE_PARAMS["strong_prob_th"]
+            ),
         }
         self.ai_dir_eps = get_cfg_value(vote_cfg, "ai_dir_eps", DEFAULT_AI_DIR_EPS)
         self.vote_weights = get_cfg_value(
@@ -2396,8 +2479,16 @@ class RobustSignalGenerator:
         extreme_reversal = False
         rsi = feats_d1.raw.get("rsi_d1", 50)
         cci = feats_d1.raw.get("cci_d1", 0)
-        oversold = rsi < 25 or cci < -100
-        overbought = rsi > 75 or cci > 100
+        hist_d1 = self._raw_history.get("d1", [])
+        pairs = [
+            (h.get("rsi_d1"), h.get("vol_ma_ratio_d1"))
+            for h in hist_d1
+        ]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        lower, upper = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        oversold = rsi < lower or cci < -100
+        overbought = rsi > upper or cci > 100
         if oversold or overbought:
             ai_scores["d1"] *= 0.7
             extreme_reversal = True
@@ -2761,11 +2852,26 @@ class RobustSignalGenerator:
             bb_chg,
             channel_pos,
         )
-        if std_d1.get("break_support_d1", 0) > 0 and std_d1.get("rsi_d1", 50) < 30:
+        rsi_d1 = std_d1.get("rsi_d1", 50)
+        hist_d1 = cache.get("_raw_history", {}).get("d1", [])
+        pairs = [
+            (h.get("rsi_d1"), h.get("vol_ma_ratio_d1"))
+            for h in hist_d1
+        ]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        lower, _ = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        if std_d1.get("break_support_d1", 0) > 0 and rsi_d1 < lower:
             regime = "range"
             rev_dir = 1
         cfg_th = self.signal_threshold_cfg
+        params = self.signal_params
+        cfg_base = cfg_th.get("base_th", params.base_th)
         if self.dynamic_threshold_enabled:
+            dyn_base = compute_dynamic_threshold(
+                cache["history_scores"], params.window, params.dynamic_quantile
+            )
+            base_input = dyn_base if dyn_base is not None else cfg_base
             base_th, rev_boost = self.dynamic_threshold(
                 atr_1h,
                 adx_1h,
@@ -2781,13 +2887,13 @@ class RobustSignalGenerator:
                 pred_vol_d1=vol_preds.get("d1"),
                 vix_proxy=vix_p,
                 regime=regime,
-                base=cfg_th.get("base_th", 0.08),
+                base=base_input,
                 reversal=bool(rev_dir),
                 history_scores=cache["history_scores"],
             )
         else:
-            base_th = cfg_th.get("base_th", 0.08)
-            rev_boost = cfg_th.get("rev_boost", 0.0)
+            base_th = cfg_base
+            rev_boost = cfg_th.get("rev_boost", params.rev_boost)
         base_th *= getattr(self, "phase_th_mult", 1.0)
         if rev_dir != 0:
             fused_score += rev_boost * rev_dir
@@ -2910,34 +3016,70 @@ class RobustSignalGenerator:
         ob_dir: int,
         regime: str | None = None,
     ) -> tuple[float, float, bool, bool]:
-        """Calculate vote score and confidence."""
-        vw = self.vote_weights.copy()
-        if regime and isinstance(self.regime_vote_weights.get(regime), dict):
-            for k, v in self.regime_vote_weights[regime].items():
-                vw[k] = v
-        vote = (
-            vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
-            + vw.get("short_mom", 1) * short_mom_dir
-            + vw.get("vol_breakout", 1) * vol_breakout_dir
-            + vw.get("trend", 1) * trend_dir
-            + vw.get("confirm_15m", 1) * confirm_dir
-            + vw.get("ob", 0) * ob_dir
-        )
+        """Calculate vote probability and derived metrics.
 
-        strong_min = self.vote_params["strong_min"]
-        conf_vote = sigmoid_confidence(
-            vote,
-            strong_min,
-            getattr(self, "signal_filters", {}).get("conf_min", 1),
-        )
-        weak_vote = (
-            abs(vote)
-            < getattr(self, "signal_filters", {}).get("min_vote", 0)
-            or conf_vote
-            < getattr(self, "signal_filters", {}).get("confidence_vote", 0)
-        )
-        strong_confirm = abs(vote) >= strong_min
-        return vote, conf_vote, weak_vote, strong_confirm
+        A trained :class:`~quant_trade.signal.voting_model.VotingModel` is
+        loaded (if available) to map directional inputs to a probability score.
+        When no model file is present the method falls back to the original
+        weighted-sum rule so existing behaviour is preserved.
+        """
+
+        try:
+            model = load_cached_model()
+            features = [
+                [
+                    ai_dir,
+                    short_mom_dir,
+                    vol_breakout_dir,
+                    trend_dir,
+                    confirm_dir,
+                    ob_dir,
+                ]
+            ]
+            prob = float(model.predict_proba(features)[0, 1])
+            prob_th = self.vote_params.get("prob_th", 0.5)
+            vote = (
+                1
+                if prob >= prob_th
+                else -1
+                if prob <= 1 - prob_th
+                else 0
+            )
+            weak_vote = abs(prob - 0.5) < self.vote_params.get("prob_margin", 0.1)
+            strong_confirm = (
+                prob >= self.vote_params.get("strong_prob_th", 0.8)
+                or prob <= 1 - self.vote_params.get("strong_prob_th", 0.8)
+            )
+            return vote, prob, weak_vote, strong_confirm
+        except Exception:
+            # 模型不可用时回退至旧的线性加权逻辑
+            vw = self.vote_weights.copy()
+            if regime and isinstance(self.regime_vote_weights.get(regime), dict):
+                for k, v in self.regime_vote_weights[regime].items():
+                    vw[k] = v
+            vote = (
+                vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
+                + vw.get("short_mom", 1) * short_mom_dir
+                + vw.get("vol_breakout", 1) * vol_breakout_dir
+                + vw.get("trend", 1) * trend_dir
+                + vw.get("confirm_15m", 1) * confirm_dir
+                + vw.get("ob", 0) * ob_dir
+            )
+
+            strong_min = self.vote_params["strong_min"]
+            conf_vote = sigmoid_confidence(
+                vote,
+                strong_min,
+                getattr(self, "signal_filters", {}).get("conf_min", 1),
+            )
+            weak_vote = (
+                abs(vote)
+                < getattr(self, "signal_filters", {}).get("min_vote", 0)
+                or conf_vote
+                < getattr(self, "signal_filters", {}).get("confidence_vote", 0)
+            )
+            strong_confirm = abs(vote) >= strong_min
+            return vote, conf_vote, weak_vote, strong_confirm
 
     def _determine_direction(
         self,
@@ -3127,8 +3269,13 @@ class RobustSignalGenerator:
             try:
                 if self.account.day_loss_pct() > 0.04:
                     return None
+                pnl_hist = getattr(self.account, "pnl_history", None)
+                alpha = getattr(self, "cvar_alpha", None)
+                if pnl_hist is not None and alpha is not None:
+                    if cvar_limit(pnl_hist, alpha) < 0:
+                        return None
             except (AttributeError, ValueError) as exc:
-                logger.exception("day_loss_pct check failed: %s", exc)
+                logger.exception("risk checks failed: %s", exc)
 
         base_th = risk_info.get("base_th", self.signal_params.base_th)
         factor_breakdown = None
@@ -3178,13 +3325,21 @@ class RobustSignalGenerator:
             prev15 = hist15[-1] if hist15 else None
             rsi_c = raw_f15m.get("rsi_fast_15m")
             stoch_c = raw_f15m.get("stoch_fast_15m")
+            rsi_hist = [r.get("rsi_fast_15m") for r in hist15]
+            vol_hist = [r.get("vol_ma_ratio_15m") for r in hist15]
+            if rsi_c is not None:
+                rsi_hist.append(rsi_c)
+            vol_c = raw_f15m.get("vol_ma_ratio_15m")
+            if vol_c is not None:
+                vol_hist.append(vol_c)
+            lower_fast, upper_fast = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
             if prev15 is not None:
                 rsi_p = prev15.get("rsi_fast_15m")
                 stoch_p = prev15.get("stoch_fast_15m")
                 if rsi_p is not None and rsi_c is not None:
-                    if rsi_p < 30 <= rsi_c:
+                    if rsi_p < lower_fast <= rsi_c:
                         fast_cross_dir += 1
-                    elif rsi_p > 70 and rsi_c <= 70:
+                    elif rsi_p > upper_fast and rsi_c <= upper_fast:
                         fast_cross_dir -= 1
                 if stoch_p is not None and stoch_c is not None:
                     if stoch_p < 20 <= stoch_c:
@@ -3265,11 +3420,18 @@ class RobustSignalGenerator:
         rebound_flag = False
         reb_boost_applied = False
         rebound_strength = 0.0
-        if rsi is not None and rsi < 30:
-            hist = cache.get("_raw_history", {}).get("1h", [])
-            rsi_hist = [r.get("rsi_1h") for r in hist]
-            if raw_f1h.get("rsi_1h") is not None:
-                rsi_hist.append(raw_f1h.get("rsi_1h"))
+        hist = cache.get("_raw_history", {}).get("1h", [])
+        pairs = [
+            (h.get("rsi_1h"), h.get("vol_ma_ratio_1h"))
+            for h in hist
+        ]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        if raw_f1h.get("rsi_1h") is not None and raw_f1h.get("vol_ma_ratio_1h") is not None:
+            rsi_hist.append(raw_f1h.get("rsi_1h"))
+            vol_hist.append(raw_f1h.get("vol_ma_ratio_1h"))
+        lower, _ = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        if rsi is not None and rsi < lower:
             price_seq = [r.get("close") for r in hist]
             if raw_f1h.get("close") is not None:
                 price_seq.append(raw_f1h.get("close"))
@@ -3282,7 +3444,7 @@ class RobustSignalGenerator:
                 rebound_flag = True
             hammer = raw_f1h.get("long_lower_shadow_1h", 0) > 0.6
             rebound_flag = rebound_flag or hammer
-            rebound_strength = max(0.0, min(1.0, (30 - float(rsi)) / 30))
+            rebound_strength = max(0.0, min(1.0, (lower - float(rsi)) / max(lower, 1)))
             if rebound_flag:
                 last_ts = cache.get("last_rebound_ts", 0)
                 cooldown = self.rebound_cooldown * 3600
@@ -3391,14 +3553,22 @@ class RobustSignalGenerator:
 
         rsi = raw_fd1.get("rsi_d1")
         adx = raw_fd1.get("adx_d1", 0)
-        if direction == 1 and rsi is not None and rsi > 70:
+        hist_d1 = cache.get("_raw_history", {}).get("d1", [])
+        pairs = [
+            (h.get("rsi_d1"), h.get("vol_ma_ratio_d1"))
+            for h in hist_d1
+        ]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        lower, upper = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        if direction == 1 and rsi is not None and rsi > upper:
             if adx < 25:
                 pos_size *= 0.5
             else:
                 pos_size *= 0.8
                 if stop_loss is not None:
                     stop_loss *= 1.2
-        elif direction == -1 and rsi is not None and rsi < 30:
+        elif direction == -1 and rsi is not None and rsi < lower:
             if adx < 25:
                 pos_size *= 0.5
             else:

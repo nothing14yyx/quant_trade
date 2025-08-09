@@ -55,6 +55,8 @@ market_phase:
     数量及衰减程度，默认 `th_window=150`、`th_decay=1.0`，
     可根据策略需求适当调小窗口或衰减系数。
 -   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.78`，数值越高代表触发门槛越严格。
+-   `signal_threshold.window` 与 `signal_threshold.dynamic_quantile`
+    控制动态阈值计算所用的窗口与分位数，可针对不同资产或市场阶段自定义。
 -   `compute_dynamic_threshold` 会依据最近 `history_scores` 计算分位数，并结合 `atr_4h`、`adx_4h`、`atr_d1`、`adx_d1` 与 `pred_vol`、`vix_proxy` 等指标自适应调整门槛，`regime` 与 `reversal` 还能微调阈值和 `rev_boost`，参数统一封装在 `DynamicThresholdInput` 中。
 -   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
 -   新增 `dynamic_threshold` 配置项，可自定义 ATR、ADX 与 funding 对阈值的影响系数及上限。
@@ -235,6 +237,9 @@ enable_factor_breakdown: true  # 设为 false 可提升回测速度
 `signal_threshold.quantile` 指定所取的分位数，数值越低则门槛越低，
 更易触发信号。
 
+`signal_threshold.window` 与 `signal_threshold.dynamic_quantile`
+进一步允许针对不同资产或阶段调整窗口与分位数。
+
 示例，若在高频或小仓位策略中需要更积极的入场，可在 `utils/config.yaml`
 中调整（`signal_threshold` 位于配置根目录）：
 
@@ -243,6 +248,8 @@ th_window: 80
 th_decay: 0.5
 signal_threshold:
   quantile: 0.65
+  window: 80
+  dynamic_quantile: 0.7
 这会使阈值更快反应最新波动，从而在行情活跃时给出更多交易机会。
 `rev_boost` 则决定在检测到潜在反转时额外加成的得分，数值越大越易触发交易。
 `dynamic_threshold` 区块则控制 ATR、ADX 与 funding 对阈值的加成比例和上限，

@@ -1,6 +1,7 @@
 risk_filters_enabled: true
 dynamic_threshold_enabled: true
 direction_filters_enabled: false
+rsi_k: 1.5  # RSI 阈值标准差倍数
 filter_penalty_mode: true
 penalty_factor: 0.5
 enable_ai: true
@@ -442,6 +443,8 @@ signal_threshold:
   gamma: 0.9        # 过渡宽度
   min_pos: 0.05      # pos_size < 0.10 则 direction = 0
   quantile: 0.78
+  window: 60
+  dynamic_quantile: 0.8
   low_base: 0.06
   # base_th / low_base 单位为 fused_score
   rev_boost: 0.15      # detect_reversal 命中时加分

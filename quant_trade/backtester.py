@@ -161,8 +161,10 @@ def calc_equity_curve(trades_df: pd.DataFrame) -> pd.Series:
 
 # =========== 融合信号回测 ===========
 def run_backtest(
-    *, recent_days: int | None = None,
+    *,
+    recent_days: int | None = None,
     start_time: pd.Timestamp | str | None = None,
+    cvar_alpha: float | None = None,
 ) -> None:
     cfg = load_config()
     engine = connect_mysql(cfg)
@@ -198,6 +200,8 @@ def run_backtest(
     all_symbols = df['symbol'].unique().tolist()
     rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
     sg = RobustSignalGenerator(rsg_cfg)
+    if cvar_alpha is not None:
+        sg.cvar_alpha = cvar_alpha
 
     # 根据近期历史数据更新因子 IC 分数
     sg.update_ic_scores(df.tail(1000), group_by="symbol")
