@@ -317,5 +317,10 @@
   "OGUSDT": "og-fan-token",
   "FLOWUSDT": "flow",
   "FORMUSDT": "form",
-  "FHEUSDT": "mind-network"
+  "FHEUSDT": "mind-network",
+  "MEMEFIUSDT": "memefi-2",
+  "PROVEUSDT": "succinct",
+  "YALAUSDT": "yala",
+  "INUSDT": "bitcoin",
+  "TOWNSUSDT": "towns"
 }
