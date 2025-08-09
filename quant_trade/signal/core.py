@@ -26,7 +26,7 @@ import os
 
 from ..config_manager import ConfigManager
 from ..ai_model_predictor import AIModelPredictor
-from ..risk_manager import RiskManager
+from ..risk_manager import RiskManager, cvar_limit
 from ..feature_processor import FeatureProcessor
 from ..constants import ZeroReason
 from scipy.special import inv_boxcox
@@ -3269,8 +3269,13 @@ class RobustSignalGenerator:
             try:
                 if self.account.day_loss_pct() > 0.04:
                     return None
+                pnl_hist = getattr(self.account, "pnl_history", None)
+                alpha = getattr(self, "cvar_alpha", None)
+                if pnl_hist is not None and alpha is not None:
+                    if cvar_limit(pnl_hist, alpha) < 0:
+                        return None
             except (AttributeError, ValueError) as exc:
-                logger.exception("day_loss_pct check failed: %s", exc)
+                logger.exception("risk checks failed: %s", exc)
 
         base_th = risk_info.get("base_th", self.signal_params.base_th)
         factor_breakdown = None
