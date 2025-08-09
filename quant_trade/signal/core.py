@@ -139,6 +139,7 @@ from .utils import (
     sigmoid_dir,
     sigmoid_confidence,
 )
+from .voting_model import load_cached_model
 
 
 def compute_dynamic_threshold(history_scores, window, quantile):
@@ -388,6 +389,9 @@ class RobustSignalGenerator:
         "weight_ai": 3,
         "strong_min": 3,
         "conf_min": 0.30,
+        "prob_th": 0.5,
+        "prob_margin": 0.1,
+        "strong_prob_th": 0.8,
     }
 
     def __init__(self, config: RobustSignalGeneratorConfig, *, cache_maxsize: int = DEFAULT_CACHE_MAXSIZE):
@@ -474,6 +478,11 @@ class RobustSignalGenerator:
             "weight_ai": vote_cfg.get("weight_ai", self.VOTE_PARAMS["weight_ai"]),
             "strong_min": vote_cfg.get("strong_min", self.VOTE_PARAMS["strong_min"]),
             "conf_min": vote_cfg.get("conf_min", self.VOTE_PARAMS["conf_min"]),
+            "prob_th": vote_cfg.get("prob_th", self.VOTE_PARAMS["prob_th"]),
+            "prob_margin": vote_cfg.get("prob_margin", self.VOTE_PARAMS["prob_margin"]),
+            "strong_prob_th": vote_cfg.get(
+                "strong_prob_th", self.VOTE_PARAMS["strong_prob_th"]
+            ),
         }
         self.ai_dir_eps = get_cfg_value(vote_cfg, "ai_dir_eps", DEFAULT_AI_DIR_EPS)
         self.vote_weights = get_cfg_value(
@@ -2943,34 +2952,70 @@ class RobustSignalGenerator:
         ob_dir: int,
         regime: str | None = None,
     ) -> tuple[float, float, bool, bool]:
-        """Calculate vote score and confidence."""
-        vw = self.vote_weights.copy()
-        if regime and isinstance(self.regime_vote_weights.get(regime), dict):
-            for k, v in self.regime_vote_weights[regime].items():
-                vw[k] = v
-        vote = (
-            vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
-            + vw.get("short_mom", 1) * short_mom_dir
-            + vw.get("vol_breakout", 1) * vol_breakout_dir
-            + vw.get("trend", 1) * trend_dir
-            + vw.get("confirm_15m", 1) * confirm_dir
-            + vw.get("ob", 0) * ob_dir
-        )
+        """Calculate vote probability and derived metrics.
 
-        strong_min = self.vote_params["strong_min"]
-        conf_vote = sigmoid_confidence(
-            vote,
-            strong_min,
-            getattr(self, "signal_filters", {}).get("conf_min", 1),
-        )
-        weak_vote = (
-            abs(vote)
-            < getattr(self, "signal_filters", {}).get("min_vote", 0)
-            or conf_vote
-            < getattr(self, "signal_filters", {}).get("confidence_vote", 0)
-        )
-        strong_confirm = abs(vote) >= strong_min
-        return vote, conf_vote, weak_vote, strong_confirm
+        A trained :class:`~quant_trade.signal.voting_model.VotingModel` is
+        loaded (if available) to map directional inputs to a probability score.
+        When no model file is present the method falls back to the original
+        weighted-sum rule so existing behaviour is preserved.
+        """
+
+        try:
+            model = load_cached_model()
+            features = [
+                [
+                    ai_dir,
+                    short_mom_dir,
+                    vol_breakout_dir,
+                    trend_dir,
+                    confirm_dir,
+                    ob_dir,
+                ]
+            ]
+            prob = float(model.predict_proba(features)[0, 1])
+            prob_th = self.vote_params.get("prob_th", 0.5)
+            vote = (
+                1
+                if prob >= prob_th
+                else -1
+                if prob <= 1 - prob_th
+                else 0
+            )
+            weak_vote = abs(prob - 0.5) < self.vote_params.get("prob_margin", 0.1)
+            strong_confirm = (
+                prob >= self.vote_params.get("strong_prob_th", 0.8)
+                or prob <= 1 - self.vote_params.get("strong_prob_th", 0.8)
+            )
+            return vote, prob, weak_vote, strong_confirm
+        except Exception:
+            # 模型不可用时回退至旧的线性加权逻辑
+            vw = self.vote_weights.copy()
+            if regime and isinstance(self.regime_vote_weights.get(regime), dict):
+                for k, v in self.regime_vote_weights[regime].items():
+                    vw[k] = v
+            vote = (
+                vw.get("ai", self.vote_params["weight_ai"]) * ai_dir
+                + vw.get("short_mom", 1) * short_mom_dir
+                + vw.get("vol_breakout", 1) * vol_breakout_dir
+                + vw.get("trend", 1) * trend_dir
+                + vw.get("confirm_15m", 1) * confirm_dir
+                + vw.get("ob", 0) * ob_dir
+            )
+
+            strong_min = self.vote_params["strong_min"]
+            conf_vote = sigmoid_confidence(
+                vote,
+                strong_min,
+                getattr(self, "signal_filters", {}).get("conf_min", 1),
+            )
+            weak_vote = (
+                abs(vote)
+                < getattr(self, "signal_filters", {}).get("min_vote", 0)
+                or conf_vote
+                < getattr(self, "signal_filters", {}).get("confidence_vote", 0)
+            )
+            strong_confirm = abs(vote) >= strong_min
+            return vote, conf_vote, weak_vote, strong_confirm
 
     def _determine_direction(
         self,

@@ -32,6 +32,7 @@ from .utils import (
     sigmoid_dir,
     sigmoid_confidence,
 )
+from .voting_model import VotingModel, load_cached_model
 
 __all__ = [
     "SignalThresholdParams",
@@ -62,4 +63,6 @@ __all__ = [
     "fused_to_risk",
     "sigmoid_dir",
     "sigmoid_confidence",
+    "VotingModel",
+    "load_cached_model",
 ]
