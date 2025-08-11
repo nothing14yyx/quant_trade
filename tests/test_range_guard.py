@@ -3,6 +3,7 @@ from collections import deque, OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
+from quant_trade.signal.fusion_rule import FusionRuleBased
 
 
 def make_rsg():
@@ -50,6 +51,12 @@ def make_rsg():
     r.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     r.flip_confirm_bars = 3
     r.predictor = PredictorAdapter(None)
+    r.fusion_rule = FusionRuleBased(r)
+    r.consensus_check = r.fusion_rule.consensus_check
+    r.crowding_protection = r.fusion_rule.crowding_protection
+    r.apply_crowding_protection = r.fusion_rule.apply_crowding_protection
+    r.fuse = r.fusion_rule.fuse
+    r.fuse_multi_cycle = r.fusion_rule.fuse
     return r
 
 

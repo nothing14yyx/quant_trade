@@ -6,6 +6,7 @@ import numpy as np
 from quant_trade.robust_signal_generator import RobustSignalGenerator, DynamicThresholdInput
 from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
+from quant_trade.signal.fusion_rule import FusionRuleBased
 
 
 def make_rsg():
@@ -66,6 +67,12 @@ def make_rsg():
     rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
     rsg.w_ai = rsg.current_weights['ai']
     rsg.predictor = PredictorAdapter(None)
+    rsg.fusion_rule = FusionRuleBased(rsg)
+    rsg.consensus_check = rsg.fusion_rule.consensus_check
+    rsg.crowding_protection = rsg.fusion_rule.crowding_protection
+    rsg.apply_crowding_protection = rsg.fusion_rule.apply_crowding_protection
+    rsg.fuse = rsg.fusion_rule.fuse
+    rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
     return rsg
 
 
