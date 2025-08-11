@@ -5,6 +5,7 @@ from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
 from quant_trade.signal.fusion_rule import FusionRuleBased
 from quant_trade.signal.risk_filters import RiskFiltersImpl
+from quant_trade.signal.position_sizer import PositionSizerImpl
 
 
 def make_rsg():
@@ -58,6 +59,7 @@ def make_rsg():
     r.fuse = r.fusion_rule.fuse
     r.fuse_multi_cycle = r.fusion_rule.fuse
     r.risk_filters = RiskFiltersImpl(r)
+    r.position_sizer = PositionSizerImpl(r)
     return r
 
 
@@ -69,7 +71,7 @@ def test_range_guard():
     gen.combine_score = lambda ai, fs, weights=None: next(scores_seq)
     gen.factor_scorer.score = lambda f, p: {k: 0 for k in gen.base_weights if k != 'ai'}
     gen.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
-    gen.compute_tp_sl = lambda *a, **k: (0, 0)
+    gen.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     gen.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
                   'd1': {'up': None, 'down': None}}

@@ -171,8 +171,8 @@ def test_ai_dir_eps_threshold_check():
 def test_compute_exit_multiplier():
     rsg = make_dummy_rsg()
     rsg._exit_lag = 0
-    assert rsg.compute_exit_multiplier(2, 5, 1) == 0.5
+    assert rsg.position_sizer.compute_exit_multiplier(2, 5, 1) == 0.5
     assert rsg._exit_lag == 0
-    val = rsg.compute_exit_multiplier(-1, 2, 1)
+    val = rsg.position_sizer.compute_exit_multiplier(-1, 2, 1)
     assert val == 0.0
     assert rsg._exit_lag == 1

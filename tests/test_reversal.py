@@ -7,6 +7,7 @@ from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
 from quant_trade.signal.fusion_rule import FusionRuleBased
 from quant_trade.signal.risk_filters import RiskFiltersImpl
+from quant_trade.signal.position_sizer import PositionSizerImpl
 
 
 def make_rsg():
@@ -68,7 +69,8 @@ def make_rsg():
     rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: ai
     rsg.dynamic_threshold = lambda *a, **k: (0.2, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer = PositionSizerImpl(rsg)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg._raw_history = {'1h': deque(maxlen=4), '4h': deque(maxlen=2), 'd1': deque(maxlen=2)}
     rsg._cooldown = 3
     rsg.min_trend_align = 1
@@ -133,7 +135,7 @@ def test_flip_requires_confirmation():
     rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: -0.4
     rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
                   'd1': {'up': None, 'down': None}}

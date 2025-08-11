@@ -8,6 +8,7 @@ from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
 from quant_trade.signal.fusion_rule import FusionRuleBased
 from quant_trade.signal.risk_filters import RiskFiltersImpl
+from quant_trade.signal.position_sizer import PositionSizerImpl
 
 
 def make_rsg():
@@ -74,6 +75,7 @@ def make_rsg():
     rsg.fuse = rsg.fusion_rule.fuse
     rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
     rsg.risk_filters = RiskFiltersImpl(rsg)
+    rsg.position_sizer = PositionSizerImpl(rsg)
     return rsg
 
 
@@ -132,7 +134,7 @@ def test_dynamic_weight_handles_nan_history():
 
 def test_compute_tp_sl_fallback():
     rsg = make_rsg()
-    tp, sl = rsg.compute_tp_sl(100, 0, 1)
+    tp, sl = rsg.position_sizer.compute_tp_sl(100, 0, 1)
     assert tp is not None and sl is not None
 
 
@@ -143,7 +145,7 @@ def test_flip_threshold_allows_switch():
     rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: -0.75
     rsg.dynamic_threshold = lambda *a, **k: (0.6, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None}, '4h': {'up': None, 'down': None}, 'd1': {'up': None, 'down': None}}
 
     feats_1h = {
@@ -179,7 +181,7 @@ def test_range_filter_keeps_strong_signal():
     rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: 0.6
     rsg.dynamic_threshold = lambda *a, **k: (0.5, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None}, '4h': {'up': None, 'down': None}, 'd1': {'up': None, 'down': None}}
 
     feats_1h = {
