@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 from collections import deque
 from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.signal.predictor_adapter import PredictorAdapter
 
 
 def make_simple_rsg():
@@ -37,13 +38,14 @@ def make_simple_rsg():
     rsg.volume_quantile_high = 0.8
     rsg.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=10)
     rsg.flip_confirm_bars = 3
+    rsg.predictor = PredictorAdapter(None)
     return rsg
 
 
 def test_layer_scores_product():
     rsg = make_simple_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f,u,d: 0.5
+    rsg.predictor.get_ai_score = lambda f,u,d: 0.5
     rsg.get_factor_scores = lambda f,p:{k:0 for k in rsg.base_weights if k!='ai'}
     rsg.combine_score = lambda ai,fs,w=None: ai
     rsg.dynamic_threshold = lambda *a,**k: (0, 0)

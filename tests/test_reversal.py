@@ -3,6 +3,7 @@ import pytest
 from collections import deque
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator, smooth_score
+from quant_trade.signal.predictor_adapter import PredictorAdapter
 
 
 def make_rsg():
@@ -57,7 +58,8 @@ def make_rsg():
                   '4h': {'up': None, 'down': None},
                   'd1': {'up': None, 'down': None}}
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.3
+    rsg.predictor = PredictorAdapter(None)
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.3
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: ai
     rsg.dynamic_threshold = lambda *a, **k: (0.2, 0.0)
@@ -116,7 +118,7 @@ def test_flip_requires_confirmation():
     rsg.flip_confirm_bars = 3
     rsg._cooldown = 0
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, u, d: 0
+    rsg.predictor.get_ai_score = lambda f, u, d: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: -0.4
     rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)

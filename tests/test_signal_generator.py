@@ -187,7 +187,7 @@ def test_generate_signal_raw_atr():
     }
     rsg.ic_scores = {k: 1 for k in rsg.base_weights}
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.9
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.9
     rsg.get_factor_scores = lambda f, p: {
         'trend': 1,
         'momentum': 1,
@@ -240,7 +240,7 @@ def test_dynamic_threshold_use_raw_features():
         return 0.1, 0.0
 
     rsg.dynamic_threshold = fake_dyn_th
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -295,7 +295,7 @@ def test_factor_scores_use_normalized_features():
                 'sentiment': 0, 'funding': 0}
 
     rsg.get_factor_scores = fake_get_factor_scores
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.combine_score = lambda ai, fs, weights=None: 0
     rsg.dynamic_weight_update = lambda: rsg.base_weights
     rsg.models = {
@@ -439,7 +439,7 @@ def test_combine_score_weight_names():
 def test_generate_signal_with_external_metrics():
     base = make_dummy_rsg()
     for r in (base,):
-        r.get_ai_score = lambda f, up, down: 0
+        r.predictor.get_ai_score = lambda f, up, down: 0
         r.get_factor_scores = lambda f, p: {
             'trend': 0,
             'momentum': 0,
@@ -465,7 +465,7 @@ def test_generate_signal_with_external_metrics():
     assert baseline['score'] == pytest.approx(expected_baseline)
 
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = base.get_ai_score
+    rsg.predictor.get_ai_score = base.predictor.get_ai_score
     rsg.get_factor_scores = base.get_factor_scores
     rsg.combine_score = base.combine_score
     rsg.dynamic_weight_update = lambda: rsg.base_weights
@@ -492,7 +492,7 @@ def test_generate_signal_with_external_metrics():
 
 def test_hot_sector_influence():
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -534,7 +534,7 @@ def test_hot_sector_influence():
 
 def test_eth_dominance_influence():
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -577,7 +577,7 @@ def test_eth_dominance_influence():
 
 def test_short_momentum_and_order_book():
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -622,7 +622,7 @@ def test_short_momentum_and_order_book():
 
 def test_ma_cross_logic_amplify():
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -723,7 +723,7 @@ def test_dynamic_threshold_reversal():
 def test_order_book_momentum_threshold():
     """小幅盘口差异不应取消已生成的信号"""
     rsg = make_dummy_rsg()
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -769,7 +769,7 @@ def test_order_book_momentum_threshold():
 def test_sentiment_reweight_and_guard():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
 
     def fs_func(feats, period):
         if period == '1h':
@@ -809,7 +809,7 @@ def test_sentiment_reweight_and_guard():
 def test_volume_and_funding_penalties():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
 
     def fs_func(feats, period):
         return {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0,
@@ -849,7 +849,7 @@ def test_volume_and_funding_penalties():
 def test_momentum_alignment_disables_confirm():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
 
     def fs_func(feats, period):
         if period == '4h':
@@ -891,7 +891,7 @@ def test_momentum_alignment_disables_confirm():
 def test_crowding_factor_and_dynamic_threshold():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
 
     def fs_func(feats, period):
         return {'trend': 0, 'momentum': 0, 'volatility': 0,
@@ -936,7 +936,7 @@ def test_crowding_factor_and_dynamic_threshold():
 def test_step_exit_with_order_book_flip():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: 0.6
     rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
@@ -992,7 +992,7 @@ def test_position_size_range_regime():
             return 0.5
         return -0.2
 
-    rsg.get_ai_score = fake_ai
+    rsg.predictor.get_ai_score = fake_ai
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0, 'momentum': 0, 'volatility': 0,
         'volume': 0, 'sentiment': 0, 'funding': 0,
@@ -1031,7 +1031,7 @@ def test_generate_signal_with_cls_model():
     rsg = make_dummy_rsg()
 
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score_cls = lambda feats, mdl: 0.5
+    rsg.predictor.get_ai_score_cls = lambda feats, mdl: 0.5
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,
@@ -1076,7 +1076,7 @@ def test_generate_signal_with_cls_model():
 def test_conflict_filter_and_pos_size():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.0
     rsg.get_factor_scores = lambda f, p: {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0,
                                           'sentiment': 0, 'funding': 0}
     rsg.combine_score = lambda ai, fs, weights=None: ai
@@ -1110,7 +1110,7 @@ def test_conflict_filter_and_pos_size():
 def test_extreme_indicator_scales_down():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.6
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.6
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: ai
     rsg.dynamic_threshold = lambda *a, **k: (0.10, 0.0)
@@ -1145,7 +1145,7 @@ def test_vote_conflict_scales_score():
     """当投票方向与分数相反时, 投票越多削弱越明显"""
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.6
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.6
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: ai
     rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
@@ -1184,7 +1184,7 @@ def test_vote_conflict_scales_score():
 def test_confirm_15m_adjusts_score():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0
+    rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: 0.6
     rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)

@@ -155,6 +155,7 @@ from .utils import (
     sigmoid_confidence,
 )
 from .voting_model import load_cached_model
+from .predictor_adapter import PredictorAdapter
 
 
 def compute_dynamic_threshold(history_scores, window, quantile):
@@ -509,6 +510,9 @@ class RobustSignalGenerator:
                 self.boxcox_lambda = json.load(f)
         else:
             self.boxcox_lambda = {}
+        self.predictor = PredictorAdapter(
+            self.ai_predictor, self.rise_transform, self.boxcox_lambda
+        )
         self.signal_threshold_cfg = get_cfg_value(cfg, "signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
             self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
@@ -1315,62 +1319,17 @@ class RobustSignalGenerator:
         return pos_size, direction, tier, zero_reason
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
-    def get_ai_score(self, features, model_up, model_down, calibrator_up=None, calibrator_down=None):
-        """根据上涨/下跌模型概率差值计算 AI 得分。
+    def get_ai_score(self, *args, **kwargs):
+        return self.predictor.get_ai_score(*args, **kwargs)
 
-        ``features`` 可以是字典、Series 或单行 DataFrame。若未包含模型
-        训练时的所有列, 本方法会自动从 ``model_up``、``model_down`` 中
-        的 ``"features"`` 列表取值构建输入。
-        """
+    def get_ai_score_cls(self, *args, **kwargs):
+        return self.predictor.get_ai_score_cls(*args, **kwargs)
 
-        if isinstance(features, pd.DataFrame):
-            if not len(features.index):
-                features = {}
-            else:
-                features = features.iloc[0].to_dict()
-        elif isinstance(features, pd.Series):
-            features = features.to_dict()
+    def get_vol_prediction(self, *args, **kwargs):
+        return self.predictor.get_vol_prediction(*args, **kwargs)
 
-        if self.ai_predictor is None:
-            return 0.0
-
-        return self.ai_predictor.get_ai_score(
-            features,
-            model_up,
-            model_down,
-            calibrator_up,
-            calibrator_down,
-        )
-
-    def get_ai_score_cls(self, features, model_dict):
-        """从单个分类模型计算AI得分"""
-        if self.ai_predictor is None:
-            return 0.0
-        return self.ai_predictor.get_ai_score_cls(features, model_dict)
-
-    def get_vol_prediction(self, features, model_dict):
-        """根据回归模型预测未来波动率"""
-        if self.ai_predictor is None:
-            return None
-        return self.ai_predictor.get_vol_prediction(features, model_dict)
-
-    def get_reg_prediction(
-        self, features, model_dict, tag: str | None = None, period: str | None = None
-    ):
-        """通用回归模型预测, 根据 tag 应用逆变换"""
-        if self.ai_predictor is None:
-            return None
-        pred = self.ai_predictor.get_reg_prediction(features, model_dict)
-        if tag == "rise" and self.rise_transform != "none":
-            if self.rise_transform == "log":
-                return float(np.expm1(pred))
-            if self.rise_transform == "boxcox":
-                lmbda = None
-                if period is not None:
-                    lmbda = self.boxcox_lambda.get(period)
-                if lmbda is not None:
-                    return float(inv_boxcox(pred, lmbda) - 1.0)
-        return pred
+    def get_reg_prediction(self, *args, **kwargs):
+        return self.predictor.get_reg_prediction(*args, **kwargs)
 
     # robust_signal_generator.py
 
@@ -2395,18 +2354,18 @@ class RobustSignalGenerator:
             return None, None, None, None
 
         if "cls" in models_p and "up" not in models_p:
-            ai_score = self.get_ai_score_cls(feats, models_p["cls"])
+            ai_score = self.predictor.get_ai_score_cls(feats, models_p["cls"])
         else:
             cal_up = self.calibrators.get(period, {}).get("up")
             cal_down = self.calibrators.get(period, {}).get("down")
             if cal_up is None and cal_down is None:
-                ai_score = self.get_ai_score(
+                ai_score = self.predictor.get_ai_score(
                     feats,
                     models_p["up"],
                     models_p["down"],
                 )
             else:
-                ai_score = self.get_ai_score(
+                ai_score = self.predictor.get_ai_score(
                     feats,
                     models_p["up"],
                     models_p["down"],
@@ -2419,11 +2378,13 @@ class RobustSignalGenerator:
         drawdown_pred = None
 
         if "vol" in models_p:
-            vol_pred = self.get_vol_prediction(feats, models_p["vol"])
+            vol_pred = self.predictor.get_vol_prediction(feats, models_p["vol"])
         if "rise" in models_p:
-            rise_pred = self.get_reg_prediction(feats, models_p["rise"], tag="rise", period=period)
+            rise_pred = self.predictor.get_reg_prediction(
+                feats, models_p["rise"], tag="rise", period=period
+            )
         if "drawdown" in models_p:
-            drawdown_pred = self.get_reg_prediction(feats, models_p["drawdown"])
+            drawdown_pred = self.predictor.get_reg_prediction(feats, models_p["drawdown"])
 
         return ai_score, vol_pred, rise_pred, drawdown_pred
 
