@@ -156,58 +156,11 @@ from .factor_scorer import FactorScorerImpl
 from .voting_model import load_cached_model
 from .predictor_adapter import PredictorAdapter
 from .fusion_rule import FusionRuleBased
-
-
-def compute_dynamic_threshold(history_scores, window, quantile):
-    """基于历史得分计算动态阈值。
-
-    Args:
-        history_scores: 历史 ``fused_score`` 列表或 deque。
-        window: 参与计算的窗口大小。
-        quantile: 取值分位数。
-
-    Returns:
-        对应分位数的绝对值得分；若数据不足则返回 ``None``。
-    """
-
-    if not history_scores:
-        return None
-
-    arr = np.abs(np.asarray(list(history_scores)[-window:], dtype=float))
-    if arr.size == 0:
-        return None
-    return float(np.quantile(arr, quantile))
-
-
-def adaptive_rsi_threshold(rsi_series, vol_series, k: float | None = None, window: int = 14):
-    """计算基于均值±k倍标准差的 RSI 动态阈值。
-
-    rsi_series 与 vol_series 应具有相同长度，对应同一时间序列。
-    vol_series 作为权重参与标准差计算。
-    """
-
-    if rsi_series is None or vol_series is None:
-        return 30.0, 70.0
-    rsi_series = pd.Series(rsi_series).astype(float)
-    vol_series = pd.Series(vol_series).astype(float)
-    df = pd.DataFrame({"rsi": rsi_series, "vol": vol_series}).dropna()
-    if df.empty or len(df) < window:
-        return 30.0, 70.0
-    roll = df.tail(window)
-    weights = roll["vol"].to_numpy()
-    rsi_vals = roll["rsi"].to_numpy()
-    if not np.isfinite(weights).all() or np.allclose(weights, 0):
-        mean = rsi_vals.mean()
-        std = rsi_vals.std(ddof=0)
-    else:
-        mean = np.average(rsi_vals, weights=weights)
-        var = np.average((rsi_vals - mean) ** 2, weights=weights)
-        std = float(np.sqrt(var))
-    if k is None:
-        k = DEFAULT_RSI_K
-    lower = float(mean - k * std)
-    upper = float(mean + k * std)
-    return lower, upper
+from .thresholding_dynamic import (
+    ThresholdingDynamic,
+    DynamicThresholdInput,
+    compute_dynamic_threshold,
+)
 
 
 @dataclass
@@ -327,29 +280,6 @@ class RobustSignalGeneratorConfig:
         )
 
 
-
-
-
-
-@dataclass
-class DynamicThresholdInput:
-    """Container for metrics used in dynamic threshold calculation."""
-
-    atr: float
-    adx: float
-    bb_width_chg: float | None = None
-    channel_pos: float | None = None
-    funding: float = 0.0
-    atr_4h: float | None = None
-    adx_4h: float | None = None
-    atr_d1: float | None = None
-    adx_d1: float | None = None
-    pred_vol: float | None = None
-    pred_vol_4h: float | None = None
-    pred_vol_d1: float | None = None
-    vix_proxy: float | None = None
-    regime: str | None = None
-    reversal: bool = False
 
 
 @dataclass
@@ -521,6 +451,7 @@ class RobustSignalGenerator:
         self.smooth_window = get_cfg_value(dyn_cfg, "smooth_window", 20)
         self.smooth_alpha = get_cfg_value(dyn_cfg, "smooth_alpha", 0.2)
         self.smooth_limit = get_cfg_value(dyn_cfg, "smooth_limit", 1.0)
+        self.thresholding = ThresholdingDynamic(self)
         db_cfg = get_cfg_value(cfg, "delta_boost", {})
         self.core_keys = core_keys or get_cfg_value(db_cfg, "core_keys", self.DEFAULT_CORE_KEYS)
         self.delta_params = delta_params or get_cfg_value(db_cfg, "params", self.DELTA_PARAMS)
@@ -805,6 +736,7 @@ class RobustSignalGenerator:
             "risk_filters_enabled": True,
             "direction_filters_enabled": True,
             "enable_factor_breakdown": True,
+            "thresholding": ThresholdingDynamic(self),
         }
         if name in defaults:
             val = defaults[name]
@@ -1502,127 +1434,37 @@ class RobustSignalGenerator:
         low_base: float | None = None,
         history_scores=None,
     ):
-        """Calculate dynamic threshold using provided metrics."""
+        """Delegate to :class:`ThresholdingDynamic` base method."""
 
-        params = self.signal_params
-        dyn_p = self.dynamic_th_params
-        base = params.base_th if base is None else base
-        low_base = params.low_base if low_base is None else low_base
-
-        if history_scores is not None:
-            scores = smooth_series(
-                history_scores,
-                window=getattr(self, "smooth_window", 20),
-                alpha=getattr(self, "smooth_alpha", 0.2),
-            )
-            limit = getattr(self, "smooth_limit", 1.0)
-            if limit is not None:
-                scores = np.clip(scores, -limit, limit)
-            hist_base = _calc_history_base(
-                scores,
-                base,
-                params.quantile,
-                self.th_window,
-                self.th_decay,
-                0.12,
-            )
-        else:
-            hist_base = base
-
-        th = hist_base
-        atr_eff = abs(data.atr)
-        if data.atr_4h is not None:
-            atr_eff += 0.5 * abs(data.atr_4h)
-        if data.atr_d1 is not None:
-            atr_eff += 0.25 * abs(data.atr_d1)
-        th += min(dyn_p.atr_cap, atr_eff * dyn_p.atr_mult)
-
-        fund_eff = abs(data.funding)
-        if data.pred_vol is not None:
-            fund_eff += 0.5 * abs(data.pred_vol)
-        if data.pred_vol_4h is not None:
-            fund_eff += 0.25 * abs(data.pred_vol_4h)
-        if data.pred_vol_d1 is not None:
-            fund_eff += 0.15 * abs(data.pred_vol_d1)
-        if data.vix_proxy is not None:
-            fund_eff += 0.25 * abs(data.vix_proxy)
-        th += min(dyn_p.funding_cap, fund_eff * dyn_p.funding_mult)
-
-        adx_eff = abs(data.adx)
-        if data.adx_4h is not None:
-            adx_eff += 0.5 * abs(data.adx_4h)
-        if data.adx_d1 is not None:
-            adx_eff += 0.25 * abs(data.adx_d1)
-        th += min(dyn_p.adx_cap, adx_eff / dyn_p.adx_div)
-
-        if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
-            th = min(th, hist_base)
-
-        if data.regime is None:
-            data.regime = self.classify_regime(
-                data.adx,
-                data.bb_width_chg,
-                data.channel_pos,
-            )
-
-        if data.reversal:
-            th *= params.rev_th_mult
-
-        rev_boost = params.rev_boost
-        if data.regime == "trend":
-            th *= 1.05
-            rev_boost *= 0.8
-        elif data.regime == "range":
-            th *= 0.95
-            rev_boost *= 1.2
-
-        return max(th, low_base), rev_boost
-
-    # Backward compatible wrapper
-    def dynamic_threshold(
-        self,
-        atr,
-        adx,
-        funding=0,
-        atr_4h=None,
-        adx_4h=None,
-        atr_d1=None,
-        adx_d1=None,
-        bb_width_chg=None,
-        channel_pos=None,
-        pred_vol=None,
-        pred_vol_4h=None,
-        pred_vol_d1=None,
-        vix_proxy=None,
-        base=0.08,
-        regime=None,
-        low_base=None,
-        reversal=False,
-        history_scores=None,
-    ):
-        data = DynamicThresholdInput(
-            atr=atr,
-            adx=adx,
-            bb_width_chg=bb_width_chg,
-            channel_pos=channel_pos,
-            funding=funding,
-            atr_4h=atr_4h,
-            adx_4h=adx_4h,
-            atr_d1=atr_d1,
-            adx_d1=adx_d1,
-            pred_vol=pred_vol,
-            pred_vol_4h=pred_vol_4h,
-            pred_vol_d1=pred_vol_d1,
-            vix_proxy=vix_proxy,
-            regime=regime,
-            reversal=reversal,
-        )
-        return self.compute_dynamic_threshold(
-            data,
+        return self.thresholding.base(
+            data.atr,
+            data.adx,
+            funding=data.funding,
+            atr_4h=data.atr_4h,
+            adx_4h=data.adx_4h,
+            atr_d1=data.atr_d1,
+            adx_d1=data.adx_d1,
+            bb_width_chg=data.bb_width_chg,
+            channel_pos=data.channel_pos,
+            pred_vol=data.pred_vol,
+            pred_vol_4h=data.pred_vol_4h,
+            pred_vol_d1=data.pred_vol_d1,
+            vix_proxy=data.vix_proxy,
             base=base,
+            regime=data.regime,
             low_base=low_base,
+            reversal=data.reversal,
             history_scores=history_scores,
         )
+
+    # Backward compatible property for easier monkeypatching
+    @property
+    def dynamic_threshold(self):
+        return self.thresholding.base
+
+    @dynamic_threshold.setter
+    def dynamic_threshold(self, func):
+        self.thresholding.base = func
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """合并 AI 分数与因子得分。
@@ -2033,7 +1875,9 @@ class RobustSignalGenerator:
         ]
         rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
         vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
-        lower, upper = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        lower, upper = ThresholdingDynamic.adaptive_rsi_threshold(
+            rsi_hist, vol_hist, self.rsi_k
+        )
         oversold = rsi < lower or cci < -100
         overbought = rsi > upper or cci > 100
         if oversold or overbought:
@@ -2407,7 +2251,9 @@ class RobustSignalGenerator:
         ]
         rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
         vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
-        lower, _ = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        lower, _ = ThresholdingDynamic.adaptive_rsi_threshold(
+            rsi_hist, vol_hist, self.rsi_k
+        )
         if std_d1.get("break_support_d1", 0) > 0 and rsi_d1 < lower:
             regime = "range"
             rev_dir = 1
@@ -2419,7 +2265,7 @@ class RobustSignalGenerator:
                 cache["history_scores"], params.window, params.dynamic_quantile
             )
             base_input = dyn_base if dyn_base is not None else cfg_base
-            base_th, rev_boost = self.dynamic_threshold(
+            base_th, rev_boost = self.thresholding.base(
                 atr_1h,
                 adx_1h,
                 funding_1h,
@@ -2879,7 +2725,9 @@ class RobustSignalGenerator:
             vol_c = raw_f15m.get("vol_ma_ratio_15m")
             if vol_c is not None:
                 vol_hist.append(vol_c)
-            lower_fast, upper_fast = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+            lower_fast, upper_fast = ThresholdingDynamic.adaptive_rsi_threshold(
+                rsi_hist, vol_hist, self.rsi_k
+            )
             if prev15 is not None:
                 rsi_p = prev15.get("rsi_fast_15m")
                 stoch_p = prev15.get("stoch_fast_15m")
@@ -2977,7 +2825,9 @@ class RobustSignalGenerator:
         if raw_f1h.get("rsi_1h") is not None and raw_f1h.get("vol_ma_ratio_1h") is not None:
             rsi_hist.append(raw_f1h.get("rsi_1h"))
             vol_hist.append(raw_f1h.get("vol_ma_ratio_1h"))
-        lower, _ = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        lower, _ = ThresholdingDynamic.adaptive_rsi_threshold(
+            rsi_hist, vol_hist, self.rsi_k
+        )
         if rsi is not None and rsi < lower:
             price_seq = [r.get("close") for r in hist]
             if raw_f1h.get("close") is not None:
@@ -3107,7 +2957,9 @@ class RobustSignalGenerator:
         ]
         rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
         vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
-        lower, upper = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        lower, upper = ThresholdingDynamic.adaptive_rsi_threshold(
+            rsi_hist, vol_hist, self.rsi_k
+        )
         if direction == 1 and rsi is not None and rsi > upper:
             if adx < 25:
                 pos_size *= 0.5

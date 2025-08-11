@@ -2,6 +2,7 @@ import pytest
 
 from collections import deque, OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.signal.thresholding_dynamic import ThresholdingDynamic
 from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
 from quant_trade.signal.fusion_rule import FusionRuleBased
@@ -79,4 +80,5 @@ def make_dummy_rsg():
     rsg.apply_crowding_protection = rsg.fusion_rule.apply_crowding_protection
     rsg.fuse = rsg.fusion_rule.fuse
     rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
+    rsg.thresholding = ThresholdingDynamic(rsg)
     return rsg
