@@ -42,7 +42,7 @@ def test_feature_engineer_to_rsg_signal(monkeypatch):
     rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: 0.2
     rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg._precheck_and_direction = lambda *a, **k: ({'signal': 1, 'score': 0.2, 'position_size': 0.1, 'take_profit': None, 'stop_loss': None, 'details': {}}, 0.2, 1)
     rsg.models = {'1h': {'up': None, 'down': None}, '4h': {'up': None, 'down': None}, 'd1': {'up': None, 'down': None}}
 

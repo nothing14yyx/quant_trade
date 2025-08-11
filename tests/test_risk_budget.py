@@ -16,7 +16,7 @@ def test_risk_budget_caps_position():
     rsg.account = DummyAccount(1000)
     rsg.cfg['risk_budget_per_trade'] = 0.0005
     rsg.cfg['max_pos_pct'] = 1.0
-    rsg.compute_tp_sl = lambda price, atr, direction, **k: (price * 1.05, 95)
+    rsg.position_sizer.compute_tp_sl = lambda price, atr, direction, **k: (price * 1.05, 95)
     (
         risk_info,
         ai_scores,

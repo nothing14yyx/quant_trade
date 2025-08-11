@@ -9,7 +9,7 @@ def test_range_filter_respects_vol_breakout_zero():
     rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: 0.6
     rsg.dynamic_threshold = lambda *a, **k: (0.5, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {
         '1h': {'up': None, 'down': None},
         '4h': {'up': None, 'down': None},
@@ -46,7 +46,7 @@ def test_break_support_triggers_range_when_standardized():
     rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: 0.6
     rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {
         '1h': {'up': None, 'down': None},
         '4h': {'up': None, 'down': None},
