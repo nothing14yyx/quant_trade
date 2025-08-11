@@ -1,0 +1,100 @@
+{
+  "expected": {
+    "details": {
+      "ai": {
+        "1h": 0.123456,
+        "4h": 0.123456,
+        "d1": 0.123456
+      },
+      "confidence_factor": 1.05,
+      "confirm_15m": 0.0,
+      "conflict_filter_triggered": false,
+      "consensus_14": null,
+      "consensus_4d1": null,
+      "consensus_all": null,
+      "env": {
+        "env_score": 1.0,
+        "logic_score": 0.0123456,
+        "risk_score": 0.75
+      },
+      "exit": {
+        "dynamic_th_final": 0.08669007127452362,
+        "regime": "range",
+        "reversal_flag": 0
+      },
+      "extreme_reversal": false,
+      "factors": {
+        "1h": {
+          "funding": 0.0,
+          "momentum": 0.0,
+          "sentiment": 0.0,
+          "trend": 0.0,
+          "volatility": 0.0,
+          "volume": 0.0
+        },
+        "4h": {
+          "funding": 0.0,
+          "momentum": 0.0,
+          "sentiment": 0.0,
+          "trend": 0.0,
+          "volatility": 0.0,
+          "volume": 0.0
+        },
+        "d1": {
+          "funding": 0.0,
+          "momentum": 0.0,
+          "sentiment": 0.0,
+          "trend": 0.0,
+          "volatility": 0.0,
+          "volume": 0.0
+        }
+      },
+      "fast_cross": 0,
+      "grad_dir": 0.0,
+      "ma_cross": 0,
+      "ob_imbalance": 0.0,
+      "pos_size": 0.09110594001952546,
+      "position_tier": 0.0,
+      "protect": {
+        "crowding_factor": 1.0,
+        "funding_conflicts": 0,
+        "oi_overheat": null,
+        "oi_threshold": null
+      },
+      "reb_boost_applied": false,
+      "scores": {
+        "1h": 0.010288,
+        "4h": 0.010288,
+        "d1": 0.010288
+      },
+      "short_momentum": 0.0,
+      "vol_ratio": null,
+      "vote": {
+        "confidence": 0.5,
+        "ob_th": 0.1,
+        "value": 2
+      }
+    },
+    "position_size": 0.0911,
+    "score": 0.010956281570688927,
+    "signal": 0
+  },
+  "features": {
+    "15m": {},
+    "1h": {},
+    "4h": {},
+    "d1": {}
+  },
+  "global_metrics": {},
+  "open_interest": {
+    "oi_chg": 0
+  },
+  "order_book_imbalance": 0,
+  "raw": {
+    "15m": {},
+    "1h": {},
+    "4h": {},
+    "d1": {}
+  },
+  "symbol": "BTCUSDT"
+}
