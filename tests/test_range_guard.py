@@ -1,11 +1,14 @@
 import pytest
-from collections import deque
+from collections import deque, OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.signal.predictor_adapter import PredictorAdapter
+from quant_trade.signal.factor_scorer import FactorScorerImpl
 
 
 def make_rsg():
     r = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    r._factor_cache = OrderedDict()
+    r.factor_scorer = FactorScorerImpl(r)
     r.history_scores = deque(maxlen=500)
     r.oi_change_history = deque(maxlen=500)
     r.symbol_categories = {}
@@ -56,7 +59,7 @@ def test_range_guard():
     gen.predictor.get_ai_score = lambda f, up, down: 0.0
     scores_seq = iter([0.55, -0.75, 0.0])
     gen.combine_score = lambda ai, fs, weights=None: next(scores_seq)
-    gen.get_factor_scores = lambda f, p: {k: 0 for k in gen.base_weights if k != 'ai'}
+    gen.factor_scorer.score = lambda f, p: {k: 0 for k in gen.base_weights if k != 'ai'}
     gen.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
     gen.compute_tp_sl = lambda *a, **k: (0, 0)
     gen.models = {'1h': {'up': None, 'down': None},

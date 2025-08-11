@@ -1,14 +1,17 @@
 import pytest
-from collections import deque
+from collections import deque, OrderedDict
 import threading
 import numpy as np
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator, DynamicThresholdInput
 from quant_trade.signal.predictor_adapter import PredictorAdapter
+from quant_trade.signal.factor_scorer import FactorScorerImpl
 
 
 def make_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    rsg._factor_cache = OrderedDict()
+    rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)
     rsg.ic_history = {k: deque(maxlen=500) for k in ['ai','trend','momentum','volatility','volume','sentiment','funding']}
@@ -129,7 +132,7 @@ def test_flip_threshold_allows_switch():
     rsg = make_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
     rsg.predictor.get_ai_score = lambda f, u, d: 0
-    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: -0.75
     rsg.dynamic_threshold = lambda *a, **k: (0.6, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
@@ -165,7 +168,7 @@ def test_range_filter_keeps_strong_signal():
     rsg = make_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
     rsg.predictor.get_ai_score = lambda f, u, d: 0
-    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: 0.6
     rsg.dynamic_threshold = lambda *a, **k: (0.5, 0.0)
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
