@@ -1,13 +1,16 @@
 import pytest
 import numpy as np
-from collections import deque
+from collections import deque, OrderedDict
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.market_phase import get_market_phase
+from quant_trade.signal.factor_scorer import FactorScorerImpl
 
 
 def make_rsg():
     r = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    r._factor_cache = OrderedDict()
+    r.factor_scorer = FactorScorerImpl(r)
     r._prev_raw = {p: None for p in ("1h", "4h", "d1")}
     r.sentiment_alpha = 0.5
     r.cap_positive_scale = 0.4

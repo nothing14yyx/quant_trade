@@ -43,7 +43,7 @@ def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
             ai_score = rsg.predictor.get_ai_score_cls(feats, models_1h["cls"])
         else:
             ai_score = 0.0
-        factors = rsg.get_factor_scores(feats, "1h")
+        factors = rsg.factor_scorer.score(feats, "1h")
         data = {"ai": ai_score, **factors}
         for k in scores:
             scores[k].append(data.get(k, np.nan))

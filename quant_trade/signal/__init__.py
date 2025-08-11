@@ -33,6 +33,7 @@ from .utils import (
     sigmoid_confidence,
 )
 from .voting_model import VotingModel, load_cached_model
+from .factor_scorer import FactorScorerImpl
 
 __all__ = [
     "SignalThresholdParams",
@@ -65,4 +66,5 @@ __all__ = [
     "sigmoid_confidence",
     "VotingModel",
     "load_cached_model",
+    "FactorScorerImpl",
 ]

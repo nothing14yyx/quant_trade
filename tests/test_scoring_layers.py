@@ -1,12 +1,15 @@
 import pytest
 import numpy as np
-from collections import deque
+from collections import deque, OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.signal.predictor_adapter import PredictorAdapter
+from quant_trade.signal.factor_scorer import FactorScorerImpl
 
 
 def make_simple_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    rsg._factor_cache = OrderedDict()
+    rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=10)
     rsg.oi_change_history = deque(maxlen=10)
     rsg.base_weights = {'ai':1,'trend':1,'momentum':1,'volatility':1,'volume':1,'sentiment':1,'funding':1}
@@ -46,7 +49,7 @@ def test_layer_scores_product():
     rsg = make_simple_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
     rsg.predictor.get_ai_score = lambda f,u,d: 0.5
-    rsg.get_factor_scores = lambda f,p:{k:0 for k in rsg.base_weights if k!='ai'}
+    rsg.factor_scorer.score = lambda f,p:{k:0 for k in rsg.base_weights if k!='ai'}
     rsg.combine_score = lambda ai,fs,w=None: ai
     rsg.dynamic_threshold = lambda *a,**k: (0, 0)
     rsg.compute_tp_sl = lambda *a,**k:(0,0)
