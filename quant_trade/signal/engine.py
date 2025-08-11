@@ -121,6 +121,15 @@ class SignalEngine:
         ob_imb = score_details["ob_imb"]
         ts = prepared["ts"]
 
+        phase = getattr(self.rsg, "market_phase", "range")
+        if isinstance(phase, dict):
+            phase = phase.get("phase", "range")
+        mults = getattr(self.rsg, "phase_dir_mult", {})
+        if fused_score > 0:
+            fused_score *= mults.get("long", 1.0)
+        elif fused_score < 0:
+            fused_score *= mults.get("short", 1.0)
+
         pre_res, direction, _ = self.rsg._precheck_and_direction(
             fused_score,
             std_1h,
