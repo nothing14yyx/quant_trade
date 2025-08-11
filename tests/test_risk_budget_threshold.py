@@ -26,7 +26,7 @@ def test_risk_budget_threshold_in_filter():
         "oi_change_history": rsg.oi_change_history,
         "_raw_history": {"1h": deque(maxlen=4)},
     }
-    res = rsg.apply_risk_filters(
+    res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.04,
         logic_score=0.04,
         env_score=0.0,
@@ -46,7 +46,7 @@ def test_risk_budget_threshold_in_filter():
     )
     assert res is None
 
-    res2 = rsg.apply_risk_filters(
+    res2 = rsg.risk_filters.apply_risk_filters(
         fused_score=0.06,
         logic_score=0.06,
         env_score=0.0,
@@ -79,7 +79,7 @@ def test_history_quantile_threshold():
         "_raw_history": {"1h": deque(maxlen=4)},
     }
 
-    res = rsg.apply_risk_filters(
+    res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.02,
         logic_score=0.02,
         env_score=0.0,
@@ -100,7 +100,7 @@ def test_history_quantile_threshold():
 
     assert res is None
 
-    res2 = rsg.apply_risk_filters(
+    res2 = rsg.risk_filters.apply_risk_filters(
         fused_score=0.06,
         logic_score=0.06,
         env_score=0.0,

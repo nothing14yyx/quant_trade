@@ -114,46 +114,6 @@ class FusionRuleBased:
         factor *= max(0.6, 1 - dd)
         return factor
 
-    def apply_crowding_protection(
-        self,
-        fused_score: float,
-        *,
-        base_th: float,
-        all_scores_list: list | None,
-        oi_chg: float | None,
-        cache: dict,
-        vol_pred: float | None,
-        oi_overheat: bool,
-        symbol: str | None,
-    ) -> tuple[float, float, float | None]:
-        """Compute crowding factor and adjust ``fused_score`` accordingly."""
-        th_oi = cache.get("th_oi")
-        if th_oi is None and oi_chg is not None:
-            th_oi = self.core.get_dynamic_oi_threshold(pred_vol=vol_pred)
-            cache["th_oi"] = th_oi
-
-        crowding_factor = 1.0
-        if not oi_overheat and all_scores_list is not None:
-            factor = self.crowding_protection(all_scores_list, fused_score, base_th)
-            fused_score *= factor
-            crowding_factor *= factor
-
-        if th_oi is not None and oi_chg is not None:
-            oi_crowd = abs(oi_chg) / max(th_oi, 1e-6)
-            mult = 1 - min(0.5, oi_crowd * 0.5)
-            if mult < 1:
-                logging.debug(
-                    "oi change %.4f threshold %.3f -> crowding mult %.3f for %s",
-                    oi_chg,
-                    th_oi,
-                    mult,
-                    symbol,
-                )
-                fused_score *= mult
-                crowding_factor *= mult
-
-        return fused_score, crowding_factor, th_oi
-
     def fuse(
         self,
         scores: dict,

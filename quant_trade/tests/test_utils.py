@@ -6,6 +6,7 @@ from quant_trade.signal.thresholding_dynamic import ThresholdingDynamic
 from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
 from quant_trade.signal.fusion_rule import FusionRuleBased
+from quant_trade.signal.risk_filters import RiskFiltersImpl
 
 
 def make_dummy_rsg():
@@ -77,8 +78,8 @@ def make_dummy_rsg():
     rsg.fusion_rule = FusionRuleBased(rsg)
     rsg.consensus_check = rsg.fusion_rule.consensus_check
     rsg.crowding_protection = rsg.fusion_rule.crowding_protection
-    rsg.apply_crowding_protection = rsg.fusion_rule.apply_crowding_protection
     rsg.fuse = rsg.fusion_rule.fuse
     rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
     rsg.thresholding = ThresholdingDynamic(rsg)
+    rsg.risk_filters = RiskFiltersImpl(rsg)
     return rsg

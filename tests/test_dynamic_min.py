@@ -80,7 +80,7 @@ def test_dyn_th_active_when_filters_off():
     rsg.dynamic_threshold = lambda *a, **k: (0.2, 0.0)
     rsg.detect_market_regime = lambda *a, **k: "range"
     cache = {"history_scores": rsg.history_scores, "_raw_history": {"1h": []}, "oi_change_history": []}
-    res = rsg.apply_risk_filters(
+    res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.1,
         logic_score=0.1,
         env_score=0.0,

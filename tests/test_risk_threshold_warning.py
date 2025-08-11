@@ -18,7 +18,7 @@ def test_nan_dynamic_risk_threshold(caplog):
         "_raw_history": {"1h": deque(maxlen=4)},
     }
     with caplog.at_level(logging.WARNING):
-        res = rsg.apply_risk_filters(
+        res = rsg.risk_filters.apply_risk_filters(
             fused_score=0.04,
             logic_score=0.04,
             env_score=0.0,

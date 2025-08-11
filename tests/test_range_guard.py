@@ -4,6 +4,7 @@ from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
 from quant_trade.signal.fusion_rule import FusionRuleBased
+from quant_trade.signal.risk_filters import RiskFiltersImpl
 
 
 def make_rsg():
@@ -54,9 +55,9 @@ def make_rsg():
     r.fusion_rule = FusionRuleBased(r)
     r.consensus_check = r.fusion_rule.consensus_check
     r.crowding_protection = r.fusion_rule.crowding_protection
-    r.apply_crowding_protection = r.fusion_rule.apply_crowding_protection
     r.fuse = r.fusion_rule.fuse
     r.fuse_multi_cycle = r.fusion_rule.fuse
+    r.risk_filters = RiskFiltersImpl(r)
     return r
 
 
