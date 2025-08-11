@@ -1,11 +1,21 @@
 import pytest
 
-from collections import deque
+from collections import deque, OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.signal import (
+    ThresholdingDynamic,
+    PredictorAdapter,
+    FactorScorerImpl,
+    FusionRuleBased,
+    RiskFiltersImpl,
+    PositionSizerImpl,
+)
 
 
 def make_dummy_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    rsg._factor_cache = OrderedDict()
+    rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)
 
@@ -67,4 +77,13 @@ def make_dummy_rsg():
     rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
     rsg.min_trend_align = 1
     rsg.flip_confirm_bars = 3
+    rsg.predictor = PredictorAdapter(None)
+    rsg.fusion_rule = FusionRuleBased(rsg)
+    rsg.consensus_check = rsg.fusion_rule.consensus_check
+    rsg.crowding_protection = rsg.fusion_rule.crowding_protection
+    rsg.fuse = rsg.fusion_rule.fuse
+    rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
+    rsg.thresholding = ThresholdingDynamic(rsg)
+    rsg.risk_filters = RiskFiltersImpl(rsg)
+    rsg.position_sizer = PositionSizerImpl(rsg)
     return rsg

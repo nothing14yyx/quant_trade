@@ -7,10 +7,10 @@ from quant_trade.tests.test_utils import make_dummy_rsg
 def test_apply_oi_overheat_protection():
     rsg = make_dummy_rsg()
     rsg.oi_scale = 0.7
-    val, flag = rsg.apply_oi_overheat_protection(1.0, 0.1, 0.3)
+    val, flag = rsg.risk_filters.apply_oi_overheat_protection(1.0, 0.1, 0.3)
     assert flag is False
     assert val == pytest.approx(1.0 * (1 + 0.03 * 0.1))
-    val2, flag2 = rsg.apply_oi_overheat_protection(1.0, 0.4, 0.3)
+    val2, flag2 = rsg.risk_filters.apply_oi_overheat_protection(1.0, 0.4, 0.3)
     assert flag2 is True
     assert val2 == pytest.approx(1.0 * 0.7)
 
@@ -27,10 +27,10 @@ def test_detect_reversal_adjusts_threshold():
 
     rsg.dynamic_threshold = dyn_th
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda *a, **k: 0
-    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.predictor.get_ai_score = lambda *a, **k: 0
+    rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: ai
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
                   'd1': {'up': None, 'down': None}}
@@ -64,10 +64,10 @@ def test_crowding_factor_reduces_position():
         exit_mult=1.0,
         consensus_all=False,
     )
-    full, _, _, _ = rsg.compute_position_size(crowding_factor=1.0, **params)
-    reduced, _, _, _ = rsg.compute_position_size(crowding_factor=0.5, **params)
+    full, _, _, _ = rsg.position_sizer.decide(crowding_factor=1.0, **params)
+    reduced, _, _, _ = rsg.position_sizer.decide(crowding_factor=0.5, **params)
     params_no_risk = params.copy()
     params_no_risk["risk_score"] = 0.0
-    base_full, _, _, _ = rsg.compute_position_size(crowding_factor=1.0, **params_no_risk)
+    base_full, _, _, _ = rsg.position_sizer.decide(crowding_factor=1.0, **params_no_risk)
     assert reduced == pytest.approx(full * 0.5)
     assert full == pytest.approx(base_full * math.exp(-rsg.risk_scale * 0.3))

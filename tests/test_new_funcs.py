@@ -12,7 +12,7 @@ def test_calc_factor_scores():
         '4h': {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0, 'sentiment': 0, 'funding': 0},
         'd1': {'trend': 0, 'momentum': 0, 'volatility': 0, 'volume': 0, 'sentiment': 0, 'funding': 0},
     }
-    scores = rsg.calc_factor_scores(ai, fs, rsg.base_weights)
+    scores = rsg.factor_scorer.calc_factor_scores(ai, fs, rsg.base_weights)
     w1 = rsg.base_weights.copy()
     for k in ('trend', 'momentum', 'volume'):
         w1[k] *= 0.7
@@ -42,7 +42,7 @@ def test_apply_local_adjustments():
         'd1': {'sentiment': 0},
     }
     deltas = {'1h': {'rsi_1h_delta': 0.01}}
-    adjusted, det = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.1, -0.05)
+    adjusted, det = rsg.factor_scorer.apply_local_adjustments(scores, raw, fs, deltas, 0.1, -0.05)
     assert 'ma_cross' in det
     assert 'strong_confirm_4h' in det
     assert 'boll_breakout_1h' in det
@@ -71,9 +71,9 @@ def test_rise_drawdown_adj_threshold():
         'd1': {'sentiment': 0},
     }
     deltas = {}
-    adj_high, det_high = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.02, -0.005)
+    adj_high, det_high = rsg.factor_scorer.apply_local_adjustments(scores, raw, fs, deltas, 0.02, -0.005)
     assert det_high['rise_drawdown_adj'] > 0
-    adj_low, det_low = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.008, -0.0)
+    adj_low, det_low = rsg.factor_scorer.apply_local_adjustments(scores, raw, fs, deltas, 0.008, -0.0)
     assert det_low['rise_drawdown_adj'] == 0
 
 
@@ -99,7 +99,7 @@ def test_rise_drawdown_adj_threshold_exact():
         'd1': {'sentiment': 0},
     }
     deltas = {}
-    _, det_eq = rsg.apply_local_adjustments(scores, raw, fs, deltas, 0.02, 0.01)
+    _, det_eq = rsg.factor_scorer.apply_local_adjustments(scores, raw, fs, deltas, 0.02, 0.01)
     assert det_eq['rise_drawdown_adj'] > 0
 
 
@@ -123,8 +123,8 @@ def test_fuse_multi_cycle():
 def test_ai_dir_inconsistent_returns_none():
     rsg = make_dummy_rsg()
     rsg.ai_dir_eps = 0.1
-    rsg.calc_factor_scores = lambda ai, fs, w: ai
-    rsg.apply_local_adjustments = lambda s, *a, **k: (s, {})
+    rsg.factor_scorer.calc_factor_scores = lambda ai, fs, w: ai
+    rsg.factor_scorer.apply_local_adjustments = lambda s, *a, **k: (s, {})
     pf = PeriodFeatures({}, {})
     res = rsg.compute_factor_scores(
         {"1h": 0.3, "4h": -0.3, "d1": 0.3},
@@ -147,8 +147,8 @@ def test_ai_dir_inconsistent_returns_none():
 def test_ai_dir_eps_threshold_check():
     rsg = make_dummy_rsg()
     rsg.ai_dir_eps = 0.2
-    rsg.calc_factor_scores = lambda ai, fs, w: ai
-    rsg.apply_local_adjustments = lambda s, *a, **k: (s, {})
+    rsg.factor_scorer.calc_factor_scores = lambda ai, fs, w: ai
+    rsg.factor_scorer.apply_local_adjustments = lambda s, *a, **k: (s, {})
     pf = PeriodFeatures({}, {})
     res = rsg.compute_factor_scores(
         {"1h": 0.15, "4h": -0.3, "d1": 0.25},
@@ -171,8 +171,8 @@ def test_ai_dir_eps_threshold_check():
 def test_compute_exit_multiplier():
     rsg = make_dummy_rsg()
     rsg._exit_lag = 0
-    assert rsg.compute_exit_multiplier(2, 5, 1) == 0.5
+    assert rsg.position_sizer.compute_exit_multiplier(2, 5, 1) == 0.5
     assert rsg._exit_lag == 0
-    val = rsg.compute_exit_multiplier(-1, 2, 1)
+    val = rsg.position_sizer.compute_exit_multiplier(-1, 2, 1)
     assert val == 0.0
     assert rsg._exit_lag == 1

@@ -1,5 +1,5 @@
 import pytest
-from collections import deque
+from collections import deque, OrderedDict
 
 from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
@@ -7,10 +7,19 @@ from quant_trade.robust_signal_generator import (
     fused_to_risk,
     adjust_score,
 )
+from quant_trade.signal import (
+    PredictorAdapter,
+    FactorScorerImpl,
+    FusionRuleBased,
+    RiskFiltersImpl,
+    PositionSizerImpl,
+)
 
 
 def make_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    rsg._factor_cache = OrderedDict()
+    rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)
     rsg.symbol_categories = {}
@@ -51,14 +60,22 @@ def make_rsg():
     rsg.volume_quantile_high = 0.8
     rsg.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     rsg.flip_confirm_bars = 3
+    rsg.predictor = PredictorAdapter(None)
+    rsg.fusion_rule = FusionRuleBased(rsg)
+    rsg.consensus_check = rsg.fusion_rule.consensus_check
+    rsg.crowding_protection = rsg.fusion_rule.crowding_protection
+    rsg.fuse = rsg.fusion_rule.fuse
+    rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
+    rsg.risk_filters = RiskFiltersImpl(rsg)
+    rsg.position_sizer = PositionSizerImpl(rsg)
     return rsg
 
 
 def test_vol_roc_guard():
     rsg = make_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.5
-    rsg.get_factor_scores = lambda f, p: {
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.5
+    rsg.factor_scorer.score = lambda f, p: {
         'trend': 0,
         'momentum': 0,
         'volatility': 0,
@@ -68,7 +85,7 @@ def test_vol_roc_guard():
     }
     rsg.combine_score = lambda ai, fs, weights=None: ai
     rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {
         '1h': {'up': None, 'down': None},
         '4h': {'up': None, 'down': None},

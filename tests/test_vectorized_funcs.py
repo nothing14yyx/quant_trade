@@ -40,7 +40,7 @@ def test_calc_factor_scores_vectorized_matches_loop():
         'funding': np.array([0.1, 0.1]),
     } for p in ('1h', '4h', 'd1')}
 
-    vec = rsg.calc_factor_scores_vectorized(ai, fs, rsg.base_weights)
+    vec = rsg.factor_scorer.calc_factor_scores_vectorized(ai, fs, rsg.base_weights)
 
     expected = {}
     for p in ('1h', '4h', 'd1'):

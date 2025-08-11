@@ -138,75 +138,32 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
 }
 
 from dataclasses import dataclass
+from typing import Sequence
+
 from quant_trade.utils import get_cfg_value, collect_feature_cols, get_feat
 from .utils import (
     softmax,
-    sigmoid,
     smooth_score,
     smooth_series,
     weighted_quantile,
     _calc_history_base,
     risk_budget_threshold,
-    adjust_score,
-    volume_guard,
     cap_positive,
     fused_to_risk,
     sigmoid_dir,
     sigmoid_confidence,
 )
+from .factor_scorer import FactorScorerImpl
 from .voting_model import load_cached_model
-
-
-def compute_dynamic_threshold(history_scores, window, quantile):
-    """基于历史得分计算动态阈值。
-
-    Args:
-        history_scores: 历史 ``fused_score`` 列表或 deque。
-        window: 参与计算的窗口大小。
-        quantile: 取值分位数。
-
-    Returns:
-        对应分位数的绝对值得分；若数据不足则返回 ``None``。
-    """
-
-    if not history_scores:
-        return None
-
-    arr = np.abs(np.asarray(list(history_scores)[-window:], dtype=float))
-    if arr.size == 0:
-        return None
-    return float(np.quantile(arr, quantile))
-
-
-def adaptive_rsi_threshold(rsi_series, vol_series, k: float | None = None, window: int = 14):
-    """计算基于均值±k倍标准差的 RSI 动态阈值。
-
-    rsi_series 与 vol_series 应具有相同长度，对应同一时间序列。
-    vol_series 作为权重参与标准差计算。
-    """
-
-    if rsi_series is None or vol_series is None:
-        return 30.0, 70.0
-    rsi_series = pd.Series(rsi_series).astype(float)
-    vol_series = pd.Series(vol_series).astype(float)
-    df = pd.DataFrame({"rsi": rsi_series, "vol": vol_series}).dropna()
-    if df.empty or len(df) < window:
-        return 30.0, 70.0
-    roll = df.tail(window)
-    weights = roll["vol"].to_numpy()
-    rsi_vals = roll["rsi"].to_numpy()
-    if not np.isfinite(weights).all() or np.allclose(weights, 0):
-        mean = rsi_vals.mean()
-        std = rsi_vals.std(ddof=0)
-    else:
-        mean = np.average(rsi_vals, weights=weights)
-        var = np.average((rsi_vals - mean) ** 2, weights=weights)
-        std = float(np.sqrt(var))
-    if k is None:
-        k = DEFAULT_RSI_K
-    lower = float(mean - k * std)
-    upper = float(mean + k * std)
-    return lower, upper
+from .predictor_adapter import PredictorAdapter
+from .fusion_rule import FusionRuleBased
+from .risk_filters import RiskFiltersImpl
+from .thresholding_dynamic import (
+    ThresholdingDynamic,
+    DynamicThresholdInput,
+    compute_dynamic_threshold,
+)
+from .position_sizer import PositionSizerImpl
 
 
 @dataclass
@@ -326,29 +283,6 @@ class RobustSignalGeneratorConfig:
         )
 
 
-
-
-
-
-@dataclass
-class DynamicThresholdInput:
-    """Container for metrics used in dynamic threshold calculation."""
-
-    atr: float
-    adx: float
-    bb_width_chg: float | None = None
-    channel_pos: float | None = None
-    funding: float = 0.0
-    atr_4h: float | None = None
-    adx_4h: float | None = None
-    atr_d1: float | None = None
-    adx_d1: float | None = None
-    pred_vol: float | None = None
-    pred_vol_4h: float | None = None
-    pred_vol_d1: float | None = None
-    vix_proxy: float | None = None
-    regime: str | None = None
-    reversal: bool = False
 
 
 @dataclass
@@ -509,6 +443,9 @@ class RobustSignalGenerator:
                 self.boxcox_lambda = json.load(f)
         else:
             self.boxcox_lambda = {}
+        self.predictor = PredictorAdapter(
+            self.ai_predictor, self.rise_transform, self.boxcox_lambda
+        )
         self.signal_threshold_cfg = get_cfg_value(cfg, "signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
             self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
@@ -517,6 +454,7 @@ class RobustSignalGenerator:
         self.smooth_window = get_cfg_value(dyn_cfg, "smooth_window", 20)
         self.smooth_alpha = get_cfg_value(dyn_cfg, "smooth_alpha", 0.2)
         self.smooth_limit = get_cfg_value(dyn_cfg, "smooth_limit", 1.0)
+        self.thresholding = ThresholdingDynamic(self)
         db_cfg = get_cfg_value(cfg, "delta_boost", {})
         self.core_keys = core_keys or get_cfg_value(db_cfg, "core_keys", self.DEFAULT_CORE_KEYS)
         self.delta_params = delta_params or get_cfg_value(db_cfg, "params", self.DELTA_PARAMS)
@@ -710,6 +648,34 @@ class RobustSignalGenerator:
         self._factor_score_cache = OrderedDict()
         self._fuse_cache = OrderedDict()
 
+        # 因子得分计算实现
+        self.factor_scorer = FactorScorerImpl(self)
+
+        # 融合规则实现
+        self.fusion_rule = FusionRuleBased(self)
+        self.consensus_check = self.fusion_rule.consensus_check
+        self.crowding_protection = self.fusion_rule.crowding_protection
+        self.fuse = self.fusion_rule.fuse
+        # 兼容旧接口
+        self.fuse_multi_cycle = self.fusion_rule.fuse
+
+        # 风险过滤器实现
+        self.risk_filters = RiskFiltersImpl(self)
+
+        # 仓位管理实现
+        self.position_sizer = PositionSizerImpl(self)
+
+        # 信号引擎
+        from .engine import SignalEngine
+
+        self.engine = SignalEngine(
+            self,
+            self.predictor,
+            self.factor_scorer,
+            self.fusion_rule,
+            self.risk_filters,
+            self.position_sizer,
+        )
 
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         # 值由配置 oi_protection.crowding_threshold 控制
@@ -719,6 +685,20 @@ class RobustSignalGenerator:
         self._weight_thread = None
         self.start_weight_update_thread()
 
+    def _ensure_engine(self) -> None:
+        """确保 ``self.engine`` 存在。"""
+        if self.__dict__.get("engine") is None:
+            from .engine import SignalEngine
+
+            self.engine = SignalEngine(
+                self,
+                getattr(self, "predictor", None) or PredictorAdapter(None),
+                getattr(self, "factor_scorer", None) or FactorScorerImpl(self),
+                getattr(self, "fusion_rule", None) or FusionRuleBased(self),
+                getattr(self, "risk_filters", None) or RiskFiltersImpl(self),
+                getattr(self, "position_sizer", None) or PositionSizerImpl(self),
+            )
+
     def __getattr__(self, name):
         defaults = {
             "history_scores": deque(maxlen=3000),
@@ -726,7 +706,7 @@ class RobustSignalGenerator:
             "btc_dom_history": deque(maxlen=3000),
             "eth_dom_history": deque(maxlen=3000),
             "factor_breakdown_history": deque(maxlen=3000),
-            "ic_history": {k: deque(maxlen=3000) for k in getattr(self, "base_weights", {})},
+            "ic_history": {k: deque(maxlen=3000) for k in self.__dict__.get("base_weights", {})},
             "_lock": threading.RLock(),
             "_prev_raw": {p: None for p in ("1h", "4h", "d1")},
             "_raw_history": {
@@ -790,6 +770,7 @@ class RobustSignalGenerator:
             "risk_filters_enabled": True,
             "direction_filters_enabled": True,
             "enable_factor_breakdown": True,
+            "thresholding": ThresholdingDynamic(self),
         }
         if name in defaults:
             val = defaults[name]
@@ -922,54 +903,6 @@ class RobustSignalGenerator:
     def set_symbol_categories(self, mapping):
         """更新币种与板块的映射"""
         self.symbol_categories = {k.upper(): v for k, v in mapping.items()}
-
-
-    def compute_tp_sl(
-        self,
-        price,
-        atr,
-        direction,
-        tp_mult: float = 1.5,
-        sl_mult: float = 1.0,
-        *,
-        rise_pred: float | None = None,
-        drawdown_pred: float | None = None,
-        regime: str | None = None,
-    ):
-        """计算止盈止损价格，可根据模型预测值微调"""
-        if direction == 0:
-            return None, None
-        if price is None or not np.isfinite(price):
-            return None, None
-        if price <= 0:
-            return None, None
-        if atr is None or not np.isfinite(atr):
-            return None, None
-        if atr == 0:
-            atr = 0.005 * price
-
-        cfg = getattr(self, "cfg", {})
-        max_sl_pct = get_cfg_value(cfg, "max_stop_loss_pct", 0.05)
-
-        if rise_pred is None:
-            rise_pred = 0.0
-        if drawdown_pred is None:
-            drawdown_pred = 0.0
-
-        if direction == 1:
-            max_sl = price * (1 - max_sl_pct)
-            tp0 = price * (1 + min(rise_pred, 0.10))
-            sl0 = price * (1 + max(drawdown_pred, -max_sl_pct))
-            tp = max(tp0, price * 1.02)
-            sl = min(sl0, max_sl)
-        else:
-            max_sl = price * (1 + max_sl_pct)
-            tp0 = price * (1 - min(rise_pred, 0.10))
-            sl0 = price * (1 - max(drawdown_pred, -max_sl_pct))
-            tp = min(tp0, price * 0.98)
-            sl = max(sl0, max_sl)
-
-        return float(tp), float(sl)
 
     def _base_key(self, k: str) -> str:
         for key in self.delta_params:
@@ -1166,296 +1099,25 @@ class RobustSignalGenerator:
         return 0
 
 
-    def compute_exit_multiplier(self, vote: float, prev_vote: float, last_signal: int) -> float:
-        """根据票数变化决定半退出或全平仓位系数"""
-
-        with self._lock:
-            exit_lag = self._exit_lag
-
-        exit_mult = 1.0
-        vote_sign = np.sign(vote)
-        prev_sign = np.sign(prev_vote)
-        if last_signal == 1:
-            if vote_sign == 1 and prev_vote > vote:
-                exit_mult = 0.5
-                exit_lag = 0
-            elif vote_sign <= 0 and prev_sign > 0:
-                exit_lag += 1
-                exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
-            else:
-                exit_lag = 0
-        elif last_signal == -1:
-            if vote_sign == -1 and prev_vote < vote:
-                exit_mult = 0.5
-                exit_lag = 0
-            elif vote_sign >= 0 and prev_sign < 0:
-                exit_lag += 1
-                exit_mult = 0.0 if exit_lag >= self.exit_lag_bars else 0.5
-            else:
-                exit_lag = 0
-        else:
-            exit_lag = 0
-
-        with self._lock:
-            self._exit_lag = exit_lag
-
-        return exit_mult
-
-    def _apply_risk_adjustment(self, pos_size: float, risk_score: float) -> float:
-        """根据风险评分调整仓位大小"""
-        risk_factor = math.exp(-self.risk_scale * risk_score)
-        return pos_size * risk_factor
-
-    def _apply_low_volume_penalty(
-        self,
-        pos_size: float,
-        *,
-        regime: str,
-        vol_ratio: float | None,
-        fused_score: float,
-        base_th: float,
-        consensus_all: bool,
-    ) -> tuple[float, bool]:
-        """在低成交量环境下惩罚仓位, 返回是否触发标记"""
-        low_vol_flag = (
-            regime == "range"
-            and vol_ratio is not None
-            and vol_ratio < self.low_vol_ratio
-            and abs(fused_score) < base_th + 0.02
-            and not consensus_all
-        )
-        if low_vol_flag:
-            pos_size *= 0.5
-        return pos_size, low_vol_flag
-
-    def _apply_vol_prediction_adjustment(self, pos_size: float, vol_p: float | None) -> float:
-        """根据预测波动率对仓位进行修正"""
-        if vol_p is not None:
-            pos_size *= max(0.4, 1 - min(0.6, vol_p))
-        return pos_size
-
-    def _adjust_min_pos_vol(self, min_pos: float, atr: float | None, vol_p: float | None) -> float:
-        """根据历史 ATR 或预测波动率调节仓位下限"""
-        vol_ref = 0.0
-        if vol_p is not None and np.isfinite(vol_p):
-            vol_ref = abs(vol_p)
-        elif atr is not None and np.isfinite(atr):
-            vol_ref = abs(atr)
-        return min_pos * (1 + self.min_pos_vol_scale * vol_ref)
-
-    def compute_position_size(
-        self,
-        *,
-        grad_dir: float,
-        base_coeff: float,
-        confidence_factor: float,
-        vol_ratio: float | None,
-        fused_score: float,
-        base_th: float,
-        regime: str,
-        vol_p: float | None,
-        atr: float | None,
-        risk_score: float,
-        crowding_factor: float,
-        cfg_th_sig: dict,
-        direction: int,
-        exit_mult: float,
-        consensus_all: bool = False,
-    ) -> tuple[float, int, float, str | None]:
-        """Calculate final position size and tier.
-
-        当 ``pos_size`` 为零时会返回 ``zero_reason``，其值来源于 :class:`ZeroReason`，
-        便于上层记录仓位被清零的原因。
-        """
-
-        tier = base_coeff * abs(grad_dir)
-        base_size = tier
-
-        zero_reason: str | None = None
-        low_vol_flag = False
-
-        pos_size = base_size * sigmoid(confidence_factor)
-        pos_size = self._apply_risk_adjustment(pos_size, risk_score)
-        pos_size *= exit_mult
-        pos_size = min(pos_size, self.max_position)
-        pos_size *= crowding_factor
-        if direction == 0:
-            pos_size = 0.0
-            # 无趋势方向时不做仓位
-            zero_reason = ZeroReason.NO_DIRECTION.value
-
-        pos_size, low_vol_flag = self._apply_low_volume_penalty(
-            pos_size,
-            regime=regime,
-            vol_ratio=vol_ratio,
-            fused_score=fused_score,
-            base_th=base_th,
-            consensus_all=consensus_all,
-        )
-
-
-        pos_size = self._apply_vol_prediction_adjustment(pos_size, vol_p)
-
-        # ↓ 允许极小仓位，交由风险控制模块再裁剪
-        min_pos = cfg_th_sig.get("min_pos", self.signal_params.min_pos)
-        min_pos = self._adjust_min_pos_vol(min_pos, atr, vol_p)
-        # 当风险评分升高时提升仓位下限，确保高风险环境下更谨慎
-        dynamic_min = min_pos * math.exp(self.risk_scale * risk_score)
-        if self.risk_filters_enabled and pos_size < dynamic_min:
-            # 保留原方向, 仓位限制在动态下限与最大仓位之间
-            pos_size = min(max(pos_size, dynamic_min), self.max_position)
-            zero_reason = ZeroReason.MIN_POS.value
-
-        # 4h 周期 veto 逻辑已停用
-        # if direction == 1 and scores.get("4h", 0) < -self.veto_level:
-        #     direction, pos_size = 0, 0.0
-        # elif direction == -1 and scores.get("4h", 0) > self.veto_level:
-        #     direction, pos_size = 0, 0.0
-
-        return pos_size, direction, tier, zero_reason
 
     # >>>>> 修改：改写 get_ai_score，让它自动从 self.models[...]["features"] 中取“训练时列名”
-    def get_ai_score(self, features, model_up, model_down, calibrator_up=None, calibrator_down=None):
-        """根据上涨/下跌模型概率差值计算 AI 得分。
+    def get_ai_score(self, *args, **kwargs):
+        return self.predictor.get_ai_score(*args, **kwargs)
 
-        ``features`` 可以是字典、Series 或单行 DataFrame。若未包含模型
-        训练时的所有列, 本方法会自动从 ``model_up``、``model_down`` 中
-        的 ``"features"`` 列表取值构建输入。
-        """
+    def get_ai_score_cls(self, *args, **kwargs):
+        return self.predictor.get_ai_score_cls(*args, **kwargs)
 
-        if isinstance(features, pd.DataFrame):
-            if not len(features.index):
-                features = {}
-            else:
-                features = features.iloc[0].to_dict()
-        elif isinstance(features, pd.Series):
-            features = features.to_dict()
+    def get_vol_prediction(self, *args, **kwargs):
+        return self.predictor.get_vol_prediction(*args, **kwargs)
 
-        if self.ai_predictor is None:
-            return 0.0
-
-        return self.ai_predictor.get_ai_score(
-            features,
-            model_up,
-            model_down,
-            calibrator_up,
-            calibrator_down,
-        )
-
-    def get_ai_score_cls(self, features, model_dict):
-        """从单个分类模型计算AI得分"""
-        if self.ai_predictor is None:
-            return 0.0
-        return self.ai_predictor.get_ai_score_cls(features, model_dict)
-
-    def get_vol_prediction(self, features, model_dict):
-        """根据回归模型预测未来波动率"""
-        if self.ai_predictor is None:
-            return None
-        return self.ai_predictor.get_vol_prediction(features, model_dict)
-
-    def get_reg_prediction(
-        self, features, model_dict, tag: str | None = None, period: str | None = None
-    ):
-        """通用回归模型预测, 根据 tag 应用逆变换"""
-        if self.ai_predictor is None:
-            return None
-        pred = self.ai_predictor.get_reg_prediction(features, model_dict)
-        if tag == "rise" and self.rise_transform != "none":
-            if self.rise_transform == "log":
-                return float(np.expm1(pred))
-            if self.rise_transform == "boxcox":
-                lmbda = None
-                if period is not None:
-                    lmbda = self.boxcox_lambda.get(period)
-                if lmbda is not None:
-                    return float(inv_boxcox(pred, lmbda) - 1.0)
-        return pred
+    def get_reg_prediction(self, *args, **kwargs):
+        return self.predictor.get_reg_prediction(*args, **kwargs)
 
     # robust_signal_generator.py
 
     def get_factor_scores(self, features: dict, period: str) -> dict:
-        """
-        输入：
-          - features: 单周期特征字典（如 {'ema_diff_1h': 0.12, 'boll_perc_1h': 0.45, ...}）
-          - period:   "1h" / "4h" / "d1"
-        输出：一个 dict，包含6个子因子得分。
-        """
-
-        key = self._make_cache_key(features, period)
-        cached = self._cache_get(self._factor_cache, key)
-        if cached is not None:
-            return cached
-
-        # 去除重复字段，避免两次写入同名特征
-        dedup_row = {k: v for k, v in features.items()}
-        safe = lambda k, d=0: self.get_feat_value(dedup_row, k, d)
-
-        # 旧逻辑保留在注释中以便参考
-        # td_score = math.tanh(
-        #     (safe(f"td_sell_count_{period}", 0) - safe(f"td_buy_count_{period}", 0)) / 9
-        # )
-
-        # 趋势因子仅基于长期均线或斜率，以及可选的 ADX
-        trend_raw = (
-            np.tanh(safe(f"price_vs_ma200_{period}", 0) * 5)
-            + np.tanh(safe(f"ema_slope_50_{period}", 0) * 5)
-            + 0.5 * np.tanh(safe(f"adx_{period}", 0) / 50)
-        )
-
-        # 动量因子仅考虑 RSI，必要时加入 MACD 柱状图
-        momentum_raw = (
-            (safe(f"rsi_{period}", 50) - 50) / 50
-            + np.tanh(safe(f"macd_hist_{period}", 0) * 5)
-        )
-
-        # 波动率因子只使用 ATR 百分比和布林带宽度
-        volatility_raw = (
-            np.tanh(safe(f"atr_pct_{period}", 0) * 8)
-            + np.tanh(safe(f"bb_width_{period}", 0) * 2)
-        )
-
-        # 量能因子只包含成交量均值比和买卖比
-        volume_raw = (
-            np.tanh(safe(f"vol_ma_ratio_{period}", 0))
-            + np.tanh((safe(f"buy_sell_ratio_{period}", 1) - 1) * 2)
-        )
-
-        # 情绪因子仅保留资金费率
-        sentiment_raw = np.tanh(safe(f"funding_rate_{period}", 0) * 4000)
-
-        f_rate = safe(f'funding_rate_{period}', 0)
-        f_anom = safe(f'funding_rate_anom_{period}', 0)
-        thr = 0.0005  # 約 0.05% 年化
-        if abs(f_rate) > thr:
-            funding_raw = -np.tanh(f_rate * 4000)  # 4000 ≈ 1/0.00025，讓 ±0.002 ≈ tanh(8)
-        else:
-            funding_raw = np.tanh(f_rate * 4000)
-        if abs(f_rate) < 0.001:
-            funding_raw = 0.0
-        funding_raw += np.tanh(f_anom * 50)
-        scores = {
-            'trend': np.tanh(trend_raw),
-            'momentum': np.tanh(momentum_raw),
-            'volatility': np.tanh(volatility_raw),
-            'volume': np.tanh(volume_raw),
-            'sentiment': np.tanh(sentiment_raw),
-            'funding': np.tanh(funding_raw),
-        }
-
-        pos = safe(f'channel_pos_{period}', 0.5)
-        for k, v in scores.items():
-            if pos > 1 and v > 0:
-                scores[k] = v * 1.2
-            elif pos < 0 and v < 0:
-                scores[k] = v * 1.2
-            elif pos > 0.9 and v > 0:
-                scores[k] = v * 0.8
-            elif pos < 0.1 and v < 0:
-                scores[k] = v * 0.8
-
-        self._cache_set(self._factor_cache, key, scores)
-        return scores
+        """兼容旧接口, 实际委托给 :class:`FactorScorerImpl`."""
+        return self.factor_scorer.score(features, period)
 
     def update_ic_scores(self, df, *, window=None, group_by=None, time_col="open_time"):
         """根据历史数据计算并更新各因子的 IC 分数
@@ -1611,127 +1273,37 @@ class RobustSignalGenerator:
         low_base: float | None = None,
         history_scores=None,
     ):
-        """Calculate dynamic threshold using provided metrics."""
+        """Delegate to :class:`ThresholdingDynamic` base method."""
 
-        params = self.signal_params
-        dyn_p = self.dynamic_th_params
-        base = params.base_th if base is None else base
-        low_base = params.low_base if low_base is None else low_base
-
-        if history_scores is not None:
-            scores = smooth_series(
-                history_scores,
-                window=getattr(self, "smooth_window", 20),
-                alpha=getattr(self, "smooth_alpha", 0.2),
-            )
-            limit = getattr(self, "smooth_limit", 1.0)
-            if limit is not None:
-                scores = np.clip(scores, -limit, limit)
-            hist_base = _calc_history_base(
-                scores,
-                base,
-                params.quantile,
-                self.th_window,
-                self.th_decay,
-                0.12,
-            )
-        else:
-            hist_base = base
-
-        th = hist_base
-        atr_eff = abs(data.atr)
-        if data.atr_4h is not None:
-            atr_eff += 0.5 * abs(data.atr_4h)
-        if data.atr_d1 is not None:
-            atr_eff += 0.25 * abs(data.atr_d1)
-        th += min(dyn_p.atr_cap, atr_eff * dyn_p.atr_mult)
-
-        fund_eff = abs(data.funding)
-        if data.pred_vol is not None:
-            fund_eff += 0.5 * abs(data.pred_vol)
-        if data.pred_vol_4h is not None:
-            fund_eff += 0.25 * abs(data.pred_vol_4h)
-        if data.pred_vol_d1 is not None:
-            fund_eff += 0.15 * abs(data.pred_vol_d1)
-        if data.vix_proxy is not None:
-            fund_eff += 0.25 * abs(data.vix_proxy)
-        th += min(dyn_p.funding_cap, fund_eff * dyn_p.funding_mult)
-
-        adx_eff = abs(data.adx)
-        if data.adx_4h is not None:
-            adx_eff += 0.5 * abs(data.adx_4h)
-        if data.adx_d1 is not None:
-            adx_eff += 0.25 * abs(data.adx_d1)
-        th += min(dyn_p.adx_cap, adx_eff / dyn_p.adx_div)
-
-        if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
-            th = min(th, hist_base)
-
-        if data.regime is None:
-            data.regime = self.classify_regime(
-                data.adx,
-                data.bb_width_chg,
-                data.channel_pos,
-            )
-
-        if data.reversal:
-            th *= params.rev_th_mult
-
-        rev_boost = params.rev_boost
-        if data.regime == "trend":
-            th *= 1.05
-            rev_boost *= 0.8
-        elif data.regime == "range":
-            th *= 0.95
-            rev_boost *= 1.2
-
-        return max(th, low_base), rev_boost
-
-    # Backward compatible wrapper
-    def dynamic_threshold(
-        self,
-        atr,
-        adx,
-        funding=0,
-        atr_4h=None,
-        adx_4h=None,
-        atr_d1=None,
-        adx_d1=None,
-        bb_width_chg=None,
-        channel_pos=None,
-        pred_vol=None,
-        pred_vol_4h=None,
-        pred_vol_d1=None,
-        vix_proxy=None,
-        base=0.08,
-        regime=None,
-        low_base=None,
-        reversal=False,
-        history_scores=None,
-    ):
-        data = DynamicThresholdInput(
-            atr=atr,
-            adx=adx,
-            bb_width_chg=bb_width_chg,
-            channel_pos=channel_pos,
-            funding=funding,
-            atr_4h=atr_4h,
-            adx_4h=adx_4h,
-            atr_d1=atr_d1,
-            adx_d1=adx_d1,
-            pred_vol=pred_vol,
-            pred_vol_4h=pred_vol_4h,
-            pred_vol_d1=pred_vol_d1,
-            vix_proxy=vix_proxy,
-            regime=regime,
-            reversal=reversal,
-        )
-        return self.compute_dynamic_threshold(
-            data,
+        return self.thresholding.base(
+            data.atr,
+            data.adx,
+            funding=data.funding,
+            atr_4h=data.atr_4h,
+            adx_4h=data.adx_4h,
+            atr_d1=data.atr_d1,
+            adx_d1=data.adx_d1,
+            bb_width_chg=data.bb_width_chg,
+            channel_pos=data.channel_pos,
+            pred_vol=data.pred_vol,
+            pred_vol_4h=data.pred_vol_4h,
+            pred_vol_d1=data.pred_vol_d1,
+            vix_proxy=data.vix_proxy,
             base=base,
+            regime=data.regime,
             low_base=low_base,
+            reversal=data.reversal,
             history_scores=history_scores,
         )
+
+    # Backward compatible property for easier monkeypatching
+    @property
+    def dynamic_threshold(self):
+        return self.thresholding.base
+
+    @dynamic_threshold.setter
+    def dynamic_threshold(self, func):
+        self.thresholding.base = func
 
     def combine_score(self, ai_score, factor_scores, weights=None):
         """合并 AI 分数与因子得分。
@@ -1748,17 +1320,7 @@ class RobustSignalGenerator:
             with self._lock:
                 weights = self.current_weights
 
-        fused_score = (
-            ai_score * weights['ai']
-            + factor_scores['trend'] * weights['trend']
-            + factor_scores['momentum'] * weights['momentum']
-            + factor_scores['volatility'] * weights['volatility']
-            + factor_scores['volume'] * weights['volume']
-            + factor_scores['sentiment'] * weights['sentiment']
-            + factor_scores['funding'] * weights['funding']
-        )
-
-        return float(fused_score)
+        return FusionRuleBased.combine_score(ai_score, factor_scores, weights)
 
     def combine_score_vectorized(self, ai_scores, factor_scores, weights=None):
         """向量化计算多个样本的合并得分。
@@ -1775,32 +1337,7 @@ class RobustSignalGenerator:
             with self._lock:
                 weights = self.current_weights
 
-        weight_arr = np.array(
-            [
-                weights['ai'],
-                weights['trend'],
-                weights['momentum'],
-                weights['volatility'],
-                weights['volume'],
-                weights['sentiment'],
-                weights['funding'],
-            ],
-            dtype=float,
-        )
-
-        fs_matrix = np.vstack(
-            [
-                ai_scores,
-                factor_scores['trend'],
-                factor_scores['momentum'],
-                factor_scores['volatility'],
-                factor_scores['volume'],
-                factor_scores['sentiment'],
-                factor_scores['funding'],
-            ]
-        )
-
-        return (fs_matrix.T * weight_arr).sum(axis=1).astype(float)
+        return FusionRuleBased.combine_score_vectorized(ai_scores, factor_scores, weights)
 
     def _compute_factor_breakdown(self, ai_scores: dict, fs: dict) -> dict:
         """使用 SHAP 计算各因子贡献度"""
@@ -1872,112 +1409,10 @@ class RobustSignalGenerator:
         entry.update(fb)
         self.factor_breakdown_history.append(entry)
 
-    def consensus_check(self, s1, s2, s3, min_agree=2):
-        # 多周期方向共振（如调研建议），可加全分歧减弱等逻辑
-        signs = np.sign([s1, s2, s3])
-        non_zero = [g for g in signs if g != 0]
-        if len(non_zero) < min_agree:
-            return 0  # 无方向共振
-        cnt = Counter(non_zero)
-        if cnt.most_common(1)[0][1] >= min_agree:
-            return int(cnt.most_common(1)[0][0])  # 返回方向
-        return int(np.sign(np.sum(signs)))
-
-    def crowding_protection(self, scores, current_score, base_th=0.2):
-        """根据同向排名抑制过度拥挤的信号，返回衰减系数"""
-        if not scores or len(scores) < 30:
-            return 1.0
-
-        arr = np.array(scores, dtype=float)
-        mask = np.abs(arr) >= base_th * 0.8
-        arr = arr[mask]
-        signs = [s for s in np.sign(arr) if s != 0]
-        total = len(signs)
-        if total == 0:
-            return 1.0
-        pos_counts = Counter(signs)
-        dominant_dir, cnt = pos_counts.most_common(1)[0]
-        if np.sign(current_score) != dominant_dir:
-            return 1.0
-
-        ratio = cnt / total
-        abs_arr = np.abs(arr)
-        rank_pct = float((abs_arr <= abs(current_score)).mean())
-        ratio_intensity = max(0.0, (ratio - self.max_same_direction_rate) / (1 - self.max_same_direction_rate))
-        rank_intensity = max(0.0, rank_pct - 0.8) / 0.2
-        intensity = min(1.0, max(ratio_intensity, rank_intensity))
-
-        factor = 1.0 - 0.2 * intensity
-        dd = getattr(self, "_equity_drawdown", 0.0)
-        factor *= max(0.6, 1 - dd)
-        return factor
-
-    def apply_oi_overheat_protection(self, fused_score, oi_chg, th_oi):
-        """Adjust score based on open interest change."""
-        if th_oi is None or abs(oi_chg) < th_oi:
-            # Mild change: slightly reward or penalise according to oi_chg
-            return fused_score * (1 + 0.03 * oi_chg), False
-
-        logging.info("OI overheat detected: %.4f", oi_chg)
-        # Only scale down when overheating
-        return fused_score * self.oi_scale, True
-
-    def _apply_crowding_protection(
-        self,
-        fused_score: float,
-        *,
-        base_th: float,
-        all_scores_list: list | None,
-        oi_chg: float | None,
-        cache: dict,
-        vol_pred: float | None,
-        oi_overheat: bool,
-        symbol: str | None,
-    ) -> tuple[float, float, float | None]:
-        """Compute crowding factor and adjust ``fused_score`` accordingly."""
-
-        th_oi = cache.get("th_oi")
-        if th_oi is None and oi_chg is not None:
-            th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_pred)
-            cache["th_oi"] = th_oi
-
-        crowding_factor = 1.0
-        if not oi_overheat and all_scores_list is not None:
-            factor = self.crowding_protection(all_scores_list, fused_score, base_th)
-            fused_score *= factor
-            crowding_factor *= factor
-
-        if th_oi is not None and oi_chg is not None:
-            oi_crowd = abs(oi_chg) / max(th_oi, 1e-6)
-            mult = 1 - min(0.5, oi_crowd * 0.5)
-            if mult < 1:
-                logging.debug(
-                    "oi change %.4f threshold %.3f -> crowding mult %.3f for %s",
-                    oi_chg,
-                    th_oi,
-                    mult,
-                    symbol,
-                )
-                fused_score *= mult
-                crowding_factor *= mult
-
-        return fused_score, crowding_factor, th_oi
-
     # ===== 新增辅助函数 =====
     def calc_factor_scores(self, ai_scores: dict, factor_scores: dict, weights: dict) -> dict:
-        """计算未调整的各周期得分"""
-        w1 = weights.copy()
-        w4 = weights.copy()
-        for k in ('trend', 'momentum', 'volume'):
-            w1[k] = w1.get(k, 0) * 0.7
-            w4[k] = w4.get(k, 0) * 0.7
-        scores = {
-            '1h': self.combine_score(ai_scores['1h'], factor_scores['1h'], w1),
-            '4h': self.combine_score(ai_scores['4h'], factor_scores['4h'], w4),
-            'd1': self.combine_score(ai_scores['d1'], factor_scores['d1'], weights),
-        }
-        logger.debug("factor scores: %s", scores)
-        return scores
+        """计算未调整的各周期得分, 委托给 ``FactorScorerImpl``."""
+        return self.factor_scorer.calc_factor_scores(ai_scores, factor_scores, weights)
 
     def calc_factor_scores_vectorized(
         self,
@@ -1985,19 +1420,8 @@ class RobustSignalGenerator:
         factor_scores: dict,
         weights: dict,
     ) -> dict:
-        """向量化版本的各周期得分计算"""
-
-        w1 = weights.copy()
-        w4 = weights.copy()
-        for k in ('trend', 'momentum', 'volume'):
-            w1[k] = w1.get(k, 0) * 0.7
-            w4[k] = w4.get(k, 0) * 0.7
-
-        return {
-            '1h': self.combine_score_vectorized(ai_scores['1h'], factor_scores['1h'], w1),
-            '4h': self.combine_score_vectorized(ai_scores['4h'], factor_scores['4h'], w4),
-            'd1': self.combine_score_vectorized(ai_scores['d1'], factor_scores['d1'], weights),
-        }
+        """向量化版本的各周期得分计算, 委托给 ``FactorScorerImpl``."""
+        return self.factor_scorer.calc_factor_scores_vectorized(ai_scores, factor_scores, weights)
 
     def apply_local_adjustments(
         self,
@@ -2009,224 +1433,16 @@ class RobustSignalGenerator:
         drawdown_pred_1h: float | None = None,
         symbol: str | None = None,
     ) -> tuple[dict, dict]:
-        """应用本地逻辑修正分数并返回细节"""
-
-        adjusted = scores.copy()
-        details = {}
-
-        for p in adjusted:
-            adjusted[p] = self._apply_delta_boost(adjusted[p], deltas.get(p, {}))
-
-        prev_ma20 = raw_feats['1h'].get('sma_20_1h_prev')
-        ma_coeff = self.ma_cross_logic(raw_feats['1h'], prev_ma20)
-        adjusted['1h'] *= ma_coeff
-        details['ma_cross'] = int(np.sign(ma_coeff - 1.0))
-
-        if rise_pred_1h is not None and drawdown_pred_1h is not None:
-            delta = rise_pred_1h - abs(drawdown_pred_1h)
-            if delta >= 0.01:
-                adj = np.tanh(delta * 5) * 0.5
-                adjusted['1h'] *= 1 + adj
-                details['rise_drawdown_adj'] = adj
-            else:
-                details['rise_drawdown_adj'] = 0.0
-
-        strong_confirm_4h = (
-            factor_scores['4h']['trend'] > 0
-            and factor_scores['4h']['momentum'] > 0
-            and factor_scores['4h']['volatility'] > 0
-            and adjusted['4h'] > 0
-        ) or (
-            factor_scores['4h']['trend'] < 0
-            and factor_scores['4h']['momentum'] < 0
-            and factor_scores['4h']['volatility'] < 0
-            and adjusted['4h'] < 0
+        """应用本地逻辑修正分数并返回细节, 委托实现."""
+        return self.factor_scorer.apply_local_adjustments(
+            scores,
+            raw_feats,
+            factor_scores,
+            deltas,
+            rise_pred_1h,
+            drawdown_pred_1h,
+            symbol,
         )
-        details['strong_confirm_4h'] = strong_confirm_4h
-
-        macd_diff = raw_feats['1h'].get('macd_hist_diff_1h_4h')
-        rsi_diff = raw_feats['1h'].get('rsi_diff_1h_4h')
-        if (
-            macd_diff is not None
-            and rsi_diff is not None
-            and macd_diff < 0
-            and rsi_diff < -8
-        ):
-            if strong_confirm_4h:
-                logger.debug(
-                    "momentum misalign macd_diff=%.3f rsi_diff=%.3f -> strong_confirm=False",
-                    macd_diff,
-                    rsi_diff,
-                )
-            strong_confirm_4h = False
-            details['strong_confirm_4h'] = False
-
-        if (
-            macd_diff is not None
-            and rsi_diff is not None
-            and abs(macd_diff) < 5
-            and abs(rsi_diff) < 15
-        ):
-            strong_confirm_4h = True
-            details['strong_confirm_4h'] = True
-
-        for p in ['1h', '4h', 'd1']:
-            sent = factor_scores[p]['sentiment']
-            before = adjusted[p]
-            adjusted[p] = adjust_score(
-                adjusted[p],
-                sent,
-                self.sentiment_alpha,
-                cap_scale=self.cap_positive_scale,
-            )
-            if before != adjusted[p]:
-                logger.debug(
-                    "sentiment %.2f adjust %s: %.3f -> %.3f",
-                    sent,
-                    p,
-                    before,
-                    adjusted[p],
-                )
-
-        params = self.volume_guard_params.copy()
-        q_low, q_high = self.get_volume_ratio_thresholds(symbol)
-        params["ratio_low"] = q_low
-        params["ratio_high"] = q_high
-        r1 = raw_feats['1h'].get('vol_ma_ratio_1h')
-        roc1 = raw_feats['1h'].get('vol_roc_1h')
-        before = adjusted['1h']
-        adjusted['1h'] = volume_guard(adjusted['1h'], r1, roc1, **params)
-        if before != adjusted['1h']:
-            logger.debug(
-                "volume guard 1h ratio=%.3f roc=%.3f -> %.3f",
-                r1,
-                roc1,
-                adjusted['1h'],
-            )
-        if raw_feats.get('4h') is not None:
-            r4 = raw_feats['4h'].get('vol_ma_ratio_4h')
-            roc4 = raw_feats['4h'].get('vol_roc_4h')
-            before4 = adjusted['4h']
-            adjusted['4h'] = volume_guard(adjusted['4h'], r4, roc4, **params)
-            if before4 != adjusted['4h']:
-                logger.debug(
-                    "volume guard 4h ratio=%.3f roc=%.3f -> %.3f",
-                    r4,
-                    roc4,
-                    adjusted['4h'],
-                )
-        r_d1 = raw_feats['d1'].get('vol_ma_ratio_d1')
-        roc_d1 = raw_feats['d1'].get('vol_roc_d1')
-        before_d1 = adjusted['d1']
-        adjusted['d1'] = volume_guard(adjusted['d1'], r_d1, roc_d1, **params)
-        if before_d1 != adjusted['d1']:
-            logger.debug(
-                "volume guard d1 ratio=%.3f roc=%.3f -> %.3f",
-                r_d1,
-                roc_d1,
-                adjusted['d1'],
-            )
-
-        for p in ['1h', '4h', 'd1']:
-            bs = raw_feats[p].get(f'break_support_{p}')
-            br = raw_feats[p].get(f'break_resistance_{p}')
-            before_sr = adjusted[p]
-            if br:
-                adjusted[p] *= 1.1 if adjusted[p] > 0 else 0.8
-            if bs:
-                adjusted[p] *= 1.1 if adjusted[p] < 0 else 0.8
-            if before_sr != adjusted[p]:
-                logger.debug(
-                    "break SR %s bs=%s br=%s %.3f->%.3f",
-                    p,
-                    bs,
-                    br,
-                    before_sr,
-                    adjusted[p],
-                )
-                details[f'break_sr_{p}'] = adjusted[p] - before_sr
-
-        for p in ['1h', '4h', 'd1']:
-            perc = raw_feats[p].get(f'boll_perc_{p}')
-            vol_ratio = raw_feats[p].get(f'vol_ma_ratio_{p}')
-            before_bb = adjusted[p]
-            if (
-                perc is not None
-                and vol_ratio is not None
-                and vol_ratio > 1.5
-                and (perc >= 0.98 or perc <= 0.02)
-            ):
-                if perc >= 0.98:
-                    adjusted[p] *= 1.1 if adjusted[p] > 0 else 0.9
-                else:
-                    adjusted[p] *= 1.1 if adjusted[p] < 0 else 0.9
-            if before_bb != adjusted[p]:
-                logger.debug(
-                    "boll breakout %s perc=%.3f vol_ratio=%.3f %.3f->%.3f",
-                    p,
-                    perc,
-                    vol_ratio,
-                    before_bb,
-                    adjusted[p],
-                )
-                details[f'boll_breakout_{p}'] = adjusted[p] - before_bb
-
-        return adjusted, details
-
-    def fuse_multi_cycle(
-        self,
-        scores: dict,
-        weights: tuple[float, float, float],
-        strong_confirm_4h: bool,
-    ) -> tuple[float, bool, bool, bool]:
-        """按照多周期共振逻辑融合得分"""
-        s1, s4, sd = scores['1h'], scores['4h'], scores['d1']
-        w1, w4, wd = weights
-
-        consensus_dir = self.consensus_check(s1, s4, sd)
-        consensus_all = consensus_dir != 0 and np.sign(s1) == np.sign(s4) == np.sign(sd)
-        consensus_14 = consensus_dir != 0 and np.sign(s1) == np.sign(s4) and not consensus_all
-        consensus_4d1 = consensus_dir != 0 and np.sign(s4) == np.sign(sd) and np.sign(s1) != np.sign(s4)
-
-        if consensus_all:
-            fused = w1 * s1 + w4 * s4 + wd * sd
-            conf = 1.0
-            if strong_confirm_4h:
-                fused *= 1.15
-            fused *= self.cycle_weight.get("strong", 1.0)
-        elif consensus_14:
-            total = w1 + w4
-            fused = (w1 / total) * s1 + (w4 / total) * s4
-            conf = 0.8
-            if strong_confirm_4h:
-                fused *= 1.10
-            fused *= self.cycle_weight.get("weak", 1.0)
-        elif consensus_4d1:
-            total = w4 + wd
-            fused = (w4 / total) * s4 + (wd / total) * sd
-            conf = 0.7
-            fused *= self.cycle_weight.get("weak", 1.0)
-        else:
-            fused = s1
-            conf = 0.6
-
-        fused_score = fused * conf
-        if (
-            np.sign(s1) != 0
-            and (
-                (np.sign(s4) != 0 and np.sign(s1) != np.sign(s4))
-                or (np.sign(sd) != 0 and np.sign(s1) != np.sign(sd))
-            )
-        ):
-            fused_score *= self.cycle_weight.get("opposite", 1.0)
-        logger.debug(
-            "fuse scores s1=%.3f s4=%.3f sd=%.3f -> %.3f",
-            s1,
-            s4,
-            sd,
-            fused_score,
-        )
-        return fused_score, consensus_all, consensus_14, consensus_4d1
 
     # ===== 新增私有方法 =====
 
@@ -2395,18 +1611,18 @@ class RobustSignalGenerator:
             return None, None, None, None
 
         if "cls" in models_p and "up" not in models_p:
-            ai_score = self.get_ai_score_cls(feats, models_p["cls"])
+            ai_score = self.predictor.get_ai_score_cls(feats, models_p["cls"])
         else:
             cal_up = self.calibrators.get(period, {}).get("up")
             cal_down = self.calibrators.get(period, {}).get("down")
             if cal_up is None and cal_down is None:
-                ai_score = self.get_ai_score(
+                ai_score = self.predictor.get_ai_score(
                     feats,
                     models_p["up"],
                     models_p["down"],
                 )
             else:
-                ai_score = self.get_ai_score(
+                ai_score = self.predictor.get_ai_score(
                     feats,
                     models_p["up"],
                     models_p["down"],
@@ -2419,11 +1635,13 @@ class RobustSignalGenerator:
         drawdown_pred = None
 
         if "vol" in models_p:
-            vol_pred = self.get_vol_prediction(feats, models_p["vol"])
+            vol_pred = self.predictor.get_vol_prediction(feats, models_p["vol"])
         if "rise" in models_p:
-            rise_pred = self.get_reg_prediction(feats, models_p["rise"], tag="rise", period=period)
+            rise_pred = self.predictor.get_reg_prediction(
+                feats, models_p["rise"], tag="rise", period=period
+            )
         if "drawdown" in models_p:
-            drawdown_pred = self.get_reg_prediction(feats, models_p["drawdown"])
+            drawdown_pred = self.predictor.get_reg_prediction(feats, models_p["drawdown"])
 
         return ai_score, vol_pred, rise_pred, drawdown_pred
 
@@ -2486,7 +1704,9 @@ class RobustSignalGenerator:
         ]
         rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
         vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
-        lower, upper = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        lower, upper = ThresholdingDynamic.adaptive_rsi_threshold(
+            rsi_hist, vol_hist, self.rsi_k
+        )
         oversold = rsi < lower or cci < -100
         overbought = rsi > upper or cci > 100
         if oversold or overbought:
@@ -2559,17 +1779,17 @@ class RobustSignalGenerator:
         std_15m = feats_15m.std
 
         fs = {
-            "1h": self.get_factor_scores(std_1h, "1h"),
-            "4h": self.get_factor_scores(std_4h, "4h"),
-            "d1": self.get_factor_scores(std_d1, "d1"),
+            "1h": self.factor_scorer.score(std_1h, "1h"),
+            "4h": self.factor_scorer.score(std_4h, "4h"),
+            "d1": self.factor_scorer.score(std_d1, "d1"),
         }
 
         with self._lock:
             weights = self.current_weights.copy()
 
-        scores = self.calc_factor_scores(ai_scores, fs, weights)
+        scores = self.factor_scorer.calc_factor_scores(ai_scores, fs, weights)
 
-        scores, local_details = self.apply_local_adjustments(
+        scores, local_details = self.factor_scorer.apply_local_adjustments(
             scores,
             raw_dict,
             fs,
@@ -2586,7 +1806,7 @@ class RobustSignalGenerator:
         }
         w1, w4, wd = self.get_ic_period_weights(ic_periods)
 
-        fused_score, consensus_all, consensus_14, consensus_4d1 = self.fuse_multi_cycle(
+        fused_score, consensus_all, consensus_14, consensus_4d1 = self.fusion_rule.fuse(
             scores,
             (w1, w4, wd),
             local_details.get("strong_confirm_4h", False),
@@ -2675,7 +1895,7 @@ class RobustSignalGenerator:
                     cache = self._get_symbol_cache(symbol)
                     cache["oi_change_history"].append(oi_chg)
                 th_oi = self.get_dynamic_oi_threshold(pred_vol=vol_preds.get("1h"))
-                fused_score, oi_overheat = self.apply_oi_overheat_protection(
+                fused_score, oi_overheat = self.risk_filters.apply_oi_overheat_protection(
                     fused_score, oi_chg, th_oi
                 )
 
@@ -2800,211 +2020,6 @@ class RobustSignalGenerator:
         )
         return result
 
-    def apply_risk_filters(
-        self,
-        fused_score: float,
-        logic_score: float,
-        env_score: float,
-        std_1h: dict,
-        std_4h: dict,
-        std_d1: dict,
-        raw_f1h: dict,
-        raw_f4h: dict,
-        raw_fd1: dict,
-        vol_preds: dict,
-        open_interest: dict | None,
-        all_scores_list: list | None,
-        rev_dir: int,
-        cache: dict,
-        global_metrics: dict | None,
-        symbol: str | None,
-    ):
-        """执行风险限制与拥挤度检查"""
-        penalties: list[str] = []
-        if not self.risk_filters_enabled and not self.dynamic_threshold_enabled:
-            return {
-                "fused_score": fused_score,
-                "risk_score": 0.0,
-                "crowding_factor": 1.0,
-                "base_th": self.signal_params.base_th,
-            }
-        atr_1h = raw_f1h.get("atr_pct_1h", 0) if raw_f1h else 0
-        adx_1h = raw_f1h.get("adx_1h", 0) if raw_f1h else 0
-        funding_1h = raw_f1h.get("funding_rate_1h", 0) if raw_f1h else 0
-
-        atr_4h = raw_f4h.get("atr_pct_4h") if raw_f4h else None
-        adx_4h = raw_f4h.get("adx_4h") if raw_f4h else None
-        atr_d1 = raw_fd1.get("atr_pct_d1") if raw_fd1 else None
-        adx_d1 = raw_fd1.get("adx_d1") if raw_fd1 else None
-
-        vix_p = None
-        if global_metrics is not None:
-            vix_p = global_metrics.get("vix_proxy")
-        if vix_p is None and open_interest is not None:
-            vix_p = open_interest.get("vix_proxy")
-
-        bb_chg = raw_f1h.get("bb_width_chg_1h") if raw_f1h else None
-        channel_pos = raw_f1h.get("channel_pos_1h") if raw_f1h else None
-        regime = self.detect_market_regime(
-            adx_1h,
-            adx_4h or 0,
-            adx_d1 or 0,
-            bb_chg,
-            channel_pos,
-        )
-        rsi_d1 = std_d1.get("rsi_d1", 50)
-        hist_d1 = cache.get("_raw_history", {}).get("d1", [])
-        pairs = [
-            (h.get("rsi_d1"), h.get("vol_ma_ratio_d1"))
-            for h in hist_d1
-        ]
-        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
-        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
-        lower, _ = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
-        if std_d1.get("break_support_d1", 0) > 0 and rsi_d1 < lower:
-            regime = "range"
-            rev_dir = 1
-        cfg_th = self.signal_threshold_cfg
-        params = self.signal_params
-        cfg_base = cfg_th.get("base_th", params.base_th)
-        if self.dynamic_threshold_enabled:
-            dyn_base = compute_dynamic_threshold(
-                cache["history_scores"], params.window, params.dynamic_quantile
-            )
-            base_input = dyn_base if dyn_base is not None else cfg_base
-            base_th, rev_boost = self.dynamic_threshold(
-                atr_1h,
-                adx_1h,
-                funding_1h,
-                atr_4h=atr_4h,
-                adx_4h=adx_4h,
-                atr_d1=atr_d1,
-                adx_d1=adx_d1,
-                bb_width_chg=bb_chg,
-                channel_pos=channel_pos,
-                pred_vol=vol_preds.get("1h"),
-                pred_vol_4h=vol_preds.get("4h"),
-                pred_vol_d1=vol_preds.get("d1"),
-                vix_proxy=vix_p,
-                regime=regime,
-                base=base_input,
-                reversal=bool(rev_dir),
-                history_scores=cache["history_scores"],
-            )
-        else:
-            base_th = cfg_base
-            rev_boost = cfg_th.get("rev_boost", params.rev_boost)
-        base_th *= getattr(self, "phase_th_mult", 1.0)
-        if rev_dir != 0:
-            fused_score += rev_boost * rev_dir
-            self._cooldown = 0
-
-        if not self.risk_filters_enabled:
-            return {
-                "fused_score": fused_score,
-                "risk_score": 0.0,
-                "crowding_factor": 1.0,
-                "base_th": base_th,
-            }
-
-        funding_conflicts = 0
-        for p, raw_f in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-            if raw_f is None:
-                continue
-            f_rate = raw_f.get(f"funding_rate_{p}", 0)
-            if abs(f_rate) > 0.0005 and np.sign(f_rate) * np.sign(fused_score) < 0:
-                penalty = min(abs(f_rate) * 20, 0.20)
-                fused_score *= 1 - penalty
-                funding_conflicts += 1
-        if funding_conflicts >= self.veto_conflict_count:
-            if self.filter_penalty_mode:
-                fused_score *= self.penalty_factor
-                penalties.append(ZeroReason.FUNDING_PENALTY.value)
-            else:
-                return None
-
-        fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
-            fused_score,
-            base_th=base_th,
-            all_scores_list=all_scores_list,
-            oi_chg=cache.get("oi_chg"),
-            cache=cache,
-            vol_pred=vol_preds.get("1h"),
-            oi_overheat=cache.get("oi_overheat", False),
-            symbol=symbol,
-        )
-        risk_score = self.risk_manager.calc_risk(
-            env_score,
-            pred_vol=vol_preds.get("1h"),
-            oi_change=open_interest.get("oi_chg") if open_interest else None,
-        )
-
-        fused_score *= 1 - self.risk_adjust_factor * risk_score
-        # 根据历史波动或换手率动态调整风控阈值
-        with self._lock:
-            atr_hist = [
-                r.get("atr_pct_1h")
-                for r in cache.get("_raw_history", {}).get("1h", [])
-                if r.get("atr_pct_1h") is not None
-            ]
-            oi_hist = list(cache.get("oi_change_history", []))
-        hist = [abs(v) for v in atr_hist if v is not None]
-        if not hist:
-            hist = [abs(v) for v in oi_hist if v is not None]
-        dyn_risk_th = (
-            risk_budget_threshold(hist, quantile=self.signal_params.quantile)
-            if hist
-            else float("nan")
-        )
-        risk_th = self.risk_adjust_threshold
-        if risk_th is None:
-            with self._lock:
-                hist_scores = list(cache.get("history_scores", []))
-            risk_th = risk_budget_threshold(
-                hist_scores, quantile=self.risk_th_quantile
-            )
-            if math.isnan(risk_th):
-                risk_th = 0.0
-        if math.isnan(dyn_risk_th):
-            logging.warning(
-                "历史数据不足，继续使用固定风险阈值；atr_hist=%s，oi_hist=%s",
-                atr_hist,
-                oi_hist,
-            )
-        else:
-            risk_th = max(risk_th, dyn_risk_th)
-
-        if abs(fused_score) < risk_th:
-            return None
-
-        if (
-            risk_score > self.risk_score_limit
-            or crowding_factor < 0
-            or crowding_factor > self.crowding_limit
-        ):
-            if self.filter_penalty_mode:
-                fused_score *= self.penalty_factor
-                penalties.append(ZeroReason.RISK_PENALTY.value)
-            else:
-                return None
-
-        with self._lock:
-            cache["history_scores"].append(fused_score)
-            self.all_scores_list.append(fused_score)
-
-        return {
-            "fused_score": fused_score,
-            "risk_score": risk_score,
-            "crowding_factor": crowding_factor,
-            "crowding_adjusted": True,
-            "risk_th": risk_th,
-            "base_th": base_th,
-            "rev_boost": rev_boost,
-            "regime": regime,
-            "rev_dir": rev_dir,
-            "funding_conflicts": funding_conflicts,
-            "details": {"penalties": penalties} if penalties else {},
-        }
 
     def _compute_vote(
         self,
@@ -3080,130 +2095,6 @@ class RobustSignalGenerator:
             )
             strong_confirm = abs(vote) >= strong_min
             return vote, conf_vote, weak_vote, strong_confirm
-
-    def _determine_direction(
-        self,
-        grad_dir: float,
-        regime: str,
-        fs: dict,
-        st_dir: int,
-        vol_breakout_val: float | None,
-        conf_vote: float,
-        weak_vote: bool,
-        fused_score: float,
-        base_th: float,
-        raw_f1h: dict | None,
-        std_1h: dict,
-        ts,
-        symbol,
-    ) -> int:
-        """Determine final trade direction."""
-
-        if not self.direction_filters_enabled:
-            return 0 if grad_dir == 0 else int(np.sign(grad_dir))
-
-        direction = 0 if grad_dir == 0 else int(np.sign(grad_dir))
-        if weak_vote:
-            direction = 0
-
-        if regime == "range":
-            atr_v = (raw_f1h or std_1h).get("atr_pct_1h")
-            bb_w = (raw_f1h or std_1h).get("bb_width_1h")
-            low_vol = False
-            if atr_v is not None and atr_v < 0.005:
-                low_vol = True
-            if bb_w is not None and bb_w < 0.01:
-                low_vol = True
-            if low_vol:
-                direction = 0
-            elif vol_breakout_val is None or vol_breakout_val <= 0 or conf_vote < 0.15:
-                direction = 0
-
-        if self._cooldown > 0:
-            self._cooldown -= 1
-
-        if self._last_signal != 0 and direction != 0 and direction != self._last_signal:
-            flip_th = max(base_th, self.flip_coeff * abs(self._last_score))
-            if abs(fused_score) < flip_th or self._cooldown > 0:
-                direction = self._last_signal
-            else:
-                self._cooldown = 2
-
-        align_count = 0
-        if direction != 0:
-            for p in ("1h", "4h", "d1"):
-                if np.sign(fs[p]["trend"]) == direction:
-                    align_count += 1
-            if st_dir != 0 and st_dir == direction:
-                align_count += 1
-            min_align = self.min_trend_align if regime == "trend" else max(
-                self.min_trend_align - 1, 0
-            )
-            if align_count < min_align:
-                direction = 0
-
-        return direction
-
-    def _apply_position_filters(
-        self,
-        pos_size: float,
-        direction: int,
-        *,
-        weak_vote: bool,
-        funding_conflicts: int,
-        oi_overheat: bool,
-        risk_score: float,
-        logic_score: float,
-        base_th: float,
-        conflict_filter_triggered: bool,
-        zero_reason: str | None,
-    ) -> tuple[float, int, str | None, list[str]]:
-        """Apply filters to position size and direction."""
-
-        penalties: list[str] = []
-
-        if not self.direction_filters_enabled:
-            return pos_size, direction, zero_reason, penalties
-
-        if weak_vote:
-            if self.filter_penalty_mode:
-                pos_size *= self.penalty_factor
-                penalties.append(ZeroReason.VOTE_PENALTY.value)
-                zero_reason = None
-            else:
-                direction = 0
-                pos_size = 0.0
-                zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
-
-        if funding_conflicts > self.veto_level:
-            if self.filter_penalty_mode:
-                pos_size *= self.penalty_factor
-                penalties.append(ZeroReason.FUNDING_PENALTY.value)
-                zero_reason = None
-            else:
-                direction = 0
-                pos_size = 0.0
-                zero_reason = zero_reason or ZeroReason.FUNDING_CONFLICT.value
-
-        if oi_overheat:
-            pos_size *= 0.5
-
-        pos_map = base_th * 2.0
-        if risk_score > 1 or logic_score < -0.3:
-            pos_map = min(pos_map, 0.5)
-        pos_size = min(pos_size, pos_map)
-
-        if conflict_filter_triggered:
-            if self.filter_penalty_mode:
-                pos_size *= self.penalty_factor
-                penalties.append(ZeroReason.CONFLICT_PENALTY.value)
-                zero_reason = None
-            else:
-                pos_size = 0.0
-                direction = 0
-                zero_reason = zero_reason or ZeroReason.CONFLICT_FILTER.value
-
-        return pos_size, direction, zero_reason, penalties
 
     def finalize_position(
         self,
@@ -3283,7 +2174,7 @@ class RobustSignalGenerator:
             factor_breakdown = self._compute_factor_breakdown(ai_scores, fs)
             self._save_factor_breakdown(factor_breakdown, symbol, ts)
         if not risk_info.get("crowding_adjusted"):
-            fused_score, crowding_factor, th_oi = self._apply_crowding_protection(
+            fused_score, crowding_factor, th_oi = self.risk_filters.apply_crowding_protection(
                 fused_score,
                 base_th=base_th,
                 all_scores_list=None,
@@ -3332,7 +2223,9 @@ class RobustSignalGenerator:
             vol_c = raw_f15m.get("vol_ma_ratio_15m")
             if vol_c is not None:
                 vol_hist.append(vol_c)
-            lower_fast, upper_fast = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+            lower_fast, upper_fast = ThresholdingDynamic.adaptive_rsi_threshold(
+                rsi_hist, vol_hist, self.rsi_k
+            )
             if prev15 is not None:
                 rsi_p = prev15.get("rsi_fast_15m")
                 stoch_p = prev15.get("stoch_fast_15m")
@@ -3430,7 +2323,9 @@ class RobustSignalGenerator:
         if raw_f1h.get("rsi_1h") is not None and raw_f1h.get("vol_ma_ratio_1h") is not None:
             rsi_hist.append(raw_f1h.get("rsi_1h"))
             vol_hist.append(raw_f1h.get("vol_ma_ratio_1h"))
-        lower, _ = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        lower, _ = ThresholdingDynamic.adaptive_rsi_threshold(
+            rsi_hist, vol_hist, self.rsi_k
+        )
         if rsi is not None and rsi < lower:
             price_seq = [r.get("close") for r in hist]
             if raw_f1h.get("close") is not None:
@@ -3469,7 +2364,7 @@ class RobustSignalGenerator:
         st_sum = st1 + st4 + stdir
         st_dir = int(np.sign(st_sum)) if st_sum != 0 else 0
 
-        direction = self._determine_direction(
+        direction = self.position_sizer._determine_direction(
             grad_dir,
             regime,
             fs,
@@ -3497,7 +2392,7 @@ class RobustSignalGenerator:
         tier = None
         fused_score = soft_clip(fused_score, k=1.0)
         atr_raw_pre = (raw_f1h or std_1h).get("atr_pct_1h")
-        pos_size, direction, tier, zero_reason = self.compute_position_size(
+        pos_size, direction, tier, zero_reason = self.position_sizer.decide(
             grad_dir=grad_dir,
             base_coeff=base_coeff,
             confidence_factor=confidence_factor,
@@ -3512,14 +2407,14 @@ class RobustSignalGenerator:
             cfg_th_sig=cfg_th_sig,
             direction=direction,
             exit_mult=(
-                self.compute_exit_multiplier(vote, prev_vote, self._last_signal)
+                self.position_sizer.compute_exit_multiplier(vote, prev_vote, self._last_signal)
                 if direction == self._last_signal and self._last_signal != 0
                 else 1.0
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
 
-        pos_size, direction, zero_reason, penalties = self._apply_position_filters(
+        pos_size, direction, zero_reason, penalties = self.position_sizer._apply_position_filters(
             pos_size,
             direction,
             weak_vote=weak_vote,
@@ -3542,7 +2437,7 @@ class RobustSignalGenerator:
         atr_abs = max(atr_abs, 0.005 * price)
         take_profit = stop_loss = None
         if direction != 0:
-            take_profit, stop_loss = self.compute_tp_sl(
+            take_profit, stop_loss = self.position_sizer.compute_tp_sl(
                 price,
                 atr_abs,
                 direction,
@@ -3560,7 +2455,9 @@ class RobustSignalGenerator:
         ]
         rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
         vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
-        lower, upper = adaptive_rsi_threshold(rsi_hist, vol_hist, self.rsi_k)
+        lower, upper = ThresholdingDynamic.adaptive_rsi_threshold(
+            rsi_hist, vol_hist, self.rsi_k
+        )
         if direction == 1 and rsi is not None and rsi > upper:
             if adx < 25:
                 pos_size *= 0.5
@@ -3780,7 +2677,7 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """执行资金费率、拥挤度等风险检查"""
-        result = self.apply_risk_filters(
+        result = self.risk_filters.apply_risk_filters(
             fused_score,
             logic_score,
             env_score,
@@ -3883,7 +2780,7 @@ class RobustSignalGenerator:
         symbol,
     ):
         """应用风险过滤并最终确定持仓"""
-        risk_info = self.apply_risk_filters(
+        risk_info = self.risk_filters.apply_risk_filters(
             scores["fused_score"],
             scores["logic_score"],
             scores["env_score"],
@@ -3960,237 +2857,90 @@ class RobustSignalGenerator:
         open_interest=None,
         order_book_imbalance=None,
         symbol=None,
-    ):
-        """生成单个交易信号。
-
-        Args:
-            features_1h: 1h 周期标准化特征字典。
-            features_4h: 4h 周期标准化特征字典。
-            features_d1: d1 周期标准化特征字典。
-            features_15m: 可选的 15m 周期特征。
-            all_scores_list: 所有币种得分列表。
-            raw_features_1h: 1h 原始特征。
-            raw_features_4h: 4h 原始特征。
-            raw_features_d1: d1 原始特征。
-            raw_features_15m: 15m 原始特征。
-            global_metrics: 全局市场指标。
-            open_interest: OI 数据。
-            order_book_imbalance: L2 买卖盘差值比。
-            symbol: 币种符号。
-
-        Returns:
-            包含 ``signal``、``score``、``position_size`` 等字段的字典。
-        """
-        prepared = self._prepare_inputs(
-            features_1h,
-            features_4h,
-            features_d1,
-            features_15m,
-            raw_features_1h,
-            raw_features_4h,
-            raw_features_d1,
-            raw_features_15m,
-            order_book_imbalance,
-            symbol,
-        )
-
-        scores = self._compute_scores(
-            prepared["pf_1h"],
-            prepared["pf_4h"],
-            prepared["pf_d1"],
-            prepared["pf_15m"],
-            prepared["deltas"],
-            global_metrics,
-            open_interest,
-            prepared["ob_imb"],
-            symbol,
-        )
-        if scores is None:
-            return None
-
-        fused_score = scores["fused_score"]
-        logic_score = scores["logic_score"]
-        env_score = scores["env_score"]
-        risk_score = scores["risk_score"]
-        fs = scores["fs"]
-        scores = scores["scores"]
-        local_details = scores["local_details"]
-        consensus_all = scores["consensus_all"]
-        consensus_14 = scores["consensus_14"]
-        consensus_4d1 = scores["consensus_4d1"]
-        short_mom = scores["short_mom"]
-        confirm_15m = scores["confirm_15m"]
-        oi_overheat = scores["oi_overheat"]
-        th_oi = scores["th_oi"]
-        oi_chg = scores["oi_chg"]
-        ob_imb = scores["ob_imb"]
-        ai_scores = scores["ai_scores"]
-        vol_preds = scores["vol_preds"]
-        rise_preds = scores["rise_preds"]
-        drawdown_preds = scores["drawdown_preds"]
-        extreme_reversal = scores["extreme_reversal"]
-        std_1h = prepared["std_1h"]
-        std_4h = prepared["std_4h"]
-        std_d1 = prepared["std_d1"]
-        std_15m = prepared["std_15m"]
-        raw_f1h = prepared["raw_f1h"]
-        raw_f4h = prepared["raw_f4h"]
-        raw_fd1 = prepared["raw_fd1"]
-        raw_f15m = prepared["raw_f15m"]
-        ts = prepared["ts"]
-        cache = prepared["cache"]
-        rev_dir = prepared["rev_dir"]
-
-        phase = getattr(self, "market_phase", "range")
-        if isinstance(phase, dict):
-            phase = phase.get("phase", "range")
-        mults = getattr(self, "phase_dir_mult", {})
-        if fused_score > 0:
-            fused_score *= mults.get("long", 1.0)
-        elif fused_score < 0:
-            fused_score *= mults.get("short", 1.0)
-
-        pre_res, _, _ = self._precheck_and_direction(
-            fused_score,
-            std_1h,
-            std_4h,
-            std_d1,
-            std_15m,
-            raw_f1h,
-            raw_f4h,
-            raw_fd1,
-            raw_f15m,
-            ai_scores,
-            fs,
-            scores,
-            local_details,
-            consensus_all,
-            consensus_14,
-            vol_preds,
-            rise_preds,
-            drawdown_preds,
-            confirm_15m,
-            cache,
-        )
-        if pre_res is not None:
-            return pre_res
-
-        risk_info = self._risk_checks(
-            fused_score,
-            logic_score,
-            env_score,
-            std_1h,
-            std_4h,
-            std_d1,
-            raw_f1h,
-            raw_f4h,
-            raw_fd1,
-            vol_preds,
-            open_interest,
-            all_scores_list,
-            rev_dir,
-            {
-                "oi_overheat": oi_overheat,
-                "th_oi": th_oi,
-                "oi_chg": oi_chg,
-                "history_scores": cache["history_scores"],
-            },
-            global_metrics,
-            symbol,
-        )
-        if risk_info is None:
-            logger.debug("step=%s fused=%.3f risk filtered", ts, fused_score)
-            return None
-        risk_info["logic_score"] = logic_score
-        risk_info["env_score"] = env_score
-        risk_info["consensus_all"] = consensus_all
-        risk_info["consensus_14"] = consensus_14
-        risk_info["consensus_4d1"] = consensus_4d1
-        risk_info["local_details"] = local_details
-
-        smoothed = smooth_series(
-            cache.get("history_scores", []),
-            window=self.flip_confirm_bars,
-            alpha=getattr(self, "smooth_alpha", 0.2),
-        )
-        if smoothed:
-            risk_info["fused_score"] = smoothed[-1]
-
-        result = self._calc_position_and_sl_tp(
-            risk_info["fused_score"],
-            risk_info,
-            logic_score,
-            env_score,
-            ai_scores,
-            fs,
-            scores,
-            std_1h,
-            std_4h,
-            std_d1,
-            std_15m,
-            raw_f1h,
-            raw_f4h,
-            raw_fd1,
-            raw_f15m,
-            vol_preds,
-            rise_preds,
-            drawdown_preds,
-            short_mom,
-            ob_imb,
-            confirm_15m,
-            extreme_reversal,
-            cache,
-            symbol,
-            ts,
-        )
-        base_th = risk_info["base_th"]
-        fused_score = risk_info["fused_score"]
-        if result is None:
-            logger.debug(
-                "step=%s fused=%.3f th=%.3f position skipped",
-                ts,
-                fused_score,
-                base_th,
-            )
-            return None
-        if all_scores_list is None:
-            all_scores_list = self.all_scores_list
-        logger.debug(
-            "step=%s fused=%.3f th=%.3f pos=%.4f",
-            ts,
-            fused_score,
-            base_th,
-            result.get("position_size", 0.0),
-        )
-        self._diagnostic = {
-            "fused_score": fused_score,
-            "base_th": base_th,
-            "scores": scores,
-            "risk_info": risk_info,
+    ) -> dict | None:
+        """生成单个交易信号。"""
+        self._ensure_engine()
+        ctx = {
+            "features_1h": features_1h,
+            "features_4h": features_4h,
+            "features_d1": features_d1,
+            "features_15m": features_15m,
+            "all_scores_list": all_scores_list,
+            "raw_features_1h": raw_features_1h,
+            "raw_features_4h": raw_features_4h,
+            "raw_features_d1": raw_features_d1,
+            "raw_features_15m": raw_features_15m,
+            "global_metrics": global_metrics,
+            "open_interest": open_interest,
+            "order_book_imbalance": order_book_imbalance,
+            "symbol": symbol,
         }
+        result = self.engine.run(ctx)
+        if result is not None and raw_features_1h is not None:
+            try:
+                mc = self.ma_cross_logic(
+                    raw_features_1h, raw_features_1h.get("sma_20_1h_prev")
+                )
+                result.setdefault("details", {})["ma_cross"] = int(mc > 1)
+            except Exception:
+                pass
         return result
 
     def _diagnose(self):
         """Return diagnostics of the last ``generate_signal`` call."""
-        return getattr(self, "_diagnostic", {}).copy()
+        return self.__dict__.get("_diagnostic", {}).copy()
 
     # Public wrapper for diagnostics
-    def diagnose(self):
-        """Get diagnostics of the most recent signal generation."""
-        return self._diagnose()
-
-    def generate_signal_batch(
+    def diagnose(
         self,
-        feats_1h_list,
-        feats_4h_list,
-        feats_d1_list,
-        feats_15m_list=None,
+        features_1h=None,
+        features_4h=None,
+        features_d1=None,
+        features_15m=None,
+        all_scores_list=None,
+        raw_features_1h=None,
+        raw_features_4h=None,
+        raw_features_d1=None,
+        raw_features_15m=None,
         *,
         global_metrics=None,
         open_interest=None,
         order_book_imbalance=None,
-        symbols=None,
+        symbol=None,
     ):
+        """运行并返回最新的诊断信息。"""
+        if features_1h is None or features_4h is None or features_d1 is None:
+            return self._diagnose()
+        self._ensure_engine()
+        self.generate_signal(
+            features_1h,
+            features_4h,
+            features_d1,
+            features_15m,
+            all_scores_list,
+            raw_features_1h,
+            raw_features_4h,
+            raw_features_d1,
+            raw_features_15m,
+            global_metrics=global_metrics,
+            open_interest=open_interest,
+            order_book_imbalance=order_book_imbalance,
+            symbol=symbol,
+        )
+        return self._diagnose()
+
+    def generate_signal_batch(
+        self,
+        feats_1h_list: Sequence[dict],
+        feats_4h_list: Sequence[dict],
+        feats_d1_list: Sequence[dict],
+        feats_15m_list: Sequence[dict] | None = None,
+        *,
+        global_metrics: Sequence[dict] | dict | None = None,
+        open_interest: Sequence[dict] | dict | None = None,
+        order_book_imbalance: Sequence[float] | float | None = None,
+        symbols: Sequence[str] | None = None,
+    ) -> list:
         """Batch version of :meth:`generate_signal`.
 
         Args:
@@ -4206,35 +2956,56 @@ class RobustSignalGenerator:
         Returns:
             List of signal result dicts in the same order as input.
         """
+        if getattr(self, "engine", None) is None:
+            results = []
+            for i, f1 in enumerate(feats_1h_list):
+                gm = global_metrics[i] if isinstance(global_metrics, list) else global_metrics
+                oi = open_interest[i] if isinstance(open_interest, list) else open_interest
+                ob = (
+                    order_book_imbalance[i]
+                    if isinstance(order_book_imbalance, list)
+                    else order_book_imbalance
+                )
+                sym = symbols[i] if symbols else None
+                f4 = feats_4h_list[i]
+                fd = feats_d1_list[i]
+                f15 = feats_15m_list[i] if feats_15m_list else None
+                results.append(
+                    self.generate_signal(
+                        f1,
+                        f4,
+                        fd,
+                        f15,
+                        global_metrics=gm,
+                        open_interest=oi,
+                        order_book_imbalance=ob,
+                        symbol=sym,
+                    )
+                )
+            return results
+
+        self._ensure_engine()
         results = []
         for i, f1 in enumerate(feats_1h_list):
-            gm = global_metrics[i] if isinstance(global_metrics, list) else global_metrics
-            oi = open_interest[i] if isinstance(open_interest, list) else open_interest
-            ob = (
-                order_book_imbalance[i]
-                if isinstance(order_book_imbalance, list)
-                else order_book_imbalance
-            )
-            sym = symbols[i] if symbols else None
-            f4 = feats_4h_list[i]
-            fd = feats_d1_list[i]
-            f15 = feats_15m_list[i] if feats_15m_list else None
-            results.append(
-                self.generate_signal(
-                    f1,
-                    f4,
-                    fd,
-                    f15,
-                    None,
-                    None,
-                    None,
-                    None,
-                    global_metrics=gm,
-                    open_interest=oi,
-                    order_book_imbalance=ob,
-                    symbol=sym,
-                )
-            )
+            ctx = {
+                "features_1h": f1,
+                "features_4h": feats_4h_list[i],
+                "features_d1": feats_d1_list[i],
+                "features_15m": feats_15m_list[i] if feats_15m_list else None,
+                "global_metrics": (
+                    global_metrics[i] if isinstance(global_metrics, list) else global_metrics
+                ),
+                "open_interest": (
+                    open_interest[i] if isinstance(open_interest, list) else open_interest
+                ),
+                "order_book_imbalance": (
+                    order_book_imbalance[i]
+                    if isinstance(order_book_imbalance, list)
+                    else order_book_imbalance
+                ),
+                "symbol": symbols[i] if symbols else None,
+            }
+            results.append(self.engine.run(ctx))
         return results
 
 

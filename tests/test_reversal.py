@@ -1,12 +1,21 @@
 import numpy as np
 import pytest
-from collections import deque
+from collections import deque, OrderedDict
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator, smooth_score
+from quant_trade.signal import (
+    PredictorAdapter,
+    FactorScorerImpl,
+    FusionRuleBased,
+    RiskFiltersImpl,
+    PositionSizerImpl,
+)
 
 
 def make_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    rsg._factor_cache = OrderedDict()
+    rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)
     rsg.symbol_categories = {}
@@ -57,15 +66,23 @@ def make_rsg():
                   '4h': {'up': None, 'down': None},
                   'd1': {'up': None, 'down': None}}
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.3
-    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.predictor = PredictorAdapter(None)
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.3
+    rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: ai
     rsg.dynamic_threshold = lambda *a, **k: (0.2, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer = PositionSizerImpl(rsg)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg._raw_history = {'1h': deque(maxlen=4), '4h': deque(maxlen=2), 'd1': deque(maxlen=2)}
     rsg._cooldown = 3
     rsg.min_trend_align = 1
     rsg.flip_confirm_bars = 3
+    rsg.fusion_rule = FusionRuleBased(rsg)
+    rsg.consensus_check = rsg.fusion_rule.consensus_check
+    rsg.crowding_protection = rsg.fusion_rule.crowding_protection
+    rsg.fuse = rsg.fusion_rule.fuse
+    rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
+    rsg.risk_filters = RiskFiltersImpl(rsg)
     return rsg
 
 
@@ -116,11 +133,11 @@ def test_flip_requires_confirmation():
     rsg.flip_confirm_bars = 3
     rsg._cooldown = 0
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, u, d: 0
-    rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
+    rsg.predictor.get_ai_score = lambda f, u, d: 0
+    rsg.factor_scorer.score = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: -0.4
     rsg.dynamic_threshold = lambda *a, **k: (0.0, 0.0)
-    rsg.compute_tp_sl = lambda *a, **k: (0, 0)
+    rsg.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     rsg.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
                   'd1': {'up': None, 'down': None}}

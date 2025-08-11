@@ -1,10 +1,19 @@
 import pytest
-from collections import deque
+from collections import deque, OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.signal import (
+    PredictorAdapter,
+    FactorScorerImpl,
+    FusionRuleBased,
+    RiskFiltersImpl,
+    PositionSizerImpl,
+)
 
 
 def make_rsg():
     r = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    r._factor_cache = OrderedDict()
+    r.factor_scorer = FactorScorerImpl(r)
     r.history_scores = deque(maxlen=500)
     r.oi_change_history = deque(maxlen=500)
     r.symbol_categories = {}
@@ -45,18 +54,26 @@ def make_rsg():
     r.volume_quantile_high = 0.8
     r.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     r.flip_confirm_bars = 3
+    r.predictor = PredictorAdapter(None)
+    r.fusion_rule = FusionRuleBased(r)
+    r.consensus_check = r.fusion_rule.consensus_check
+    r.crowding_protection = r.fusion_rule.crowding_protection
+    r.fuse = r.fusion_rule.fuse
+    r.fuse_multi_cycle = r.fusion_rule.fuse
+    r.risk_filters = RiskFiltersImpl(r)
+    r.position_sizer = PositionSizerImpl(r)
     return r
 
 
 def test_range_guard():
     gen = make_rsg()
     gen.dynamic_weight_update = lambda: gen.base_weights
-    gen.get_ai_score = lambda f, up, down: 0.0
+    gen.predictor.get_ai_score = lambda f, up, down: 0.0
     scores_seq = iter([0.55, -0.75, 0.0])
     gen.combine_score = lambda ai, fs, weights=None: next(scores_seq)
-    gen.get_factor_scores = lambda f, p: {k: 0 for k in gen.base_weights if k != 'ai'}
+    gen.factor_scorer.score = lambda f, p: {k: 0 for k in gen.base_weights if k != 'ai'}
     gen.dynamic_threshold = lambda *a, **k: (0.1, 0.0)
-    gen.compute_tp_sl = lambda *a, **k: (0, 0)
+    gen.position_sizer.compute_tp_sl = lambda *a, **k: (0, 0)
     gen.models = {'1h': {'up': None, 'down': None},
                   '4h': {'up': None, 'down': None},
                   'd1': {'up': None, 'down': None}}

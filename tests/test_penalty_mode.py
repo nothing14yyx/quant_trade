@@ -25,7 +25,7 @@ def test_penalty_on_risk_filters():
     rsg.risk_manager.calc_risk = lambda *a, **k: 1.0
     cache = make_cache()
     raw_f1h = {"funding_rate_1h": -0.001}
-    res = rsg.apply_risk_filters(
+    res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.5,
         logic_score=0.5,
         env_score=0.0,
@@ -55,7 +55,7 @@ def test_position_penalty_mode():
     rsg.filter_penalty_mode = True
     rsg.penalty_factor = 0.5
     rsg.veto_level = 0.4
-    pos, direction, zr, p1 = rsg._apply_position_filters(
+    pos, direction, zr, p1 = rsg.position_sizer._apply_position_filters(
         0.2,
         1,
         weak_vote=True,
@@ -72,7 +72,7 @@ def test_position_penalty_mode():
     assert zr is None
     assert p1 == [ZeroReason.VOTE_PENALTY.value]
 
-    pos2, direction2, zr2, p2 = rsg._apply_position_filters(
+    pos2, direction2, zr2, p2 = rsg.position_sizer._apply_position_filters(
         0.2,
         1,
         weak_vote=False,

@@ -4,10 +4,8 @@ from .core import (
     SignalThresholdParams,
     DynamicThresholdParams,
     RobustSignalGeneratorConfig,
-    DynamicThresholdInput,
     PeriodFeatures,
     RobustSignalGenerator,
-    compute_dynamic_threshold,
     DEFAULT_AI_DIR_EPS,
     DEFAULT_POS_K_RANGE,
     DEFAULT_POS_K_TREND,
@@ -16,6 +14,11 @@ from .core import (
     DEFAULT_CACHE_MAXSIZE,
     DEFAULTS,
     SAFE_FALLBACKS,
+)
+from .thresholding_dynamic import (
+    ThresholdingDynamic,
+    DynamicThresholdInput,
+    compute_dynamic_threshold,
 )
 from .utils import (
     softmax,
@@ -33,6 +36,12 @@ from .utils import (
     sigmoid_confidence,
 )
 from .voting_model import VotingModel, load_cached_model
+from .factor_scorer import FactorScorerImpl
+from .fusion_rule import FusionRuleBased
+from .risk_filters import RiskFiltersImpl
+from .position_sizer import PositionSizerImpl
+from .predictor_adapter import PredictorAdapter
+from .engine import SignalEngine
 
 __all__ = [
     "SignalThresholdParams",
@@ -41,6 +50,7 @@ __all__ = [
     "DynamicThresholdInput",
     "PeriodFeatures",
     "RobustSignalGenerator",
+    "ThresholdingDynamic",
     "compute_dynamic_threshold",
     "DEFAULT_AI_DIR_EPS",
     "DEFAULT_POS_K_RANGE",
@@ -65,4 +75,10 @@ __all__ = [
     "sigmoid_confidence",
     "VotingModel",
     "load_cached_model",
+    "FactorScorerImpl",
+    "FusionRuleBased",
+    "RiskFiltersImpl",
+    "PositionSizerImpl",
+    "PredictorAdapter",
+    "SignalEngine",
 ]
