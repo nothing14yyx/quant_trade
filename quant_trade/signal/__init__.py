@@ -34,6 +34,7 @@ from .utils import (
 )
 from .voting_model import VotingModel, load_cached_model
 from .factor_scorer import FactorScorerImpl
+from .fusion_rule import FusionRuleBased
 
 __all__ = [
     "SignalThresholdParams",
@@ -67,4 +68,5 @@ __all__ = [
     "VotingModel",
     "load_cached_model",
     "FactorScorerImpl",
+    "FusionRuleBased",
 ]

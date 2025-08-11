@@ -5,6 +5,7 @@ from collections import deque, OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator, smooth_score
 from quant_trade.signal.predictor_adapter import PredictorAdapter
 from quant_trade.signal.factor_scorer import FactorScorerImpl
+from quant_trade.signal.fusion_rule import FusionRuleBased
 
 
 def make_rsg():
@@ -71,6 +72,12 @@ def make_rsg():
     rsg._cooldown = 3
     rsg.min_trend_align = 1
     rsg.flip_confirm_bars = 3
+    rsg.fusion_rule = FusionRuleBased(rsg)
+    rsg.consensus_check = rsg.fusion_rule.consensus_check
+    rsg.crowding_protection = rsg.fusion_rule.crowding_protection
+    rsg.apply_crowding_protection = rsg.fusion_rule.apply_crowding_protection
+    rsg.fuse = rsg.fusion_rule.fuse
+    rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
     return rsg
 
 
