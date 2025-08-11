@@ -4,7 +4,7 @@ import pytest
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.data_loader import compute_vix_proxy
 from quant_trade.robust_signal_generator import SignalThresholdParams, DynamicThresholdInput
-from quant_trade.signal.core import compute_dynamic_threshold
+from quant_trade.signal import compute_dynamic_threshold
 
 
 def test_compute_tp_sl():
