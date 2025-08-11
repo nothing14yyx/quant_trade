@@ -1,0 +1,291 @@
+# -*- coding: utf-8 -*-
+"""Risk filter utilities extracted from :mod:`core`."""
+
+from __future__ import annotations
+
+import logging
+import math
+from collections.abc import Sequence
+
+import numpy as np
+
+from ..constants import ZeroReason
+from .thresholding_dynamic import ThresholdingDynamic, compute_dynamic_threshold
+from .utils import risk_budget_threshold
+
+
+class RiskFiltersImpl:
+    """封装风险相关过滤逻辑的实现类"""
+
+    def __init__(self, core) -> None:
+        """Parameters
+        ----------
+        core : RobustSignalGenerator
+            主体对象实例, 用于访问共享的方法与属性
+        """
+        self.core = core
+
+    # ------------------------------------------------------------------
+    # OI 过热保护
+    # ------------------------------------------------------------------
+    def apply_oi_overheat_protection(self, fused_score, oi_chg, th_oi):
+        """根据 OI 变化调整得分, 并返回是否过热标记"""
+        if th_oi is None or abs(oi_chg) < th_oi:
+            return fused_score * (1 + 0.03 * oi_chg), False
+
+        logging.info("OI overheat detected: %.4f", oi_chg)
+        return fused_score * self.core.oi_scale, True
+
+    # ------------------------------------------------------------------
+    # 拥挤度保护
+    # ------------------------------------------------------------------
+    def apply_crowding_protection(
+        self,
+        fused_score: float,
+        *,
+        base_th: float,
+        all_scores_list: Sequence[float] | None,
+        oi_chg: float | None,
+        cache: dict,
+        vol_pred: float | None,
+        oi_overheat: bool,
+        symbol: str | None,
+    ) -> tuple[float, float, float | None]:
+        """计算拥挤度因子并调整 ``fused_score``"""
+        th_oi = cache.get("th_oi")
+        if th_oi is None and oi_chg is not None:
+            th_oi = self.core.get_dynamic_oi_threshold(pred_vol=vol_pred)
+            cache["th_oi"] = th_oi
+
+        crowding_factor = 1.0
+        if not oi_overheat and all_scores_list is not None:
+            factor = self.core.fusion_rule.crowding_protection(
+                all_scores_list, fused_score, base_th
+            )
+            fused_score *= factor
+            crowding_factor *= factor
+
+        if th_oi is not None and oi_chg is not None:
+            oi_crowd = abs(oi_chg) / max(th_oi, 1e-6)
+            mult = 1 - min(0.5, oi_crowd * 0.5)
+            if mult < 1:
+                logging.debug(
+                    "oi change %.4f threshold %.3f -> crowding mult %.3f for %s",
+                    oi_chg,
+                    th_oi,
+                    mult,
+                    symbol,
+                )
+                fused_score *= mult
+                crowding_factor *= mult
+
+        return fused_score, crowding_factor, th_oi
+
+    # ------------------------------------------------------------------
+    # 综合风险过滤
+    # ------------------------------------------------------------------
+    def apply_risk_filters(
+        self,
+        fused_score: float,
+        logic_score: float,
+        env_score: float,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        raw_f1h: dict,
+        raw_f4h: dict,
+        raw_fd1: dict,
+        vol_preds: dict,
+        open_interest: dict | None,
+        all_scores_list: list | None,
+        rev_dir: int,
+        cache: dict,
+        global_metrics: dict | None,
+        symbol: str | None,
+    ):
+        """执行风险限制与拥挤度检查"""
+        core = self.core
+        penalties: list[str] = []
+        if not core.risk_filters_enabled and not core.dynamic_threshold_enabled:
+            return {
+                "fused_score": fused_score,
+                "risk_score": 0.0,
+                "crowding_factor": 1.0,
+                "base_th": core.signal_params.base_th,
+            }
+        atr_1h = raw_f1h.get("atr_pct_1h", 0) if raw_f1h else 0
+        adx_1h = raw_f1h.get("adx_1h", 0) if raw_f1h else 0
+        funding_1h = raw_f1h.get("funding_rate_1h", 0) if raw_f1h else 0
+
+        atr_4h = raw_f4h.get("atr_pct_4h") if raw_f4h else None
+        adx_4h = raw_f4h.get("adx_4h") if raw_f4h else None
+        atr_d1 = raw_fd1.get("atr_pct_d1") if raw_fd1 else None
+        adx_d1 = raw_fd1.get("adx_d1") if raw_fd1 else None
+
+        vix_p = None
+        if global_metrics is not None:
+            vix_p = global_metrics.get("vix_proxy")
+        if vix_p is None and open_interest is not None:
+            vix_p = open_interest.get("vix_proxy")
+
+        bb_chg = raw_f1h.get("bb_width_chg_1h") if raw_f1h else None
+        channel_pos = raw_f1h.get("channel_pos_1h") if raw_f1h else None
+        regime = core.detect_market_regime(
+            adx_1h,
+            adx_4h or 0,
+            adx_d1 or 0,
+            bb_chg,
+            channel_pos,
+        )
+        rsi_d1 = std_d1.get("rsi_d1", 50)
+        hist_d1 = cache.get("_raw_history", {}).get("d1", [])
+        pairs = [(h.get("rsi_d1"), h.get("vol_ma_ratio_d1")) for h in hist_d1]
+        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+        lower, _ = ThresholdingDynamic.adaptive_rsi_threshold(
+            rsi_hist, vol_hist, core.rsi_k
+        )
+        if std_d1.get("break_support_d1", 0) > 0 and rsi_d1 < lower:
+            regime = "range"
+            rev_dir = 1
+        cfg_th = core.signal_threshold_cfg
+        params = core.signal_params
+        cfg_base = cfg_th.get("base_th", params.base_th)
+        if core.dynamic_threshold_enabled:
+            dyn_base = compute_dynamic_threshold(
+                cache["history_scores"], params.window, params.dynamic_quantile
+            )
+            base_input = dyn_base if dyn_base is not None else cfg_base
+            base_th, rev_boost = core.thresholding.base(
+                atr_1h,
+                adx_1h,
+                funding_1h,
+                atr_4h=atr_4h,
+                adx_4h=adx_4h,
+                atr_d1=atr_d1,
+                adx_d1=adx_d1,
+                bb_width_chg=bb_chg,
+                channel_pos=channel_pos,
+                pred_vol=vol_preds.get("1h"),
+                pred_vol_4h=vol_preds.get("4h"),
+                pred_vol_d1=vol_preds.get("d1"),
+                vix_proxy=vix_p,
+                regime=regime,
+                base=base_input,
+                reversal=bool(rev_dir),
+                history_scores=cache["history_scores"],
+            )
+        else:
+            base_th = cfg_base
+            rev_boost = cfg_th.get("rev_boost", params.rev_boost)
+        base_th *= getattr(core, "phase_th_mult", 1.0)
+        if rev_dir != 0:
+            fused_score += rev_boost * rev_dir
+            core._cooldown = 0
+
+        if not core.risk_filters_enabled:
+            return {
+                "fused_score": fused_score,
+                "risk_score": 0.0,
+                "crowding_factor": 1.0,
+                "base_th": base_th,
+            }
+
+        funding_conflicts = 0
+        for p, raw_f in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
+            if raw_f is None:
+                continue
+            f_rate = raw_f.get(f"funding_rate_{p}", 0)
+            if abs(f_rate) > 0.0005 and np.sign(f_rate) * np.sign(fused_score) < 0:
+                penalty = min(abs(f_rate) * 20, 0.20)
+                fused_score *= 1 - penalty
+                funding_conflicts += 1
+        if funding_conflicts >= core.veto_conflict_count:
+            if core.filter_penalty_mode:
+                fused_score *= core.penalty_factor
+                penalties.append(ZeroReason.FUNDING_PENALTY.value)
+            else:
+                return None
+
+        fused_score, crowding_factor, th_oi = self.apply_crowding_protection(
+            fused_score,
+            base_th=base_th,
+            all_scores_list=all_scores_list,
+            oi_chg=cache.get("oi_chg"),
+            cache=cache,
+            vol_pred=vol_preds.get("1h"),
+            oi_overheat=cache.get("oi_overheat", False),
+            symbol=symbol,
+        )
+        risk_score = core.risk_manager.calc_risk(
+            env_score,
+            pred_vol=vol_preds.get("1h"),
+            oi_change=open_interest.get("oi_chg") if open_interest else None,
+        )
+
+        fused_score *= 1 - core.risk_adjust_factor * risk_score
+        # 根据历史波动或换手率动态调整风控阈值
+        with core._lock:
+            atr_hist = [
+                r.get("atr_pct_1h")
+                for r in cache.get("_raw_history", {}).get("1h", [])
+                if r.get("atr_pct_1h") is not None
+            ]
+            oi_hist = list(cache.get("oi_change_history", []))
+        hist = [abs(v) for v in atr_hist if v is not None]
+        if not hist:
+            hist = [abs(v) for v in oi_hist if v is not None]
+        dyn_risk_th = (
+            risk_budget_threshold(hist, quantile=core.signal_params.quantile)
+            if hist
+            else float("nan")
+        )
+        risk_th = core.risk_adjust_threshold
+        if risk_th is None:
+            with core._lock:
+                hist_scores = list(cache.get("history_scores", []))
+            risk_th = risk_budget_threshold(
+                hist_scores, quantile=core.risk_th_quantile
+            )
+            if math.isnan(risk_th):
+                risk_th = 0.0
+        if math.isnan(dyn_risk_th):
+            logging.warning(
+                "历史数据不足，继续使用固定风险阈值；atr_hist=%s，oi_hist=%s",
+                atr_hist,
+                oi_hist,
+            )
+        else:
+            risk_th = max(risk_th, dyn_risk_th)
+
+        if abs(fused_score) < risk_th:
+            return None
+
+        if (
+            risk_score > core.risk_score_limit
+            or crowding_factor < 0
+            or crowding_factor > core.crowding_limit
+        ):
+            if core.filter_penalty_mode:
+                fused_score *= core.penalty_factor
+                penalties.append(ZeroReason.RISK_PENALTY.value)
+            else:
+                return None
+
+        with core._lock:
+            cache["history_scores"].append(fused_score)
+            core.all_scores_list.append(fused_score)
+
+        return {
+            "fused_score": fused_score,
+            "risk_score": risk_score,
+            "crowding_factor": crowding_factor,
+            "crowding_adjusted": True,
+            "risk_th": risk_th,
+            "base_th": base_th,
+            "rev_boost": rev_boost,
+            "regime": regime,
+            "rev_dir": rev_dir,
+            "funding_conflicts": funding_conflicts,
+            "details": {"penalties": penalties} if penalties else {},
+        }

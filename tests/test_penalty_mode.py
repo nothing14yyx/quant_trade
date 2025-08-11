@@ -25,7 +25,7 @@ def test_penalty_on_risk_filters():
     rsg.risk_manager.calc_risk = lambda *a, **k: 1.0
     cache = make_cache()
     raw_f1h = {"funding_rate_1h": -0.001}
-    res = rsg.apply_risk_filters(
+    res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.5,
         logic_score=0.5,
         env_score=0.0,

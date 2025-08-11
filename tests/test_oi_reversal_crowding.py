@@ -7,10 +7,10 @@ from quant_trade.tests.test_utils import make_dummy_rsg
 def test_apply_oi_overheat_protection():
     rsg = make_dummy_rsg()
     rsg.oi_scale = 0.7
-    val, flag = rsg.apply_oi_overheat_protection(1.0, 0.1, 0.3)
+    val, flag = rsg.risk_filters.apply_oi_overheat_protection(1.0, 0.1, 0.3)
     assert flag is False
     assert val == pytest.approx(1.0 * (1 + 0.03 * 0.1))
-    val2, flag2 = rsg.apply_oi_overheat_protection(1.0, 0.4, 0.3)
+    val2, flag2 = rsg.risk_filters.apply_oi_overheat_protection(1.0, 0.4, 0.3)
     assert flag2 is True
     assert val2 == pytest.approx(1.0 * 0.7)
 
