@@ -39,6 +39,7 @@ from .voting_model import VotingModel, load_cached_model
 from .factor_scorer import FactorScorerImpl
 from .fusion_rule import FusionRuleBased
 from .risk_filters import RiskFiltersImpl
+from .engine import SignalEngine
 
 __all__ = [
     "SignalThresholdParams",
@@ -75,4 +76,5 @@ __all__ = [
     "FactorScorerImpl",
     "FusionRuleBased",
     "RiskFiltersImpl",
+    "SignalEngine",
 ]
