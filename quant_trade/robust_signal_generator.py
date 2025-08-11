@@ -4,10 +4,8 @@ from .signal.core import (
     SignalThresholdParams,
     DynamicThresholdParams,
     RobustSignalGeneratorConfig,
-    DynamicThresholdInput,
     PeriodFeatures,
     RobustSignalGenerator,
-    compute_dynamic_threshold,
     DEFAULT_AI_DIR_EPS,
     DEFAULT_POS_K_RANGE,
     DEFAULT_POS_K_TREND,
@@ -16,6 +14,11 @@ from .signal.core import (
     DEFAULT_CACHE_MAXSIZE,
     DEFAULTS,
     SAFE_FALLBACKS,
+)
+from .signal.thresholding_dynamic import (
+    ThresholdingDynamic,
+    DynamicThresholdInput,
+    compute_dynamic_threshold,
 )
 from .signal.utils import (
     softmax,
@@ -40,6 +43,7 @@ __all__ = [
     "DynamicThresholdInput",
     "PeriodFeatures",
     "RobustSignalGenerator",
+    "ThresholdingDynamic",
     "compute_dynamic_threshold",
     "DEFAULT_AI_DIR_EPS",
     "DEFAULT_POS_K_RANGE",
