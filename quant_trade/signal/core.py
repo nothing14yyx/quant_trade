@@ -138,6 +138,8 @@ SAFE_FALLBACKS = set(DEFAULTS.keys()) | {
 }
 
 from dataclasses import dataclass
+from typing import Sequence
+
 from quant_trade.utils import get_cfg_value, collect_feature_cols, get_feat
 from .utils import (
     softmax,
@@ -663,6 +665,18 @@ class RobustSignalGenerator:
         # 仓位管理实现
         self.position_sizer = PositionSizerImpl(self)
 
+        # 信号引擎
+        from .engine import SignalEngine
+
+        self.engine = SignalEngine(
+            self,
+            self.predictor,
+            self.factor_scorer,
+            self.fusion_rule,
+            self.risk_filters,
+            self.position_sizer,
+        )
+
         # 当多个信号方向过于集中时，用于滤除极端行情（最大同向信号比例阈值）
         # 值由配置 oi_protection.crowding_threshold 控制
 
@@ -671,6 +685,20 @@ class RobustSignalGenerator:
         self._weight_thread = None
         self.start_weight_update_thread()
 
+    def _ensure_engine(self) -> None:
+        """确保 ``self.engine`` 存在。"""
+        if self.__dict__.get("engine") is None:
+            from .engine import SignalEngine
+
+            self.engine = SignalEngine(
+                self,
+                getattr(self, "predictor", None) or PredictorAdapter(None),
+                getattr(self, "factor_scorer", None) or FactorScorerImpl(self),
+                getattr(self, "fusion_rule", None) or FusionRuleBased(self),
+                getattr(self, "risk_filters", None) or RiskFiltersImpl(self),
+                getattr(self, "position_sizer", None) or PositionSizerImpl(self),
+            )
+
     def __getattr__(self, name):
         defaults = {
             "history_scores": deque(maxlen=3000),
@@ -678,7 +706,7 @@ class RobustSignalGenerator:
             "btc_dom_history": deque(maxlen=3000),
             "eth_dom_history": deque(maxlen=3000),
             "factor_breakdown_history": deque(maxlen=3000),
-            "ic_history": {k: deque(maxlen=3000) for k in getattr(self, "base_weights", {})},
+            "ic_history": {k: deque(maxlen=3000) for k in self.__dict__.get("base_weights", {})},
             "_lock": threading.RLock(),
             "_prev_raw": {p: None for p in ("1h", "4h", "d1")},
             "_raw_history": {
@@ -2829,237 +2857,90 @@ class RobustSignalGenerator:
         open_interest=None,
         order_book_imbalance=None,
         symbol=None,
-    ):
-        """生成单个交易信号。
-
-        Args:
-            features_1h: 1h 周期标准化特征字典。
-            features_4h: 4h 周期标准化特征字典。
-            features_d1: d1 周期标准化特征字典。
-            features_15m: 可选的 15m 周期特征。
-            all_scores_list: 所有币种得分列表。
-            raw_features_1h: 1h 原始特征。
-            raw_features_4h: 4h 原始特征。
-            raw_features_d1: d1 原始特征。
-            raw_features_15m: 15m 原始特征。
-            global_metrics: 全局市场指标。
-            open_interest: OI 数据。
-            order_book_imbalance: L2 买卖盘差值比。
-            symbol: 币种符号。
-
-        Returns:
-            包含 ``signal``、``score``、``position_size`` 等字段的字典。
-        """
-        prepared = self._prepare_inputs(
-            features_1h,
-            features_4h,
-            features_d1,
-            features_15m,
-            raw_features_1h,
-            raw_features_4h,
-            raw_features_d1,
-            raw_features_15m,
-            order_book_imbalance,
-            symbol,
-        )
-
-        scores = self._compute_scores(
-            prepared["pf_1h"],
-            prepared["pf_4h"],
-            prepared["pf_d1"],
-            prepared["pf_15m"],
-            prepared["deltas"],
-            global_metrics,
-            open_interest,
-            prepared["ob_imb"],
-            symbol,
-        )
-        if scores is None:
-            return None
-
-        fused_score = scores["fused_score"]
-        logic_score = scores["logic_score"]
-        env_score = scores["env_score"]
-        risk_score = scores["risk_score"]
-        fs = scores["fs"]
-        scores = scores["scores"]
-        local_details = scores["local_details"]
-        consensus_all = scores["consensus_all"]
-        consensus_14 = scores["consensus_14"]
-        consensus_4d1 = scores["consensus_4d1"]
-        short_mom = scores["short_mom"]
-        confirm_15m = scores["confirm_15m"]
-        oi_overheat = scores["oi_overheat"]
-        th_oi = scores["th_oi"]
-        oi_chg = scores["oi_chg"]
-        ob_imb = scores["ob_imb"]
-        ai_scores = scores["ai_scores"]
-        vol_preds = scores["vol_preds"]
-        rise_preds = scores["rise_preds"]
-        drawdown_preds = scores["drawdown_preds"]
-        extreme_reversal = scores["extreme_reversal"]
-        std_1h = prepared["std_1h"]
-        std_4h = prepared["std_4h"]
-        std_d1 = prepared["std_d1"]
-        std_15m = prepared["std_15m"]
-        raw_f1h = prepared["raw_f1h"]
-        raw_f4h = prepared["raw_f4h"]
-        raw_fd1 = prepared["raw_fd1"]
-        raw_f15m = prepared["raw_f15m"]
-        ts = prepared["ts"]
-        cache = prepared["cache"]
-        rev_dir = prepared["rev_dir"]
-
-        phase = getattr(self, "market_phase", "range")
-        if isinstance(phase, dict):
-            phase = phase.get("phase", "range")
-        mults = getattr(self, "phase_dir_mult", {})
-        if fused_score > 0:
-            fused_score *= mults.get("long", 1.0)
-        elif fused_score < 0:
-            fused_score *= mults.get("short", 1.0)
-
-        pre_res, _, _ = self._precheck_and_direction(
-            fused_score,
-            std_1h,
-            std_4h,
-            std_d1,
-            std_15m,
-            raw_f1h,
-            raw_f4h,
-            raw_fd1,
-            raw_f15m,
-            ai_scores,
-            fs,
-            scores,
-            local_details,
-            consensus_all,
-            consensus_14,
-            vol_preds,
-            rise_preds,
-            drawdown_preds,
-            confirm_15m,
-            cache,
-        )
-        if pre_res is not None:
-            return pre_res
-
-        risk_info = self._risk_checks(
-            fused_score,
-            logic_score,
-            env_score,
-            std_1h,
-            std_4h,
-            std_d1,
-            raw_f1h,
-            raw_f4h,
-            raw_fd1,
-            vol_preds,
-            open_interest,
-            all_scores_list,
-            rev_dir,
-            {
-                "oi_overheat": oi_overheat,
-                "th_oi": th_oi,
-                "oi_chg": oi_chg,
-                "history_scores": cache["history_scores"],
-            },
-            global_metrics,
-            symbol,
-        )
-        if risk_info is None:
-            logger.debug("step=%s fused=%.3f risk filtered", ts, fused_score)
-            return None
-        risk_info["logic_score"] = logic_score
-        risk_info["env_score"] = env_score
-        risk_info["consensus_all"] = consensus_all
-        risk_info["consensus_14"] = consensus_14
-        risk_info["consensus_4d1"] = consensus_4d1
-        risk_info["local_details"] = local_details
-
-        smoothed = smooth_series(
-            cache.get("history_scores", []),
-            window=self.flip_confirm_bars,
-            alpha=getattr(self, "smooth_alpha", 0.2),
-        )
-        if smoothed:
-            risk_info["fused_score"] = smoothed[-1]
-
-        result = self._calc_position_and_sl_tp(
-            risk_info["fused_score"],
-            risk_info,
-            logic_score,
-            env_score,
-            ai_scores,
-            fs,
-            scores,
-            std_1h,
-            std_4h,
-            std_d1,
-            std_15m,
-            raw_f1h,
-            raw_f4h,
-            raw_fd1,
-            raw_f15m,
-            vol_preds,
-            rise_preds,
-            drawdown_preds,
-            short_mom,
-            ob_imb,
-            confirm_15m,
-            extreme_reversal,
-            cache,
-            symbol,
-            ts,
-        )
-        base_th = risk_info["base_th"]
-        fused_score = risk_info["fused_score"]
-        if result is None:
-            logger.debug(
-                "step=%s fused=%.3f th=%.3f position skipped",
-                ts,
-                fused_score,
-                base_th,
-            )
-            return None
-        if all_scores_list is None:
-            all_scores_list = self.all_scores_list
-        logger.debug(
-            "step=%s fused=%.3f th=%.3f pos=%.4f",
-            ts,
-            fused_score,
-            base_th,
-            result.get("position_size", 0.0),
-        )
-        self._diagnostic = {
-            "fused_score": fused_score,
-            "base_th": base_th,
-            "scores": scores,
-            "risk_info": risk_info,
+    ) -> dict | None:
+        """生成单个交易信号。"""
+        self._ensure_engine()
+        ctx = {
+            "features_1h": features_1h,
+            "features_4h": features_4h,
+            "features_d1": features_d1,
+            "features_15m": features_15m,
+            "all_scores_list": all_scores_list,
+            "raw_features_1h": raw_features_1h,
+            "raw_features_4h": raw_features_4h,
+            "raw_features_d1": raw_features_d1,
+            "raw_features_15m": raw_features_15m,
+            "global_metrics": global_metrics,
+            "open_interest": open_interest,
+            "order_book_imbalance": order_book_imbalance,
+            "symbol": symbol,
         }
+        result = self.engine.run(ctx)
+        if result is not None and raw_features_1h is not None:
+            try:
+                mc = self.ma_cross_logic(
+                    raw_features_1h, raw_features_1h.get("sma_20_1h_prev")
+                )
+                result.setdefault("details", {})["ma_cross"] = int(mc > 1)
+            except Exception:
+                pass
         return result
 
     def _diagnose(self):
         """Return diagnostics of the last ``generate_signal`` call."""
-        return getattr(self, "_diagnostic", {}).copy()
+        return self.__dict__.get("_diagnostic", {}).copy()
 
     # Public wrapper for diagnostics
-    def diagnose(self):
-        """Get diagnostics of the most recent signal generation."""
-        return self._diagnose()
-
-    def generate_signal_batch(
+    def diagnose(
         self,
-        feats_1h_list,
-        feats_4h_list,
-        feats_d1_list,
-        feats_15m_list=None,
+        features_1h=None,
+        features_4h=None,
+        features_d1=None,
+        features_15m=None,
+        all_scores_list=None,
+        raw_features_1h=None,
+        raw_features_4h=None,
+        raw_features_d1=None,
+        raw_features_15m=None,
         *,
         global_metrics=None,
         open_interest=None,
         order_book_imbalance=None,
-        symbols=None,
+        symbol=None,
     ):
+        """运行并返回最新的诊断信息。"""
+        if features_1h is None or features_4h is None or features_d1 is None:
+            return self._diagnose()
+        self._ensure_engine()
+        self.generate_signal(
+            features_1h,
+            features_4h,
+            features_d1,
+            features_15m,
+            all_scores_list,
+            raw_features_1h,
+            raw_features_4h,
+            raw_features_d1,
+            raw_features_15m,
+            global_metrics=global_metrics,
+            open_interest=open_interest,
+            order_book_imbalance=order_book_imbalance,
+            symbol=symbol,
+        )
+        return self._diagnose()
+
+    def generate_signal_batch(
+        self,
+        feats_1h_list: Sequence[dict],
+        feats_4h_list: Sequence[dict],
+        feats_d1_list: Sequence[dict],
+        feats_15m_list: Sequence[dict] | None = None,
+        *,
+        global_metrics: Sequence[dict] | dict | None = None,
+        open_interest: Sequence[dict] | dict | None = None,
+        order_book_imbalance: Sequence[float] | float | None = None,
+        symbols: Sequence[str] | None = None,
+    ) -> list:
         """Batch version of :meth:`generate_signal`.
 
         Args:
@@ -3075,35 +2956,56 @@ class RobustSignalGenerator:
         Returns:
             List of signal result dicts in the same order as input.
         """
+        if getattr(self, "engine", None) is None:
+            results = []
+            for i, f1 in enumerate(feats_1h_list):
+                gm = global_metrics[i] if isinstance(global_metrics, list) else global_metrics
+                oi = open_interest[i] if isinstance(open_interest, list) else open_interest
+                ob = (
+                    order_book_imbalance[i]
+                    if isinstance(order_book_imbalance, list)
+                    else order_book_imbalance
+                )
+                sym = symbols[i] if symbols else None
+                f4 = feats_4h_list[i]
+                fd = feats_d1_list[i]
+                f15 = feats_15m_list[i] if feats_15m_list else None
+                results.append(
+                    self.generate_signal(
+                        f1,
+                        f4,
+                        fd,
+                        f15,
+                        global_metrics=gm,
+                        open_interest=oi,
+                        order_book_imbalance=ob,
+                        symbol=sym,
+                    )
+                )
+            return results
+
+        self._ensure_engine()
         results = []
         for i, f1 in enumerate(feats_1h_list):
-            gm = global_metrics[i] if isinstance(global_metrics, list) else global_metrics
-            oi = open_interest[i] if isinstance(open_interest, list) else open_interest
-            ob = (
-                order_book_imbalance[i]
-                if isinstance(order_book_imbalance, list)
-                else order_book_imbalance
-            )
-            sym = symbols[i] if symbols else None
-            f4 = feats_4h_list[i]
-            fd = feats_d1_list[i]
-            f15 = feats_15m_list[i] if feats_15m_list else None
-            results.append(
-                self.generate_signal(
-                    f1,
-                    f4,
-                    fd,
-                    f15,
-                    None,
-                    None,
-                    None,
-                    None,
-                    global_metrics=gm,
-                    open_interest=oi,
-                    order_book_imbalance=ob,
-                    symbol=sym,
-                )
-            )
+            ctx = {
+                "features_1h": f1,
+                "features_4h": feats_4h_list[i],
+                "features_d1": feats_d1_list[i],
+                "features_15m": feats_15m_list[i] if feats_15m_list else None,
+                "global_metrics": (
+                    global_metrics[i] if isinstance(global_metrics, list) else global_metrics
+                ),
+                "open_interest": (
+                    open_interest[i] if isinstance(open_interest, list) else open_interest
+                ),
+                "order_book_imbalance": (
+                    order_book_imbalance[i]
+                    if isinstance(order_book_imbalance, list)
+                    else order_book_imbalance
+                ),
+                "symbol": symbols[i] if symbols else None,
+            }
+            results.append(self.engine.run(ctx))
         return results
 
 
