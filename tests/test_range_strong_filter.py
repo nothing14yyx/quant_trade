@@ -5,7 +5,7 @@ from quant_trade.tests.test_utils import make_dummy_rsg
 def setup_rsg():
     rsg = make_dummy_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.5
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.5
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, weights=None: ai
     rsg.dynamic_threshold = lambda *a, **k: (0.1, 0.0)

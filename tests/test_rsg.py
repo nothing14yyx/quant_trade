@@ -4,6 +4,7 @@ import threading
 import numpy as np
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator, DynamicThresholdInput
+from quant_trade.signal.predictor_adapter import PredictorAdapter
 
 
 def make_rsg():
@@ -61,6 +62,7 @@ def make_rsg():
     rsg.cfg = {'signal_threshold': {'base_th': 0.12, 'quantile': 0.8}}
     rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
     rsg.w_ai = rsg.current_weights['ai']
+    rsg.predictor = PredictorAdapter(None)
     return rsg
 
 
@@ -126,7 +128,7 @@ def test_compute_tp_sl_fallback():
 def test_flip_threshold_allows_switch():
     rsg = make_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, u, d: 0
+    rsg.predictor.get_ai_score = lambda f, u, d: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: -0.75
     rsg.dynamic_threshold = lambda *a, **k: (0.6, 0.0)
@@ -162,7 +164,7 @@ def test_flip_threshold_allows_switch():
 def test_range_filter_keeps_strong_signal():
     rsg = make_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, u, d: 0
+    rsg.predictor.get_ai_score = lambda f, u, d: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: 0.6
     rsg.dynamic_threshold = lambda *a, **k: (0.5, 0.0)

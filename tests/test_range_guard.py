@@ -1,6 +1,7 @@
 import pytest
 from collections import deque
 from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.signal.predictor_adapter import PredictorAdapter
 
 
 def make_rsg():
@@ -45,13 +46,14 @@ def make_rsg():
     r.volume_quantile_high = 0.8
     r.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     r.flip_confirm_bars = 3
+    r.predictor = PredictorAdapter(None)
     return r
 
 
 def test_range_guard():
     gen = make_rsg()
     gen.dynamic_weight_update = lambda: gen.base_weights
-    gen.get_ai_score = lambda f, up, down: 0.0
+    gen.predictor.get_ai_score = lambda f, up, down: 0.0
     scores_seq = iter([0.55, -0.75, 0.0])
     gen.combine_score = lambda ai, fs, weights=None: next(scores_seq)
     gen.get_factor_scores = lambda f, p: {k: 0 for k in gen.base_weights if k != 'ai'}

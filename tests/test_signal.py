@@ -7,6 +7,7 @@ from quant_trade.robust_signal_generator import (
     fused_to_risk,
     adjust_score,
 )
+from quant_trade.signal.predictor_adapter import PredictorAdapter
 
 
 def make_rsg():
@@ -51,13 +52,14 @@ def make_rsg():
     rsg.volume_quantile_high = 0.8
     rsg.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     rsg.flip_confirm_bars = 3
+    rsg.predictor = PredictorAdapter(None)
     return rsg
 
 
 def test_vol_roc_guard():
     rsg = make_rsg()
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda f, up, down: 0.5
+    rsg.predictor.get_ai_score = lambda f, up, down: 0.5
     rsg.get_factor_scores = lambda f, p: {
         'trend': 0,
         'momentum': 0,

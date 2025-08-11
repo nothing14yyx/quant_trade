@@ -27,7 +27,7 @@ def test_detect_reversal_adjusts_threshold():
 
     rsg.dynamic_threshold = dyn_th
     rsg.dynamic_weight_update = lambda: rsg.base_weights
-    rsg.get_ai_score = lambda *a, **k: 0
+    rsg.predictor.get_ai_score = lambda *a, **k: 0
     rsg.get_factor_scores = lambda f, p: {k: 0 for k in rsg.base_weights if k != 'ai'}
     rsg.combine_score = lambda ai, fs, w=None: ai
     rsg.compute_tp_sl = lambda *a, **k: (0, 0)
