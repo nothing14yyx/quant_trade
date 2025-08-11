@@ -1,7 +1,7 @@
 import types
 from collections import OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator
-from quant_trade.signal.factor_scorer import FactorScorerImpl
+from quant_trade.signal import FactorScorerImpl
 
 
 def test_generate_signal_batch_order_and_diagnose():

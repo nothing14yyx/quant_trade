@@ -2,12 +2,14 @@ import pytest
 
 from collections import deque, OrderedDict
 from quant_trade.robust_signal_generator import RobustSignalGenerator
-from quant_trade.signal.thresholding_dynamic import ThresholdingDynamic
-from quant_trade.signal.predictor_adapter import PredictorAdapter
-from quant_trade.signal.factor_scorer import FactorScorerImpl
-from quant_trade.signal.fusion_rule import FusionRuleBased
-from quant_trade.signal.risk_filters import RiskFiltersImpl
-from quant_trade.signal.position_sizer import PositionSizerImpl
+from quant_trade.signal import (
+    ThresholdingDynamic,
+    PredictorAdapter,
+    FactorScorerImpl,
+    FusionRuleBased,
+    RiskFiltersImpl,
+    PositionSizerImpl,
+)
 
 
 def make_dummy_rsg():

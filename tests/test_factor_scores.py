@@ -2,7 +2,7 @@ import math
 from collections import deque, OrderedDict
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator
-from quant_trade.signal.factor_scorer import FactorScorerImpl
+from quant_trade.signal import FactorScorerImpl
 
 
 def make_rsg():

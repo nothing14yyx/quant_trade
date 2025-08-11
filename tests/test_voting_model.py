@@ -1,6 +1,6 @@
 import pandas as pd
 
-from quant_trade.signal.voting_model import VotingModel
+from quant_trade.signal import VotingModel
 
 
 def test_voting_model_train_and_predict(tmp_path):

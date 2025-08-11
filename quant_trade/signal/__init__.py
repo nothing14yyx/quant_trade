@@ -39,6 +39,8 @@ from .voting_model import VotingModel, load_cached_model
 from .factor_scorer import FactorScorerImpl
 from .fusion_rule import FusionRuleBased
 from .risk_filters import RiskFiltersImpl
+from .position_sizer import PositionSizerImpl
+from .predictor_adapter import PredictorAdapter
 from .engine import SignalEngine
 
 __all__ = [
@@ -76,5 +78,7 @@ __all__ = [
     "FactorScorerImpl",
     "FusionRuleBased",
     "RiskFiltersImpl",
+    "PositionSizerImpl",
+    "PredictorAdapter",
     "SignalEngine",
 ]
