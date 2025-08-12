@@ -11,10 +11,11 @@
 import numpy as np
 import math
 from quant_trade.utils.soft_clip import soft_clip
+from quant_trade.utils.lru import LRU
 import requests
 
 import pandas as pd
-from collections import Counter, deque, OrderedDict
+from collections import Counter, deque
 from pathlib import Path
 import yaml
 import json
@@ -658,10 +659,10 @@ class RobustSignalGenerator:
 
         # 缓存计算结果，避免重复计算
         self.cache_maxsize = cache_maxsize
-        self._ai_score_cache = OrderedDict()
-        self._factor_cache = OrderedDict()
-        self._factor_score_cache = OrderedDict()
-        self._fuse_cache = OrderedDict()
+        self._ai_score_cache = LRU(self.cache_maxsize)
+        self._factor_cache = LRU(self.cache_maxsize)
+        self._factor_score_cache = LRU(self.cache_maxsize)
+        self._fuse_cache = LRU(self.cache_maxsize)
 
         # 因子得分计算实现
         self.factor_scorer = FactorScorerImpl(self)
@@ -770,10 +771,10 @@ class RobustSignalGenerator:
             "ic_scores": {},
             "th_down_d1": 0.74,
             "min_trend_align": 3,
-            "_ai_score_cache": OrderedDict(),
-            "_factor_cache": OrderedDict(),
-            "_factor_score_cache": OrderedDict(),
-            "_fuse_cache": OrderedDict(),
+            "_ai_score_cache": LRU(self.__dict__.get("cache_maxsize", DEFAULT_CACHE_MAXSIZE)),
+            "_factor_cache": LRU(self.__dict__.get("cache_maxsize", DEFAULT_CACHE_MAXSIZE)),
+            "_factor_score_cache": LRU(self.__dict__.get("cache_maxsize", DEFAULT_CACHE_MAXSIZE)),
+            "_fuse_cache": LRU(self.__dict__.get("cache_maxsize", DEFAULT_CACHE_MAXSIZE)),
             "cache_maxsize": DEFAULT_CACHE_MAXSIZE,
             "rebound_cooldown": 3,
             "last_rebound_ts": 0,
@@ -1478,16 +1479,6 @@ class RobustSignalGenerator:
             key = (hash(key),)
         return key
 
-    def _cache_get(self, cache: OrderedDict, key):
-        with self._lock:
-            return cache.get(key)
-
-    def _cache_set(self, cache: OrderedDict, key, value):
-        with self._lock:
-            cache[key] = value
-            if len(cache) > self.cache_maxsize:
-                cache.popitem(last=False)
-
     def _normalize_inputs(
         self,
         features_1h,
@@ -1668,7 +1659,7 @@ class RobustSignalGenerator:
     ):
         """封装 AI 模型推理与校准"""
         key = self._make_cache_key(feats_1h.std, feats_4h.std, feats_d1.std, feats_d1.raw)
-        cached = self._cache_get(self._ai_score_cache, key)
+        cached = self._ai_score_cache.get(key)
         if cached is not None:
             return cached
 
@@ -1680,7 +1671,7 @@ class RobustSignalGenerator:
             drawdown_preds = {"1h": None, "4h": None, "d1": None}
             extreme_reversal = False
             result = ai_scores, vol_preds, rise_preds, drawdown_preds, extreme_reversal
-            self._cache_set(self._ai_score_cache, key, result)
+            self._ai_score_cache.set(key, result)
             return result
 
         ai_scores: dict[str, float] = {}
@@ -1732,7 +1723,7 @@ class RobustSignalGenerator:
             ai_scores["d1"] = 0.0
 
         result = ai_scores, vol_preds, rise_preds, drawdown_preds, extreme_reversal
-        self._cache_set(self._ai_score_cache, key, result)
+        self._ai_score_cache.set(key, result)
         return result
 
     def compute_factor_scores(
@@ -1785,7 +1776,7 @@ class RobustSignalGenerator:
             ob_imb,
             symbol,
         )
-        cached = self._cache_get(self._factor_score_cache, key)
+        cached = self._factor_score_cache.get(key)
         if cached is not None:
             return cached
         std_1h = feats_1h.std
@@ -1966,7 +1957,7 @@ class RobustSignalGenerator:
             "th_oi": th_oi,
             "oi_chg": oi_chg,
         }
-        self._cache_set(self._factor_score_cache, key, result)
+        self._factor_score_cache.set(key, result)
         return result
 
     def _compute_scores(

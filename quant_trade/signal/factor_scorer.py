@@ -21,7 +21,7 @@ class FactorScorerImpl:
     # 原 get_factor_scores -> score
     def score(self, features: Mapping, period: str) -> dict:
         key = self.core._make_cache_key(features, period)
-        cached = self.core._cache_get(self.core._factor_cache, key)
+        cached = self.core._factor_cache.get(key)
         if cached is not None:
             return cached
 
@@ -82,7 +82,7 @@ class FactorScorerImpl:
             elif pos < 0.1 and v < 0:
                 scores[k] = v * 0.8
 
-        self.core._cache_set(self.core._factor_cache, key, scores)
+        self.core._factor_cache.set(key, scores)
         return scores
 
     # 原 calc_factor_scores
