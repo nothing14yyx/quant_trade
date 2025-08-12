@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import logging
 import os
 import re
 from typing import Dict, List, Optional
@@ -15,8 +14,9 @@ from sqlalchemy import bindparam, text
 
 from .data_loader import _safe_retry
 from .utils.ratelimiter import RateLimiter
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class CoinMetricsLoader:

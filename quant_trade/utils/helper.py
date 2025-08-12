@@ -4,13 +4,13 @@ import pandas as pd
 import pandas_ta as ta
 import json
 import warnings
-import logging
 from sklearn.preprocessing import RobustScaler
 from numba import njit
 from quant_trade.utils.soft_clip import soft_clip
 from typing import Mapping, Any
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def collect_feature_cols(cfg: dict, period: str) -> list[str]:

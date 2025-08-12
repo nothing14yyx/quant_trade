@@ -1,10 +1,10 @@
-import logging
 from collections.abc import Mapping
 import numpy as np
 
 from .utils import adjust_score, volume_guard
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class FactorScorerImpl:

@@ -35,8 +35,9 @@ from sqlalchemy.exc import IntegrityError
 
 from quant_trade.utils.helper import calc_order_book_features
 from quant_trade.utils.ratelimiter import RateLimiter  # 你的限速器
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,

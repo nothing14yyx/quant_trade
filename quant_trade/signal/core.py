@@ -23,6 +23,13 @@ import logging
 import time
 import warnings
 import os
+from quant_trade.logging import get_logger
+try:
+    from quant_trade.config_schema import SignalConfig
+    from pydantic import ValidationError
+except Exception:  # 包括 ImportError 与 pydantic 缺失
+    SignalConfig = None
+    ValidationError = Exception
 
 from ..config_manager import ConfigManager
 from ..ai_model_predictor import AIModelPredictor
@@ -31,7 +38,7 @@ from ..feature_processor import FeatureProcessor
 from ..constants import ZeroReason
 from scipy.special import inv_boxcox
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
 
 # 默认配置路径
@@ -426,6 +433,13 @@ class RobustSignalGenerator:
         # 配置管理
         self.config_manager = ConfigManager(config_path)
         cfg = self.config_manager.cfg
+        if SignalConfig:
+            try:
+                validated = SignalConfig(**cfg).model_dump()
+                extra = {k: v for k, v in cfg.items() if k not in validated}
+                cfg = {**validated, **extra}
+            except ValidationError as exc:  # pragma: no cover - optional
+                logger.warning("Config validation failed: %s", exc)
         self.cfg = cfg
         self.risk_filters_enabled = cfg.get("risk_filters_enabled", True)
         self.dynamic_threshold_enabled = cfg.get("dynamic_threshold_enabled", True)

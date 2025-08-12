@@ -1,6 +1,7 @@
-import logging
 from pathlib import Path
 from typing import Iterable
+
+from quant_trade.logging import get_logger
 
 import pandas as pd
 
@@ -8,7 +9,7 @@ from .data_loader import DataLoader
 from .utils.helper import calc_features_raw
 from .utils.robust_scaler import compute_robust_z_params, save_scaler_params_to_json
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def generate_offline_price_table(
