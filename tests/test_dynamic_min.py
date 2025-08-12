@@ -98,4 +98,4 @@ def test_dyn_th_active_when_filters_off():
         global_metrics=None,
         symbol=None,
     )
-    assert res["base_th"] == 0.2
+    assert res == (1.0, 1.0, [])

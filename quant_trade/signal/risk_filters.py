@@ -105,14 +105,20 @@ class RiskFiltersImpl:
     ):
         """执行风险限制与拥挤度检查"""
         core = self.core
-        penalties: list[str] = []
+        score_mult = 1.0
+        pos_mult = 1.0
+        reasons: list[str] = []
         if not core.risk_filters_enabled and not core.dynamic_threshold_enabled:
-            return {
-                "fused_score": fused_score,
-                "risk_score": 0.0,
-                "crowding_factor": 1.0,
-                "base_th": core.signal_params.base_th,
-            }
+            self.last_risk_score = 0.0
+            self.last_crowding_factor = 1.0
+            self.last_risk_th = 0.0
+            self.last_base_th = core.signal_params.base_th
+            self.last_rev_boost = 0.0
+            self.last_regime = "range"
+            self.last_rev_dir = 0
+            self.last_funding_conflicts = 0
+            self.last_th_oi = None
+            return score_mult, pos_mult, reasons
         atr_1h = raw_f1h.get("atr_pct_1h", 0) if raw_f1h else 0
         adx_1h = raw_f1h.get("adx_1h", 0) if raw_f1h else 0
         funding_1h = raw_f1h.get("funding_rate_1h", 0) if raw_f1h else 0
@@ -179,17 +185,20 @@ class RiskFiltersImpl:
             base_th = cfg_base
             rev_boost = cfg_th.get("rev_boost", params.rev_boost)
         base_th *= getattr(core, "phase_th_mult", 1.0)
+        self.last_base_th = base_th
+        self.last_rev_boost = rev_boost
+        self.last_regime = regime
+        self.last_rev_dir = rev_dir
         if rev_dir != 0:
-            fused_score += rev_boost * rev_dir
             core._cooldown = 0
 
         if not core.risk_filters_enabled:
-            return {
-                "fused_score": fused_score,
-                "risk_score": 0.0,
-                "crowding_factor": 1.0,
-                "base_th": base_th,
-            }
+            self.last_risk_score = 0.0
+            self.last_crowding_factor = 1.0
+            self.last_risk_th = 0.0
+            self.last_funding_conflicts = 0
+            self.last_th_oi = None
+            return score_mult, pos_mult, reasons
 
         funding_conflicts = 0
         for p, raw_f in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
@@ -198,17 +207,21 @@ class RiskFiltersImpl:
             f_rate = raw_f.get(f"funding_rate_{p}", 0)
             if abs(f_rate) > 0.0005 and np.sign(f_rate) * np.sign(fused_score) < 0:
                 penalty = min(abs(f_rate) * 20, 0.20)
-                fused_score *= 1 - penalty
+                score_mult *= 1 - penalty
                 funding_conflicts += 1
         if funding_conflicts >= core.veto_conflict_count:
             if core.filter_penalty_mode:
-                fused_score *= core.penalty_factor
-                penalties.append(ZeroReason.FUNDING_PENALTY.value)
+                score_mult *= core.penalty_factor
+                pos_mult *= core.penalty_factor
+                reasons.append(ZeroReason.FUNDING_PENALTY.value)
             else:
-                return None
+                score_mult = 0.0
+                pos_mult = 0.0
+                reasons.append(ZeroReason.FUNDING_CONFLICT.value)
 
-        fused_score, crowding_factor, th_oi = self.apply_crowding_protection(
-            fused_score,
+        adj_score = fused_score * score_mult
+        _, crowding_factor, th_oi = self.apply_crowding_protection(
+            adj_score,
             base_th=base_th,
             all_scores_list=all_scores_list,
             oi_chg=cache.get("oi_chg"),
@@ -217,13 +230,15 @@ class RiskFiltersImpl:
             oi_overheat=cache.get("oi_overheat", False),
             symbol=symbol,
         )
+        score_mult *= crowding_factor
+        self.last_th_oi = th_oi
         risk_score = core.risk_manager.calc_risk(
             env_score,
             pred_vol=vol_preds.get("1h"),
             oi_change=open_interest.get("oi_chg") if open_interest else None,
         )
 
-        fused_score *= 1 - core.risk_adjust_factor * risk_score
+        score_mult *= 1 - core.risk_adjust_factor * risk_score
         # 根据历史波动或换手率动态调整风控阈值
         with core._lock:
             atr_hist = [
@@ -258,34 +273,38 @@ class RiskFiltersImpl:
         else:
             risk_th = max(risk_th, dyn_risk_th)
 
-        if abs(fused_score) < risk_th:
-            return None
+        self.last_risk_score = risk_score
+        self.last_crowding_factor = crowding_factor
+        self.last_risk_th = risk_th
+        self.last_funding_conflicts = funding_conflicts
 
-        if (
-            risk_score > core.risk_score_limit
-            or crowding_factor < 0
-            or crowding_factor > core.crowding_limit
-        ):
+        if abs(fused_score * score_mult) < risk_th:
+            score_mult = 0.0
+            pos_mult = 0.0
+            reasons.append(ZeroReason.RISK_PENALTY.value)
+
+        penalty_triggered = False
+        if risk_score > core.risk_score_limit:
+            reasons.append(ZeroReason.RISK_PENALTY.value)
+            penalty_triggered = True
+        if crowding_factor < 0 or crowding_factor > core.crowding_limit:
+            reasons.append(
+                ZeroReason.CONFLICT_PENALTY.value
+                if core.filter_penalty_mode
+                else ZeroReason.CONFLICT_FILTER.value
+            )
+            penalty_triggered = True
+        if penalty_triggered:
             if core.filter_penalty_mode:
-                fused_score *= core.penalty_factor
-                penalties.append(ZeroReason.RISK_PENALTY.value)
+                score_mult *= core.penalty_factor
+                pos_mult *= core.penalty_factor
             else:
-                return None
+                score_mult = 0.0
+                pos_mult = 0.0
 
+        fs_adj = fused_score * score_mult
         with core._lock:
-            cache["history_scores"].append(fused_score)
-            core.all_scores_list.append(fused_score)
+            cache["history_scores"].append(fs_adj)
+            core.all_scores_list.append(fs_adj)
 
-        return {
-            "fused_score": fused_score,
-            "risk_score": risk_score,
-            "crowding_factor": crowding_factor,
-            "crowding_adjusted": True,
-            "risk_th": risk_th,
-            "base_th": base_th,
-            "rev_boost": rev_boost,
-            "regime": regime,
-            "rev_dir": rev_dir,
-            "funding_conflicts": funding_conflicts,
-            "details": {"penalties": penalties} if penalties else {},
-        }
+        return score_mult, pos_mult, reasons
