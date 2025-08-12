@@ -201,6 +201,8 @@ class SignalEngine:
 
         result = self.rsg._calc_position_and_sl_tp(
             risk_info["fused_score"],
+            risk_info.get("pos_mult", 1.0),
+            risk_info.get("details", {}).get("penalties", []),
             risk_info,
             logic_score,
             env_score,
