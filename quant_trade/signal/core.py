@@ -2204,6 +2204,9 @@ class RobustSignalGenerator:
         regime = risk_info.get("regime", "range")
         rev_dir = risk_info.get("rev_dir", 0)
         funding_conflicts = risk_info.get("funding_conflicts", 0)
+        pos_mult = risk_info.get("pos_mult", 1.0)
+        score_mult = risk_info.get("score_mult", 1.0)
+        risk_reasons = risk_info.get("details", {}).get("penalties", [])
 
         vol_ratio_1h_4h = get_feat(raw_f1h, std_1h, "vol_ratio_1h_4h")
         if vol_ratio_1h_4h is None:
@@ -2500,6 +2503,16 @@ class RobustSignalGenerator:
                 size = min(size, max_pos_pct * equity / price)
                 pos_size = min(pos_size, size)
 
+        if pos_mult != 1.0:
+            pos_size *= pos_mult
+            if pos_mult == 0:
+                direction = 0
+                take_profit = None
+                stop_loss = None
+                if risk_reasons:
+                    zero_reason = ";".join(risk_reasons)
+                zero_reason = zero_reason or "risk_filter"
+
         # 使用传入的逻辑与环境得分计算最终得分
         score_raw = logic_score * env_score
         score_raw *= 1 - self.risk_adjust_factor * risk_score
@@ -2508,6 +2521,7 @@ class RobustSignalGenerator:
             penalty = abs(vote) / strong_min
             score_raw *= 0.5 ** penalty
         final_score = float(np.tanh(score_raw))
+        final_score = float(np.clip(final_score * score_mult, -1.0, 1.0))
 
         with self._lock:
             self._last_signal = int(np.sign(direction)) if direction else 0
@@ -2742,6 +2756,8 @@ class RobustSignalGenerator:
     def _calc_position_and_sl_tp(
         self,
         fused_score: float,
+        pos_mult: float,
+        reasons,
         risk_info: dict,
         logic_score: float,
         env_score: float,
@@ -2768,6 +2784,11 @@ class RobustSignalGenerator:
         ts=None,
     ):
         """根据风险结果计算仓位及止盈止损"""
+
+        risk_info = dict(risk_info)
+        risk_info["pos_mult"] = pos_mult
+        if reasons:
+            risk_info.setdefault("details", {}).setdefault("penalties", []).extend(reasons)
 
         return self.finalize_position(
             fused_score,
