@@ -446,7 +446,7 @@ class RobustSignalGenerator:
         self.risk_filters_enabled = cfg.get("risk_filters_enabled", True)
         self.dynamic_threshold_enabled = cfg.get("dynamic_threshold_enabled", True)
         self.direction_filters_enabled = cfg.get("direction_filters_enabled", True)
-        self.filter_penalty_mode = cfg.get("filter_penalty_mode", False)
+        self.filter_penalty_mode = cfg.get("filter_penalty_mode", True)
         self.rsi_k = get_cfg_value(cfg, "rsi_k", DEFAULT_RSI_K)
         self.penalty_factor = get_cfg_value(cfg, "penalty_factor", 0.5)
         fe_cfg = cfg.get("feature_engineering", {})
