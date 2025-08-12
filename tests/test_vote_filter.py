@@ -1,6 +1,5 @@
-import pytest
 from quant_trade.tests.test_utils import make_dummy_rsg
-from tests.test_overbought_oversold import make_cache, base_inputs
+from tests.test_overbought_oversold import base_inputs, make_cache
 
 
 def setup_rsg(min_vote=3, conf_vote=0.2, weight_ai=2):
@@ -131,7 +130,7 @@ def test_vote_filter_allows_signal():
         ob_imb=0,
         confirm_15m=0,
         extreme_reversal=False,
-        cache=make_cache(),
+        cache=cache,
         symbol=None,
     )
     assert res["signal"] == 1
