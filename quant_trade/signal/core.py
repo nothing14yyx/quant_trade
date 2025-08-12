@@ -1750,8 +1750,7 @@ class RobustSignalGenerator:
                 ai_scores[p] = 0.0
 
         signs = {int(np.sign(v)) for v in ai_scores.values() if v != 0}
-        if len(signs) > 1:
-            return None
+        conflict = len(signs) > 1
 
         raw_dict = {
             "1h": feats_1h.raw,
@@ -1777,6 +1776,7 @@ class RobustSignalGenerator:
         )
         cached = self._factor_score_cache.get(key)
         if cached is not None:
+            cached["conflict"] = conflict
             return cached
         std_1h = feats_1h.std
         std_4h = feats_4h.std
@@ -1955,6 +1955,7 @@ class RobustSignalGenerator:
             "oi_overheat": oi_overheat,
             "th_oi": th_oi,
             "oi_chg": oi_chg,
+            "conflict": conflict,
         }
         self._factor_score_cache.set(key, result)
         return result
@@ -2567,6 +2568,7 @@ class RobustSignalGenerator:
             "consensus_14": risk_info.get("consensus_14"),
             "consensus_4d1": risk_info.get("consensus_4d1"),
             "extreme_reversal": extreme_reversal,
+            "conflict": scores.get("conflict"),
             "conflict_filter_triggered": conflict_filter_triggered,
             "confirm_15m": confirm_15m,
             "reb_boost_applied": reb_boost_applied,
