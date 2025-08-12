@@ -1,18 +1,33 @@
-from __future__ import annotations
-
 """High level orchestration of signal generation pipeline.
 
 该模块提供 :class:`SignalEngine`，用于将若干组件协同在一起运行。
 """
 
+from __future__ import annotations
+
+import math
 from typing import Any, Mapping
 
 from .core import RobustSignalGenerator
-from .predictor_adapter import PredictorAdapter
 from .factor_scorer import FactorScorerImpl
 from .fusion_rule import FusionRuleBased
-from .risk_filters import RiskFiltersImpl
 from .position_sizer import PositionSizerImpl
+from .predictor_adapter import PredictorAdapter
+from .risk_filters import RiskFiltersImpl
+
+
+def _to_float_dict(data: Mapping[str, Any]) -> dict[str, float]:
+    """将结果字典转换为仅包含 ``float`` 的字典。"""
+
+    tp = data.get("take_profit")
+    sl = data.get("stop_loss")
+    return {
+        "signal": float(data.get("signal", 0.0)),
+        "score": float(data.get("score", 0.0)),
+        "position_size": float(data.get("position_size", 0.0)),
+        "take_profit": float(tp) if tp is not None else math.nan,
+        "stop_loss": float(sl) if sl is not None else math.nan,
+    }
 
 
 class SignalEngine:
@@ -58,14 +73,15 @@ class SignalEngine:
         self.rsg.position_sizer = position_sizer
 
     # ------------------------------------------------------------------
-    def run(self, ctx: Mapping[str, Any]):
+    def run(self, ctx: Mapping[str, Any]) -> dict[str, float] | None:
         """执行一次信号计算并返回结果字典。
 
-        ``ctx`` 参数与 :meth:`RobustSignalGenerator.generate_signal` 一致，
-        以字典形式提供所需输入数据。该方法内部依次调用
-        ``_prepare_inputs``、``_compute_scores``、``_risk_checks`` 与
-        ``_calc_position_and_sl_tp`` 等步骤，因而最终的返回结果和日志
-        与旧实现保持一致。
+        ``ctx`` 需要提供特征、原始特征、盘口不平衡、全局指标等键值，
+        具体字段与 :meth:`RobustSignalGenerator.generate_signal` 相同。
+        该方法内部依次调用 ``_prepare_inputs``、``_compute_scores``、
+        ``_risk_checks`` 与 ``_calc_position_and_sl_tp`` 等步骤，最终返回
+        包含 ``signal``、``score``、``position_size``、``take_profit`` 和
+        ``stop_loss`` 的简化结果字典。
         """
 
         prepared = self.rsg._prepare_inputs(
@@ -153,7 +169,7 @@ class SignalEngine:
             cache,
         )
         if pre_res is not None:
-            return pre_res
+            return _to_float_dict(pre_res)
 
         risk_info = self.rsg._risk_checks(
             fused_score,
@@ -203,4 +219,4 @@ class SignalEngine:
             ctx.get("symbol"),
             ts,
         )
-        return result
+        return _to_float_dict(result)
