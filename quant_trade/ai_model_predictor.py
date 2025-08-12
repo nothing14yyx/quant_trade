@@ -1,15 +1,18 @@
-import joblib
-import pandas as pd
-import numpy as np
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
+
+import joblib
+import numpy as np
+import pandas as pd
 
 
 class AIModelPredictor:
     """封装AI模型的加载与推理"""
 
-    def __init__(self, model_paths: dict):
-        self.models: dict = {}
-        self.calibrators: dict = {}
+    def __init__(self, model_paths: dict[str, dict[str, str]]):
+        self.models: dict[str, dict[str, dict[str, Any]]] = {}
+        self.calibrators: dict[str, dict[str, Any]] = {}
         base_dir = Path(__file__).resolve().parent
 
         allowed = {"1h", "4h"}
@@ -33,22 +36,35 @@ class AIModelPredictor:
                 }
                 self.calibrators[period][direction] = loaded.get("calibrator")
 
-    def _build_df(self, features: dict, train_cols: list[str]) -> pd.DataFrame:
+    def _build_df(
+        self, features: Mapping[str, float | int | None], train_cols: list[str]
+    ) -> pd.DataFrame:
         row = {c: [features.get(c, np.nan)] for c in train_cols}
         df = pd.DataFrame(row)
         df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
         return df
 
-    def predict_proba(self, period: str, direction: str, features: dict) -> float:
+    def predict_proba(
+        self, period: str, direction: str, features: Mapping[str, float | int | None]
+    ) -> float:
         model = self.models[period][direction]
-        df = self._build_df(features, model["features"])
-        proba = model["pipeline"].predict_proba(df)[:, 1]
-        cal = self.calibrators[period].get(direction)
-        if cal is not None:
-            proba = cal.transform(proba.reshape(-1, 1)).ravel()
+        feature_cols = model["features"]
+        pipeline = model["pipeline"]
+        df = self._build_df(features, feature_cols)
+        proba = pipeline.predict_proba(df)[:, 1]
+        calibrator = self.calibrators[period].get(direction)
+        if calibrator is not None:
+            proba = calibrator.transform(proba.reshape(-1, 1)).ravel()
         return float(proba[0])
 
-    def get_ai_score(self, features: dict, model_up: dict, model_down: dict, calibrator_up=None, calibrator_down=None) -> float:
+    def get_ai_score(
+        self,
+        features: Mapping[str, float | int | None],
+        model_up: Mapping[str, Any],
+        model_down: Mapping[str, Any],
+        calibrator_up: Any | None = None,
+        calibrator_down: Any | None = None,
+    ) -> float:
         """根据上涨/下跌模型概率差值计算AI得分"""
         X_up = self._build_df(features, model_up["features"])
         X_down = self._build_df(features, model_down["features"])
@@ -64,11 +80,14 @@ class AIModelPredictor:
             return float(ai_score[0])
         return float(ai_score)
 
-    def get_ai_score_cls(self, features: dict, model_dict: dict) -> float:
+    def get_ai_score_cls(
+        self, features: Mapping[str, float | int | None], model_dict: Mapping[str, Any]
+    ) -> float:
         cols = model_dict["features"]
+        pipeline = model_dict["pipeline"]
         df = self._build_df(features, cols)
-        probs = model_dict["pipeline"].predict_proba(df)[0]
-        classes = getattr(model_dict["pipeline"], "classes_", np.arange(len(probs)))
+        probs = pipeline.predict_proba(df)[0]
+        classes = getattr(pipeline, "classes_", np.arange(len(probs)))
         if len(classes) >= 3:
             idx_down = int(np.argmin(classes))
             idx_up = int(np.argmax(classes))
@@ -82,9 +101,15 @@ class AIModelPredictor:
             return 0.0
         return float((prob_up - prob_down) / denom)
 
-    def get_reg_prediction(self, features: dict, model_dict: dict) -> float:
-        df = self._build_df(features, model_dict["features"])
-        return float(model_dict["pipeline"].predict(df)[0])
+    def get_reg_prediction(
+        self, features: Mapping[str, float | int | None], model_dict: Mapping[str, Any]
+    ) -> float:
+        cols = model_dict["features"]
+        pipeline = model_dict["pipeline"]
+        df = self._build_df(features, cols)
+        return float(pipeline.predict(df)[0])
 
-    def get_vol_prediction(self, features: dict, model_dict: dict) -> float:
+    def get_vol_prediction(
+        self, features: Mapping[str, float | int | None], model_dict: Mapping[str, Any]
+    ) -> float:
         return self.get_reg_prediction(features, model_dict)
