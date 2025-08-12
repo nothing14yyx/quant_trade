@@ -23,6 +23,26 @@ def test_len_and_contains():
     assert cache.get("x") == 10
 
 
+def test_access_updates_order_and_evicts_oldest():
+    cache = LRU(maxsize=3)
+    cache.set("a", 1)
+    cache.set("b", 2)
+    cache.set("c", 3)
+
+    # Access some keys to update their recency
+    cache.get("a")  # order: b, c, a
+    cache.get("b")  # order: c, a, b
+
+    # Adding a new key should evict the least recently used key "c"
+    cache.set("d", 4)
+    assert "c" not in cache
+
+    # Remaining keys should still be retrievable
+    assert cache.get("a") == 1
+    assert cache.get("b") == 2
+    assert cache.get("d") == 4
+
+
 def test_thread_safety():
     cache = LRU(maxsize=10)
 
