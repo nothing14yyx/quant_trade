@@ -137,27 +137,26 @@ class FusionRuleBased:
 
         if consensus_all:
             fused = w1 * s1 + w4 * s4 + wd * sd
-            conf = 1.0
+            conf = 1.1
             if strong_confirm_4h:
-                fused *= 1.15
+                conf *= 1.05
             fused *= self.core.cycle_weight.get("strong", 1.0)
         elif consensus_14:
             total = w1 + w4
             fused = (w1 / total) * s1 + (w4 / total) * s4
-            conf = 0.8
-            if strong_confirm_4h:
-                fused *= 1.10
+            conf = 0.9
             fused *= self.core.cycle_weight.get("weak", 1.0)
         elif consensus_4d1:
             total = w4 + wd
             fused = (w4 / total) * s4 + (wd / total) * sd
-            conf = 0.7
+            conf = 0.9
             fused *= self.core.cycle_weight.get("weak", 1.0)
         else:
             fused = s1
-            conf = 0.6
+            conf = 1.0
 
         fused_score = fused * conf
+        penalty = 1.0
         if (
             np.sign(s1) != 0
             and (
@@ -165,12 +164,20 @@ class FusionRuleBased:
                 or (np.sign(sd) != 0 and np.sign(s1) != np.sign(sd))
             )
         ):
-            fused_score *= self.core.cycle_weight.get("opposite", 1.0)
+            opp = self.core.cycle_weight.get("opposite", 1.0)
+            fused_score *= opp
+            penalty *= opp
+        if not (consensus_all or consensus_14 or consensus_4d1):
+            cm = getattr(self.core, "conflict_mult", 0.7)
+            fused_score *= cm
+            penalty *= cm
         logger.debug(
-            "fuse scores s1=%.3f s4=%.3f sd=%.3f -> %.3f",
+            "fuse scores s1=%.3f s4=%.3f sd=%.3f -> %.3f (conf=%.2f, penalty=%.2f)",
             s1,
             s4,
             sd,
             fused_score,
+            conf,
+            penalty,
         )
         return fused_score, consensus_all, consensus_14, consensus_4d1

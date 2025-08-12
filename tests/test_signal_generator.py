@@ -461,7 +461,7 @@ def test_generate_signal_with_external_metrics():
     feats_d1 = {}
 
     baseline = base.generate_signal(feats_1h, feats_4h, feats_d1, symbol="BTCUSDT")
-    expected_baseline = np.tanh(0.5 * (1 - 0.9 * 1.0)) * (1 - 0.9 * 1.0)
+    expected_baseline = np.tanh(0.55 * (1 - 0.9 * 1.0)) * (1 - 0.9 * 1.0)
     assert baseline['score'] == pytest.approx(expected_baseline)
 
     rsg = make_dummy_rsg()
@@ -528,7 +528,7 @@ def test_hot_sector_influence():
         symbol='ABC'
     )
     env_factor = 1 + 0.05 * 0.2
-    expected = np.tanh(0.5 * env_factor * (1 - 0.9 * env_factor)) * (
+    expected = np.tanh(0.55 * env_factor * (1 - 0.9 * env_factor)) * (
         1 - 0.9 * env_factor
     )
     assert result['score'] == pytest.approx(expected)
@@ -573,7 +573,7 @@ def test_eth_dominance_influence():
         symbol='ETHUSDT'
     )
     env_factor = 1 + 0.1 * 0.2
-    expected = np.tanh(0.5 * env_factor * (1 - 0.9 * env_factor)) * (
+    expected = np.tanh(0.55 * env_factor * (1 - 0.9 * env_factor)) * (
         1 - 0.9 * env_factor
     )
     assert result['score'] == pytest.approx(expected)
@@ -658,7 +658,7 @@ def test_ma_cross_logic_amplify():
 
     res = rsg.generate_signal(feats_1h, feats_4h, feats_d1, raw_features_1h=feats_1h)
     risk = res['details']['env']['risk_score']
-    assert res['score'] > np.tanh(0.5 * (1 - 0.9 * risk)) * (1 - 0.9 * risk)
+    assert res['score'] > np.tanh(0.55 * (1 - 0.9 * risk)) * (1 - 0.9 * risk)
     assert res['details']['ma_cross'] == 1
 
 
@@ -1075,7 +1075,7 @@ def test_generate_signal_with_cls_model():
         raw_features_d1=fd1,
     )
     risk = res['details']['env']['risk_score']
-    expected = np.tanh(0.5 * (1 - 0.9 * risk)) * (1 - 0.9 * risk)
+    expected = np.tanh(0.55 * (1 - 0.9 * risk)) * (1 - 0.9 * risk)
     assert res['score'] == pytest.approx(expected)
 
 
