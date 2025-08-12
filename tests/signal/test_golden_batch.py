@@ -15,7 +15,7 @@ def load_json(path: Path) -> dict:
 
 @pytest.fixture
 def cases_data():
-    return [load_json(p) for p in sorted(FIXTURE_DIR.glob("*.json"))]
+    return [load_json(p) for p in sorted(FIXTURE_DIR.glob("golden*.json"))]
 
 
 def test_golden_batch(cases_data, monkeypatch):

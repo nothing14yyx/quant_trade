@@ -12,7 +12,7 @@ def load_json(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
-@pytest.fixture(params=sorted(FIXTURE_DIR.glob("*.json")))
+@pytest.fixture(params=sorted(FIXTURE_DIR.glob("golden*.json")))
 def case_data(request):
     return load_json(request.param)
 
