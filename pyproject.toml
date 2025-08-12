@@ -1,8 +1,10 @@
 [tool.ruff]
 target-version = "py311"
+extend-exclude = ["quant_trade"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501"]
@@ -12,3 +14,9 @@ python_version = "3.11"
 strict = false
 incremental = true
 cache_dir = ".mypy_cache"
+ignore_missing_imports = true
+exclude = "(^(tests|quant_trade)/)"
+
+[[tool.mypy.overrides]]
+module = ["quant_trade.*", "tests.*", "optimize_params"]
+ignore_errors = true

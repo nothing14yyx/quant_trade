@@ -1,8 +1,8 @@
 import pandas as pd
 
-from quant_trade.utils.helper import calc_features_raw
 from quant_trade.feature_engineering import calc_cross_features
 from quant_trade.tests.test_utils import make_dummy_rsg
+from quant_trade.utils.helper import calc_features_raw
 
 
 def test_feature_engineer_to_rsg_signal(monkeypatch):
@@ -30,7 +30,7 @@ def test_feature_engineer_to_rsg_signal(monkeypatch):
     }
     f4h = calc_features_raw(df.resample('4h').agg(agg), '4h')
     fd1 = calc_features_raw(df.resample('1d').agg(agg), 'd1')
-    merged = calc_cross_features(f1h, f4h, fd1)
+    calc_cross_features(f1h, f4h, fd1)
 
     feat1h = f1h.iloc[-1].to_dict()
     feat4h = f4h.iloc[-1].to_dict()

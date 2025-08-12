@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any, Mapping
 
 from .core import RobustSignalGenerator
@@ -16,18 +15,26 @@ from .predictor_adapter import PredictorAdapter
 from .risk_filters import RiskFiltersImpl
 
 
-def _to_float_dict(data: Mapping[str, Any]) -> dict[str, float]:
-    """将结果字典转换为仅包含 ``float`` 的字典。"""
+def _to_float_dict(data: Mapping[str, Any]) -> dict[str, Any]:
+    """将结果字典转换为包含 ``float`` 等类型的字典。
+
+    主要数值字段会被转换为 ``float``，其余字段保持原样，便于
+    测试读取 ``details`` 等诊断信息。
+    """
 
     tp = data.get("take_profit")
     sl = data.get("stop_loss")
-    return {
+    res: dict[str, Any] = {
         "signal": float(data.get("signal", 0.0)),
         "score": float(data.get("score", 0.0)),
         "position_size": float(data.get("position_size", 0.0)),
-        "take_profit": float(tp) if tp is not None else math.nan,
-        "stop_loss": float(sl) if sl is not None else math.nan,
+        "take_profit": float(tp) if tp is not None else None,
+        "stop_loss": float(sl) if sl is not None else None,
     }
+    for key, value in data.items():
+        if key not in res:
+            res[key] = value
+    return res
 
 
 class SignalEngine:
