@@ -39,6 +39,7 @@ from ..constants import ZeroReason
 from scipy.special import inv_boxcox
 
 logger = get_logger(__name__)
+_warned_missing_voting_model = False
 pd.set_option('future.no_silent_downcasting', True)
 
 # 默认配置路径
@@ -161,7 +162,7 @@ from .utils import (
     sigmoid_confidence,
 )
 from .factor_scorer import FactorScorerImpl
-from .voting_model import load_cached_model
+from .voting_model import safe_load
 from .predictor_adapter import PredictorAdapter
 from .fusion_rule import FusionRuleBased
 from .risk_filters import RiskFiltersImpl
@@ -2053,8 +2054,8 @@ class RobustSignalGenerator:
         weighted-sum rule so existing behaviour is preserved.
         """
 
-        try:
-            model = load_cached_model()
+        model = safe_load()
+        if model is not None:
             features = [
                 [
                     ai_dir,
@@ -2080,7 +2081,11 @@ class RobustSignalGenerator:
                 or prob <= 1 - self.vote_params.get("strong_prob_th", 0.8)
             )
             return vote, prob, weak_vote, strong_confirm
-        except Exception:
+        else:
+            global _warned_missing_voting_model
+            if not _warned_missing_voting_model:
+                logger.warning("voting model not found, falling back to linear weights")
+                _warned_missing_voting_model = True
             # 模型不可用时回退至旧的线性加权逻辑
             vw = self.vote_weights.copy()
             if regime and isinstance(self.regime_vote_weights.get(regime), dict):
