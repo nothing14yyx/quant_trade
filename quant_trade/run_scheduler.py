@@ -6,6 +6,7 @@ import math
 import logging
 import time
 import asyncio
+import uuid
 from datetime import datetime, timedelta, UTC
 
 import pandas as pd
@@ -16,7 +17,17 @@ from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.utils.robust_scaler import load_scaler_params_from_json
 from quant_trade.logging import get_logger
 
-logger = get_logger(__name__)
+
+class TraceLoggerAdapter(logging.LoggerAdapter):
+    """Adapter to prefix log messages with a trace id."""
+
+    def process(self, msg, kwargs):
+        return f"[{self.extra['trace_id']}] {msg}", kwargs
+
+
+trace_id = uuid.uuid4().hex[:8]
+logger = TraceLoggerAdapter(get_logger(__name__), {"trace_id": trace_id})
+logger.debug("trace id %s", trace_id)
 
 try:  # Optional heavy imports for runtime use; tests can monkeypatch these
     from quant_trade.feature_loader import (
