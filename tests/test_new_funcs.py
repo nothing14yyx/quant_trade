@@ -120,7 +120,7 @@ def test_fuse_multi_cycle():
     assert c3
 
 
-def test_ai_dir_inconsistent_returns_none():
+def test_ai_dir_inconsistent_flagged():
     rsg = make_dummy_rsg()
     rsg.ai_dir_eps = 0.1
     rsg.factor_scorer.calc_factor_scores = lambda ai, fs, w: ai
@@ -141,7 +141,7 @@ def test_ai_dir_inconsistent_returns_none():
         None,
         None,
     )
-    assert res is None
+    assert res is not None and res["conflict"]
 
 
 def test_ai_dir_eps_threshold_check():
@@ -165,7 +165,7 @@ def test_ai_dir_eps_threshold_check():
         None,
         None,
     )
-    assert res is None
+    assert res is not None and res["conflict"]
 
 
 def test_compute_exit_multiplier():

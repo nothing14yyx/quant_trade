@@ -123,6 +123,7 @@ class SignalEngine:
         env_score = scores["env_score"]
         fs = scores["fs"]
         score_details = scores["scores"]
+        score_details["conflict"] = scores.get("conflict")
         ai_scores = score_details["ai_scores"]
         vol_preds = score_details["vol_preds"]
         rise_preds = score_details["rise_preds"]
