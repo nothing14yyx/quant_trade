@@ -3,7 +3,7 @@ from collections import deque
 
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.robust_signal_generator import SignalThresholdParams
-from quant_trade.constants import ZeroReason
+from quant_trade.constants import RiskReason
 
 
 def make_cache():
@@ -47,8 +47,8 @@ def test_penalty_on_risk_filters():
     score_mult, pos_mult, reasons = res
     assert pytest.approx(score_mult, rel=1e-6) == 0.0245
     assert pytest.approx(pos_mult, rel=1e-6) == 0.25
-    assert ZeroReason.FUNDING_PENALTY.value in reasons
-    assert ZeroReason.RISK_PENALTY.value in reasons
+    assert RiskReason.FUNDING_PENALTY.value in reasons
+    assert RiskReason.RISK_LIMIT.value in reasons
 
 
 def test_position_penalty_mode():
@@ -71,7 +71,7 @@ def test_position_penalty_mode():
     assert pos == pytest.approx(0.1)
     assert direction == 1
     assert zr is None
-    assert p1 == [ZeroReason.VOTE_PENALTY.value]
+    assert p1 == [RiskReason.VOTE_PENALTY.value]
 
     pos2, direction2, zr2, p2 = rsg.position_sizer._apply_position_filters(
         0.2,
@@ -88,4 +88,4 @@ def test_position_penalty_mode():
     assert pos2 == pytest.approx(0.2 * 0.5 * 0.5)
     assert direction2 == 1
     assert zr2 is None
-    assert set(p2) == {ZeroReason.FUNDING_PENALTY.value, ZeroReason.CONFLICT_PENALTY.value}
+    assert set(p2) == {RiskReason.FUNDING_PENALTY.value, RiskReason.CONFLICT_PENALTY.value}

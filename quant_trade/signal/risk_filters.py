@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from ..constants import ZeroReason
+from ..constants import RiskReason
 from .thresholding_dynamic import ThresholdingDynamic, compute_dynamic_threshold
 from .utils import risk_budget_threshold
 
@@ -108,6 +108,8 @@ class RiskFiltersImpl:
         score_mult = 1.0
         pos_mult = 1.0
         reasons: list[str] = []
+        if cache.get("oi_overheat"):
+            reasons.append(RiskReason.OI_OVERHEAT.value)
         if not core.risk_filters_enabled and not core.dynamic_threshold_enabled:
             self.last_risk_score = 0.0
             self.last_crowding_factor = 1.0
@@ -213,11 +215,11 @@ class RiskFiltersImpl:
             if core.filter_penalty_mode:
                 score_mult *= core.penalty_factor
                 pos_mult *= core.penalty_factor
-                reasons.append(ZeroReason.FUNDING_PENALTY.value)
+                reasons.append(RiskReason.FUNDING_PENALTY.value)
             else:
                 score_mult = 0.0
                 pos_mult = 0.0
-                reasons.append(ZeroReason.FUNDING_CONFLICT.value)
+                reasons.append(RiskReason.FUNDING_CONFLICT.value)
 
         adj_score = fused_score * score_mult
         _, crowding_factor, th_oi = self.apply_crowding_protection(
@@ -281,17 +283,17 @@ class RiskFiltersImpl:
         if abs(fused_score * score_mult) < risk_th:
             score_mult = 0.0
             pos_mult = 0.0
-            reasons.append(ZeroReason.RISK_PENALTY.value)
+            reasons.append(RiskReason.RISK_LIMIT.value)
 
         penalty_triggered = False
         if risk_score > core.risk_score_limit:
-            reasons.append(ZeroReason.RISK_PENALTY.value)
+            reasons.append(RiskReason.RISK_LIMIT.value)
             penalty_triggered = True
         if crowding_factor < 0 or crowding_factor > core.crowding_limit:
             reasons.append(
-                ZeroReason.CONFLICT_PENALTY.value
+                RiskReason.CONFLICT_PENALTY.value
                 if core.filter_penalty_mode
-                else ZeroReason.CONFLICT_FILTER.value
+                else RiskReason.CONFLICT_FILTER.value
             )
             penalty_triggered = True
         if penalty_triggered:

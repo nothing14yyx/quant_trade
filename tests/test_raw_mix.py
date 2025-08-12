@@ -1,7 +1,7 @@
 import pytest
 
 from quant_trade.tests.test_utils import make_dummy_rsg
-from quant_trade.constants import ZeroReason
+from quant_trade.constants import RiskReason
 from tests.test_overbought_oversold import make_cache, base_inputs
 
 
@@ -56,5 +56,5 @@ def test_raw_and_std_mixed_volume():
         cache=cache,
         symbol=None,
     )
-    assert res["zero_reason"] != ZeroReason.VOL_RATIO.value
+    assert res["zero_reason"] != RiskReason.VOL_RATIO.value
     assert res["details"]["vote"]["ob_th"] == pytest.approx(rsg.ob_th_params["min_ob_th"])

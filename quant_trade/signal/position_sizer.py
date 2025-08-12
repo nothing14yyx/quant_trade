@@ -5,7 +5,7 @@ from typing import Tuple, List
 
 import numpy as np
 
-from ..constants import ZeroReason
+from ..constants import RiskReason
 from .utils import sigmoid
 from quant_trade.utils import get_cfg_value
 
@@ -226,25 +226,26 @@ class PositionSizerImpl:
         if weak_vote:
             if self.rsg.filter_penalty_mode:
                 pos_size *= self.rsg.penalty_factor
-                penalties.append(ZeroReason.VOTE_PENALTY.value)
+                penalties.append(RiskReason.VOTE_PENALTY.value)
                 zero_reason = None
             else:
                 direction = 0
                 pos_size = 0.0
-                zero_reason = zero_reason or ZeroReason.VOTE_FILTER.value
+                zero_reason = zero_reason or RiskReason.VOTE_FILTER.value
 
         if funding_conflicts > self.rsg.veto_level:
             if self.rsg.filter_penalty_mode:
                 pos_size *= self.rsg.penalty_factor
-                penalties.append(ZeroReason.FUNDING_PENALTY.value)
+                penalties.append(RiskReason.FUNDING_PENALTY.value)
                 zero_reason = None
             else:
                 direction = 0
                 pos_size = 0.0
-                zero_reason = zero_reason or ZeroReason.FUNDING_CONFLICT.value
+                zero_reason = zero_reason or RiskReason.FUNDING_CONFLICT.value
 
         if oi_overheat:
             pos_size *= 0.5
+            penalties.append(RiskReason.OI_OVERHEAT.value)
 
         pos_map = base_th * 2.0
         if risk_score > 1 or logic_score < -0.3:
@@ -254,12 +255,12 @@ class PositionSizerImpl:
         if conflict_filter_triggered:
             if self.rsg.filter_penalty_mode:
                 pos_size *= self.rsg.penalty_factor
-                penalties.append(ZeroReason.CONFLICT_PENALTY.value)
+                penalties.append(RiskReason.CONFLICT_PENALTY.value)
                 zero_reason = None
             else:
                 pos_size = 0.0
                 direction = 0
-                zero_reason = zero_reason or ZeroReason.CONFLICT_FILTER.value
+                zero_reason = zero_reason or RiskReason.CONFLICT_FILTER.value
 
         return pos_size, direction, zero_reason, penalties
 
@@ -297,7 +298,7 @@ class PositionSizerImpl:
         pos_size *= crowding_factor
         if direction == 0:
             pos_size = 0.0
-            zero_reason = ZeroReason.NO_DIRECTION.value
+            zero_reason = RiskReason.NO_DIRECTION.value
 
         pos_size, low_vol_flag = self._apply_low_volume_penalty(
             pos_size,
@@ -315,6 +316,6 @@ class PositionSizerImpl:
         dynamic_min = min_pos * math.exp(self.rsg.risk_scale * risk_score)
         if self.rsg.risk_filters_enabled and pos_size < dynamic_min:
             pos_size = min(max(pos_size, dynamic_min), self.rsg.max_position)
-            zero_reason = ZeroReason.MIN_POS.value
+            zero_reason = RiskReason.MIN_POS.value
 
         return pos_size, direction, tier, zero_reason

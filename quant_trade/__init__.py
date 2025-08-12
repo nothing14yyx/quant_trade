@@ -9,7 +9,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type hints only
     from .feature_engineering import FeatureEngineer
     from .robust_signal_generator import RobustSignalGenerator
     from .coinmetrics_loader import CoinMetricsLoader
-    from .constants import ZeroReason
+    from .constants import RiskReason, ZeroReason
     from .offline_price_table import generate_offline_price_table
 
 __all__ = [
@@ -17,6 +17,7 @@ __all__ = [
     "FeatureEngineer",
     "RobustSignalGenerator",
     "CoinMetricsLoader",
+    "RiskReason",
     "ZeroReason",
     "generate_offline_price_table",
 ]
@@ -34,6 +35,7 @@ def __getattr__(name: str):
             "FeatureEngineer": "feature_engineering",
             "RobustSignalGenerator": "robust_signal_generator",
             "CoinMetricsLoader": "coinmetrics_loader",
+            "RiskReason": "constants",
             "ZeroReason": "constants",
             "generate_offline_price_table": "offline_price_table",
         }

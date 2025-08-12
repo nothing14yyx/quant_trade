@@ -1,6 +1,6 @@
 import pytest
 from quant_trade.tests.test_utils import make_dummy_rsg
-from quant_trade.constants import ZeroReason
+from quant_trade.constants import RiskReason
 
 
 def test_dynamic_min_risk_scaling():
@@ -31,7 +31,7 @@ def test_dynamic_min_risk_scaling():
     pos_high, direction_high, _, zero_reason_high = rsg.position_sizer.decide(**params)
     assert pos_high > 0
     assert direction_high == 1
-    assert zero_reason_high == ZeroReason.MIN_POS.value
+    assert zero_reason_high == RiskReason.MIN_POS.value
 
     rsg.risk_filters_enabled = False
     pos_off, direction_off, _, zero_reason_off = rsg.position_sizer.decide(**params)
@@ -63,7 +63,7 @@ def test_min_pos_vol_scaling():
     )
     pos_high, _, _, reason_high = rsg.position_sizer.decide(**params)
     assert pos_high > 0
-    assert reason_high == ZeroReason.MIN_POS.value
+    assert reason_high == RiskReason.MIN_POS.value
 
     rsg.min_pos_vol_scale = 0.0
     params["atr"] = 0.0
