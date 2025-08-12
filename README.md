@@ -125,6 +125,14 @@ print(community_metrics()[:5])
 
 在开始之前，请执行 `pip install -r requirements.txt` 安装依赖。
 
+若需在加载配置时启用自动校验，可额外安装可选依赖 `pydantic`：
+
+```bash
+pip install pydantic
+```
+
+未安装时程序会跳过校验，继续使用原始配置。
+
 完成安装后，可运行 `pytest -q tests` 执行自带的单元测试。
 
 ```bash
