@@ -1,5 +1,7 @@
 import math
-from collections import deque, OrderedDict
+from collections import deque
+
+from quant_trade.utils.lru import LRU
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.signal import FactorScorerImpl
@@ -7,7 +9,7 @@ from quant_trade.signal import FactorScorerImpl
 
 def make_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
-    rsg._factor_cache = OrderedDict()
+    rsg._factor_cache = LRU(300)
     rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.base_weights = {
         'ai': 0.2,

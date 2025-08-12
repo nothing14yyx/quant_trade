@@ -1,5 +1,7 @@
 import pytest
-from collections import deque, OrderedDict
+from collections import deque
+
+from quant_trade.utils.lru import LRU
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.signal import (
     PredictorAdapter,
@@ -12,7 +14,7 @@ from quant_trade.signal import (
 
 def make_rsg():
     r = RobustSignalGenerator.__new__(RobustSignalGenerator)
-    r._factor_cache = OrderedDict()
+    r._factor_cache = LRU(300)
     r.factor_scorer = FactorScorerImpl(r)
     r.history_scores = deque(maxlen=500)
     r.oi_change_history = deque(maxlen=500)

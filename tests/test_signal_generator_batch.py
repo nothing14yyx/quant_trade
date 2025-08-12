@@ -1,12 +1,12 @@
 import types
-from collections import OrderedDict
+from quant_trade.utils.lru import LRU
 from quant_trade.robust_signal_generator import RobustSignalGenerator
 from quant_trade.signal import FactorScorerImpl
 
 
 def test_generate_signal_batch_order_and_diagnose():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
-    rsg._factor_cache = OrderedDict()
+    rsg._factor_cache = LRU(300)
     rsg.factor_scorer = FactorScorerImpl(rsg)
     def stub_generate_signal(f1, f4, fd, *a, **k):
         rsg._diagnostic = {"id": f1["id"]}
