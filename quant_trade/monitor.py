@@ -3,13 +3,12 @@ import json
 import pandas as pd
 import altair as alt
 from sqlalchemy import text
-import json
-import logging
 
 from quant_trade.utils import load_config, connect_mysql
 from quant_trade.utils.db import CONFIG_PATH
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def fetch_recent(engine, limit=1000):

@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-import logging
 import pandas as pd
 import numpy as np
 import yaml
@@ -10,8 +9,9 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGeneratorConfig,
 )
 from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 项目根目录
 BASE_DIR = Path(__file__).resolve().parents[1]

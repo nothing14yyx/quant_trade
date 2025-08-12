@@ -20,9 +20,10 @@ from quant_trade.feature_loader import (
     load_global_metrics,
     load_symbol_categories,
 )
+from quant_trade.logging import get_logger
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def main(symbol: str = "ETHUSDT") -> None:

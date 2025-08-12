@@ -14,8 +14,9 @@ import requests
 from binance.exceptions import BinanceAPIException
 from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.utils.robust_scaler import load_scaler_params_from_json
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 try:  # Optional heavy imports for runtime use; tests can monkeypatch these
     from quant_trade.feature_loader import (

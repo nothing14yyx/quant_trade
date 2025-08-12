@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
 import pandas as pd
@@ -21,9 +20,10 @@ from quant_trade.utils.robust_scaler import (
     apply_robust_z_with_params,
 )
 from quant_trade.data_loader import compute_vix_proxy
+from quant_trade.logging import get_logger
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def load_latest_klines(engine, symbol: str, interval: str, limit: int = 1000) -> pd.DataFrame:

@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
-import logging
 from collections import Counter
 
 import numpy as np
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class FusionRuleBased:
