@@ -23,6 +23,7 @@ import logging
 import time
 import warnings
 import os
+from quant_trade.logging import get_logger
 
 from ..config_manager import ConfigManager
 from ..ai_model_predictor import AIModelPredictor
@@ -31,7 +32,7 @@ from ..feature_processor import FeatureProcessor
 from ..constants import ZeroReason
 from scipy.special import inv_boxcox
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 pd.set_option('future.no_silent_downcasting', True)
 
 # 默认配置路径

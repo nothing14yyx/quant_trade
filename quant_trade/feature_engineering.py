@@ -38,8 +38,9 @@ from quant_trade.utils.robust_scaler import (
 
 from quant_trade.utils.feature_health import health_check, apply_health_check_df
 from quant_trade.utils.soft_clip import soft_clip
+from quant_trade.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Future-related columns to drop for leakage prevention
 FUTURE_COLS = [

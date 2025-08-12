@@ -2,13 +2,14 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import text
 from pathlib import Path
-import logging
+
+from quant_trade.logging import get_logger
 
 from .config_manager import ConfigManager
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MarketPhaseCalculator:

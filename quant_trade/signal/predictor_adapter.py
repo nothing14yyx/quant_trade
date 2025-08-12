@@ -1,12 +1,12 @@
-import logging
 from typing import Any
 import numpy as np
 import pandas as pd
 from scipy.special import inv_boxcox
+from quant_trade.logging import get_logger
 
 from ..ai_model_predictor import AIModelPredictor
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PredictorAdapter:
