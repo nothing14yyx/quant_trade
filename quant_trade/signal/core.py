@@ -550,6 +550,7 @@ class RobustSignalGenerator:
         self.flip_coeff = get_cfg_value(cfg, "flip_coeff", 0.3)
         self.flip_confirm_bars = get_cfg_value(cfg, "flip_confirm_bars", 3)
         cw_cfg = get_cfg_value(cfg, "cycle_weight", {})
+        self.conflict_mult = get_cfg_value(cw_cfg, "conflict", 0.7)
         self.cycle_weight = {
             "strong": get_cfg_value(cw_cfg, "strong", 1.2),
             "weak": get_cfg_value(cw_cfg, "weak", 0.8),
@@ -764,6 +765,7 @@ class RobustSignalGenerator:
             "low_vol_ratio": DEFAULT_LOW_VOL_RATIO,
             "ai_dir_eps": DEFAULT_AI_DIR_EPS,
             "cycle_weight": {"strong": 1.2, "weak": 0.8, "opposite": 0.5},
+            "conflict_mult": 0.7,
             "flip_coeff": 0.3,
             "veto_level": 0.7,
             "veto_conflict_count": 1,

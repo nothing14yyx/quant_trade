@@ -659,6 +659,7 @@ cycle_weight:
   strong: 1.2
   weak: 0.8
   opposite: 0.5
+  conflict: 0.7
 
 # ===== 新增风险与仓位参数 =====
 regime:

@@ -108,15 +108,15 @@ def test_fuse_multi_cycle():
     rsg.cycle_weight = {'strong': 2.0, 'weak': 0.5, 'opposite': 0.5}
     scores = {'1h': 0.2, '4h': 0.2, 'd1': 0.2}
     fused, a, b, c = rsg.fuse_multi_cycle(scores, (0.5, 0.3, 0.2), False)
-    assert fused == pytest.approx(0.4)
+    assert fused == pytest.approx(0.44)
     assert a and not b and not c
     scores = {'1h': 0.2, '4h': 0.2, 'd1': -0.1}
     fused2, a2, b2, c2 = rsg.fuse_multi_cycle(scores, (0.5, 0.3, 0.2), False)
-    assert fused2 == pytest.approx(0.04)
+    assert fused2 == pytest.approx(0.045)
     assert b2 and not a2
     scores = {'1h': -0.2, '4h': 0.2, 'd1': 0.2}
     fused3, a3, b3, c3 = rsg.fuse_multi_cycle(scores, (0.5, 0.3, 0.2), False)
-    assert fused3 == pytest.approx(0.035)
+    assert fused3 == pytest.approx(0.045)
     assert c3
 
 

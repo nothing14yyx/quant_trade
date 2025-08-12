@@ -137,6 +137,7 @@ class CycleWeight(BaseModel):
     strong: float = 1.2
     weak: float = 0.8
     opposite: float = 0.5
+    conflict: float = 0.7
 
 
 class Regime(BaseModel):
