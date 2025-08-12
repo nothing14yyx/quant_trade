@@ -2687,7 +2687,7 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """执行资金费率、拥挤度等风险检查"""
-        result = self.risk_filters.apply_risk_filters(
+        ret = self.risk_filters.apply_risk_filters(
             fused_score,
             logic_score,
             env_score,
@@ -2706,8 +2706,25 @@ class RobustSignalGenerator:
             symbol,
         )
 
-        if result is None:
+        if ret is None:
             return None
+        score_mult, pos_mult, reasons = ret
+        fused_score *= score_mult
+        result = {
+            "fused_score": fused_score,
+            "risk_score": self.risk_filters.last_risk_score,
+            "crowding_factor": self.risk_filters.last_crowding_factor,
+            "crowding_adjusted": True,
+            "risk_th": self.risk_filters.last_risk_th,
+            "base_th": self.risk_filters.last_base_th,
+            "rev_boost": self.risk_filters.last_rev_boost,
+            "regime": self.risk_filters.last_regime,
+            "rev_dir": self.risk_filters.last_rev_dir,
+            "funding_conflicts": self.risk_filters.last_funding_conflicts,
+            "details": {"penalties": reasons} if reasons else {},
+            "pos_mult": pos_mult,
+            "score_mult": score_mult,
+        }
 
         sm = smooth_score(cache.get("history_scores", []), self.flip_confirm_bars)
         direction = int(np.sign(sm)) if sm else 0
@@ -2790,7 +2807,7 @@ class RobustSignalGenerator:
         symbol,
     ):
         """应用风险过滤并最终确定持仓"""
-        risk_info = self.risk_filters.apply_risk_filters(
+        ret = self.risk_filters.apply_risk_filters(
             scores["fused_score"],
             scores["logic_score"],
             scores["env_score"],
@@ -2813,8 +2830,25 @@ class RobustSignalGenerator:
             global_metrics,
             symbol,
         )
-        if risk_info is None:
+        if ret is None:
             return None, None, None, None
+        score_mult, pos_mult, reasons = ret
+        fused_score = scores["fused_score"] * score_mult
+        risk_info = {
+            "fused_score": fused_score,
+            "risk_score": self.risk_filters.last_risk_score,
+            "crowding_factor": self.risk_filters.last_crowding_factor,
+            "crowding_adjusted": True,
+            "risk_th": self.risk_filters.last_risk_th,
+            "base_th": self.risk_filters.last_base_th,
+            "rev_boost": self.risk_filters.last_rev_boost,
+            "regime": self.risk_filters.last_regime,
+            "rev_dir": self.risk_filters.last_rev_dir,
+            "funding_conflicts": self.risk_filters.last_funding_conflicts,
+            "details": {"penalties": reasons} if reasons else {},
+            "pos_mult": pos_mult,
+            "score_mult": score_mult,
+        }
         risk_info["logic_score"] = scores["logic_score"]
         risk_info["env_score"] = scores["env_score"]
         risk_info["consensus_all"] = scores["consensus_all"]

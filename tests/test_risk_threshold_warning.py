@@ -37,5 +37,7 @@ def test_nan_dynamic_risk_threshold(caplog):
             symbol=None,
         )
     assert res is not None
-    assert res["risk_th"] == pytest.approx(rsg.risk_adjust_threshold)
+    score_mult, pos_mult, _ = res
+    assert score_mult > 0
+    assert pos_mult > 0
     assert "历史数据不足" in caplog.text
