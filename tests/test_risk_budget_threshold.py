@@ -44,7 +44,10 @@ def test_risk_budget_threshold_in_filter():
         global_metrics=None,
         symbol=None,
     )
-    assert res is None
+    assert res is not None
+    score_mult, pos_mult, reasons = res
+    assert score_mult == 0.0
+    assert pos_mult == 0.0
 
     res2 = rsg.risk_filters.apply_risk_filters(
         fused_score=0.06,
@@ -65,7 +68,10 @@ def test_risk_budget_threshold_in_filter():
         symbol=None,
     )
     assert res2 is not None
-    assert res2["risk_th"] >= 0.05
+    score_mult2, pos_mult2, reasons2 = res2
+    assert score_mult2 > 0
+    assert pos_mult2 > 0
+    assert reasons2 == []
 
 
 def test_history_quantile_threshold():
@@ -98,7 +104,10 @@ def test_history_quantile_threshold():
         symbol=None,
     )
 
-    assert res is None
+    assert res is not None
+    score_mult, pos_mult, _ = res
+    assert score_mult == 0.0
+    assert pos_mult == 0.0
 
     res2 = rsg.risk_filters.apply_risk_filters(
         fused_score=0.06,
@@ -120,4 +129,7 @@ def test_history_quantile_threshold():
     )
 
     assert res2 is not None
+    score_mult2, pos_mult2, reasons2 = res2
+    assert score_mult2 > 0
+    assert pos_mult2 > 0
 

@@ -44,10 +44,11 @@ def test_penalty_on_risk_filters():
         symbol=None,
     )
     assert res is not None
-    assert pytest.approx(res["fused_score"], rel=1e-6) == 0.01225
-    penalties = res["details"]["penalties"]
-    assert ZeroReason.FUNDING_PENALTY.value in penalties
-    assert ZeroReason.RISK_PENALTY.value in penalties
+    score_mult, pos_mult, reasons = res
+    assert pytest.approx(score_mult, rel=1e-6) == 0.0245
+    assert pytest.approx(pos_mult, rel=1e-6) == 0.25
+    assert ZeroReason.FUNDING_PENALTY.value in reasons
+    assert ZeroReason.RISK_PENALTY.value in reasons
 
 
 def test_position_penalty_mode():
