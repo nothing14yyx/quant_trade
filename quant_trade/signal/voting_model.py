@@ -115,6 +115,16 @@ def load_cached_model(path: Path = DEFAULT_MODEL_PATH) -> VotingModel:
     return _model_cache
 
 
+def safe_load(path: Path = DEFAULT_MODEL_PATH) -> VotingModel | None:
+    """Safely load a model; return ``None`` if loading fails."""
+
+    try:
+        model = joblib.load(path)
+    except Exception:
+        return None
+    return VotingModel(model)
+
+
 def _main():  # pragma: no cover - simple CLI
     import argparse
 
