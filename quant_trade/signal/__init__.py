@@ -11,7 +11,7 @@ from .dynamic_thresholds import (
     ThresholdingDynamic,
     calc_dynamic_threshold,
 )
-from .thresholding_dynamic import compute_dynamic_threshold
+from .thresholding_dynamic import compute_dynamic_threshold, ThresholdParams
 from .predictor_adapter import PredictorAdapter
 from .factor_scorer import FactorScorerImpl
 from .fusion_rule import FusionRuleBased
@@ -42,6 +42,7 @@ __all__ = [
     "PositionSizerImpl",
     "compute_dynamic_threshold",
     "calc_dynamic_threshold",
+    "ThresholdParams",
     "calc_position_size",
     "VotingModel",
 ]
