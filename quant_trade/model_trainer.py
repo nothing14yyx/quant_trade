@@ -14,7 +14,7 @@ from pathlib import Path
 from sklearn.metrics import mean_absolute_error, log_loss
 from sklearn.metrics import precision_recall_curve
 from sklearn.impute import SimpleImputer
-from sklearn.model_selection import TimeSeriesSplit
+from quant_trade.utils.purged_split import PurgedTimeSeriesSplit
 from sklearn.pipeline import Pipeline
 
 
@@ -246,6 +246,9 @@ param_space_all = cfg["param_space"]
 fixed_params = cfg["fixed_params"]
 model_params = cfg.get("model_params", {})
 
+cv_cfg = cfg.get("cv", {})
+EMBARGO = int(cv_cfg.get("embargo", 0))
+
 # ---------- 2. 固定特征列 （来自 config.yaml 的 feature_cols） ----------
 feature_cols = cfg.get("feature_cols", {})
 if not feature_cols:
@@ -382,8 +385,25 @@ def train_one(
         logging.info("类别分布 %s", drop_data[tgt].value_counts().to_dict())
 
     # 时序切分
-    tscv = TimeSeriesSplit(n_splits=5)
-    splits = list(tscv.split(data))
+    tscv = PurgedTimeSeriesSplit(n_splits=5, embargo=EMBARGO)
+    splits: list[tuple[np.ndarray, np.ndarray]] = []
+    for fold_i, (tr_idx, va_idx) in enumerate(tscv.split(data), 1):
+        train_times = (
+            data.iloc[tr_idx]["open_time"]
+            if len(tr_idx) > 0
+            else pd.Series([], dtype="datetime64[ns]")
+        )
+        val_times = data.iloc[va_idx]["open_time"]
+        logging.info(
+            "Fold %s train %s~%s, val %s~%s, embargo=%s",
+            fold_i,
+            train_times.min() if len(train_times) else None,
+            train_times.max() if len(train_times) else None,
+            val_times.min(),
+            val_times.max(),
+            EMBARGO,
+        )
+        splits.append((tr_idx, va_idx))
 
     imputer = SimpleImputer(strategy="median", keep_empty_features=True)
 

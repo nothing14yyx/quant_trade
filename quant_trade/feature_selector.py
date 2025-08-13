@@ -14,13 +14,13 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 import shap
 import logging
 from sqlalchemy import create_engine
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from quant_trade.logging import get_logger
+from quant_trade.utils.purged_split import PurgedTimeSeriesSplit
 
 CONFIG_PATH = Path(__file__).resolve().parent / "utils" / "config.yaml"
 logger = get_logger(__name__)
@@ -49,6 +49,8 @@ EARLY_STOP = fs_cfg.get("early_stopping_rounds", 30)
 USE_PERM = fs_cfg.get("use_permutation", False)
 VAR_THRESH = fs_cfg.get("var_thresh", 1e-5)
 ROWS_LIMIT = fs_cfg.get("rows")
+cv_cfg = cfg.get("cv", {})
+EMBARGO = int(fs_cfg.get("embargo", cv_cfg.get("embargo", 0)))
 
 logger.info(
     "Config loaded: corr_thresh=%s, max_vif=%s, min_cover_map=%s, early_stop=%s, use_permutation=%s, var_thresh=%s, rows=%s, start_time=%s",
@@ -218,7 +220,7 @@ def select_features(
             logger.info("标签只有一个类别，跳过该周期。")
             continue
 
-        tscv = TimeSeriesSplit(n_splits=N_SPLIT)
+        tscv = PurgedTimeSeriesSplit(n_splits=N_SPLIT, embargo=EMBARGO)
         shap_imp = pd.Series(0.0, index=keep_cols, dtype=float)
         perm_imp = pd.Series(0.0, index=keep_cols, dtype=float) if use_permutation else None
         fold_cnt = 0
@@ -251,7 +253,22 @@ def select_features(
                 n_jobs=-1,
             )
 
-        for fold, (tr_idx, val_idx) in enumerate(tscv.split(X, y), 1):
+        for fold, (tr_idx, val_idx) in enumerate(tscv.split(subset), 1):
+            train_times = (
+                subset.iloc[tr_idx]["open_time"]
+                if len(tr_idx) > 0
+                else pd.Series([], dtype="datetime64[ns]")
+            )
+            val_times = subset.iloc[val_idx]["open_time"]
+            logger.info(
+                "Fold %s train %s~%s, val %s~%s, embargo=%s",
+                fold,
+                train_times.min() if len(train_times) else None,
+                train_times.max() if len(train_times) else None,
+                val_times.min(),
+                val_times.max(),
+                EMBARGO,
+            )
             X_train, y_train = X.iloc[tr_idx], y.iloc[tr_idx]
             X_val, y_val = X.iloc[val_idx], y.iloc[val_idx]
 

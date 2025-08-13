@@ -3,7 +3,8 @@ from collections import deque
 import logging
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import ParameterGrid, TimeSeriesSplit
+from sklearn.model_selection import ParameterGrid
+from quant_trade.utils.purged_split import PurgedTimeSeriesSplit
 from joblib import Parallel, delayed
 from tqdm import tqdm
 import optuna
@@ -281,17 +282,36 @@ def run_param_search(
     if df.empty:
         raise ValueError("features 表无数据")
     df = df.sort_values("open_time").reset_index(drop=True)
+    cfg = load_config()
+    embargo = int(cfg.get("cv", {}).get("embargo", 0))
     if n_splits <= 1:
         train_len = int(len(df) * (1 - test_ratio))
-        splits = [(df.iloc[:train_len], df.iloc[train_len:])]
+        tr, va = df.iloc[:train_len], df.iloc[train_len:]
+        logger.info(
+            "Fold 1 train %s~%s, val %s~%s, embargo=%s",
+            tr["open_time"].min(),
+            tr["open_time"].max(),
+            va["open_time"].min(),
+            va["open_time"].max(),
+            embargo,
+        )
+        splits = [(tr, va)]
     else:
-        tscv = TimeSeriesSplit(n_splits=n_splits)
-        splits = [
-            (df.iloc[tr_idx], df.iloc[val_idx])
-            for tr_idx, val_idx in tscv.split(df)
-        ]
+        tscv = PurgedTimeSeriesSplit(n_splits=n_splits, embargo=embargo)
+        splits = []
+        for fold_i, (tr_idx, val_idx) in enumerate(tscv.split(df), 1):
+            tr, va = df.iloc[tr_idx], df.iloc[val_idx]
+            logger.info(
+                "Fold %d train %s~%s, val %s~%s, embargo=%s",
+                fold_i,
+                tr["open_time"].min(),
+                tr["open_time"].max(),
+                va["open_time"].min(),
+                va["open_time"].max(),
+                embargo,
+            )
+            splits.append((tr, va))
 
-    cfg = load_config()
     rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
     sg = RobustSignalGenerator(rsg_cfg)
     cached_ics = [precompute_ic_scores(tr, sg) for tr, _ in splits]
