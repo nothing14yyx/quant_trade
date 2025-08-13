@@ -1,6 +1,17 @@
 # Quant Trade 项目
 
-该仓库包含一个量化交易的数据处理与信号生成框架，主要组件包括：
+该仓库包含一个量化交易的数据处理与信号生成框架。
+
+## 示例使用
+
+训练完成后会在 `models/` 目录生成 `report.json`，汇总交叉验证区间、embargo、模型参数与评估指标。
+可运行示例脚本查看推理与简单回测流程：
+
+```bash
+python backtests/demo_backtest.py
+```
+
+主要组件包括：
 
 - **DataLoader**：从币安接口同步行情、资金费率及情绪指数，并可按日拉取 CoinGecko 的市值与板块数据。
 - **CoinMetricsLoader**：批量获取更多链上指标。

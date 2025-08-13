@@ -12,6 +12,7 @@ import datetime
 import logging
 import gc
 from pathlib import Path
+from typing import Any
 from sklearn.metrics import (
     mean_absolute_error,
     log_loss,
@@ -354,7 +355,7 @@ def train_one(
     period: str,
     tag: str,
     regression: bool = False,
-) -> None:
+) -> dict[str, Any]:
 
     # 5-1  缺列补 NaN，并记录重命名映射
     df_all, feat_use, rename_map = _sanitize_feature_names(df_all, features.copy())
@@ -411,6 +412,7 @@ def train_one(
     # 时序切分
     tscv = PurgedTimeSeriesSplit(n_splits=5, embargo=EMBARGO)
     splits: list[tuple[np.ndarray, np.ndarray]] = []
+    fold_info: list[dict[str, str | None]] = []
     for fold_i, (tr_idx, va_idx) in enumerate(tscv.split(data), 1):
         train_times = (
             data.iloc[tr_idx]["open_time"]
@@ -428,7 +430,20 @@ def train_one(
             EMBARGO,
         )
         splits.append((tr_idx, va_idx))
-    report_data = {"splits": {**cv_cfg, "n_splits": len(splits)}, "embargo": EMBARGO}
+        fold_info.append(
+            {
+                "train_start": (
+                    train_times.min().isoformat() if len(train_times) else None
+                ),
+                "train_end": (
+                    train_times.max().isoformat() if len(train_times) else None
+                ),
+                "val_start": val_times.min().isoformat(),
+                "val_end": val_times.max().isoformat(),
+            }
+        )
+
+    report_data = {"folds": fold_info, "embargo": EMBARGO}
 
     imputer = SimpleImputer(strategy="median", keep_empty_features=True)
 
@@ -744,14 +759,16 @@ def train_one(
     logging.info(
         f"✔ Saved: {model_path.name}  ({score_label} {best_val:.4f}, th{best_th:.3f})"
     )
-    with open(model_path.parent / "report.json", "w", encoding="utf-8") as f:
-        json.dump(report_data, f, ensure_ascii=False, indent=2)
 
     # 5-8  打印前 15 个重要特征
     if feat_imp is not None:
         imp = pd.Series(feat_imp, index=feat_use).sort_values(ascending=False)
         imp.to_csv(model_path.with_suffix(".feat_imp.csv"))
         logging.info(imp.head(15).to_string())
+
+    report_data["metrics"] = report_data.get("metrics", metrics)
+    report_data["params"] = best_params
+    return report_data
 
 
 # ---------- 6. 周期 × 方向 × 符号 训练循环 ----------
@@ -762,6 +779,8 @@ def train_models(
     global df
     df = load_features(start_time=start_time, rows=rows)
     symbols = df["symbol"].unique() if train_by_symbol else [None]
+
+    summary: dict[str, Any] = {}
 
     for sym in symbols:
         df_sym = df[df["symbol"] == sym] if sym is not None else df
@@ -797,7 +816,7 @@ def train_models(
                     out_file = out_dir / file_name
                     period_suffix = "" if period == "1h" else f"_{period}"
                     tgt_col = f"{tgt_col_base}{period_suffix}"
-                    train_one(
+                    report = train_one(
                         subset.copy(),
                         tag_cols.get(tag, []),
                         tgt_col,
@@ -806,8 +825,21 @@ def train_models(
                         tag,
                         regression=(tag in ("vol", "rise", "drawdown")),
                     )
+                    key = str(out_file)
+                    summary[key] = {
+                        "symbol": sym,
+                        "period": period,
+                        "tag": tag,
+                        "path": key,
+                        **report,
+                    }
 
-    logging.info("\n✅  All models finished.")
+    models_dir = Path("models")
+    models_dir.mkdir(exist_ok=True)
+    with open(models_dir / "report.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+
+    logging.info("\n✅  All models finished. report.json 已生成。")
 
 
 train_models()
