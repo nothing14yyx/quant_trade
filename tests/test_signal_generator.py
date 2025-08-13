@@ -57,6 +57,20 @@ def test_dynamic_threshold_basic():
     assert th == pytest.approx(0.08)
 
 
+def test_generate_signal_exposes_risk_fields():
+    """``generate_signal`` 应返回风险相关的详细字段。"""
+    rsg = make_dummy_rsg()
+    res = rsg.generate_signal({}, {}, {})
+    details = res["details"]
+    for key in ("crowding_factor", "oi_threshold", "risk_score", "base_th", "flip", "cooldown"):
+        assert key in details
+    assert details["crowding_factor"] >= 0
+    assert details["risk_score"] >= 0
+    assert details["base_th"] == pytest.approx(0.0)
+    assert details["flip"] is False
+    assert details["cooldown"] == 0
+
+
 def test_get_dynamic_oi_threshold():
     rsg = make_dummy_rsg()
     rsg.oi_change_history.extend([0.1]*80 + [0.6]*20)
