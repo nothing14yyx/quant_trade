@@ -9,7 +9,6 @@ from typing import Any, Mapping
 
 from .core import RobustSignalGenerator
 from .factor_scorer import FactorScorerImpl
-from .fusion_rule import FusionRuleBased
 from .position_sizer import PositionSizerImpl
 from .predictor_adapter import PredictorAdapter
 from .risk_filters import RiskFiltersImpl
@@ -48,8 +47,6 @@ class SignalEngine:
         :class:`PredictorAdapter`，用于计算 AI 分数。
     factor_scorer:
         :class:`FactorScorerImpl`，因子得分计算器。
-    fusion_rule:
-        :class:`FusionRuleBased`，多周期融合规则实现。
     risk_filters:
         :class:`RiskFiltersImpl`，风险与阈值过滤器。
     position_sizer:
@@ -61,21 +58,18 @@ class SignalEngine:
         rsg: RobustSignalGenerator,
         predictor: PredictorAdapter,
         factor_scorer: FactorScorerImpl,
-        fusion_rule: FusionRuleBased,
         risk_filters: RiskFiltersImpl,
         position_sizer: PositionSizerImpl,
     ) -> None:
         self.rsg = rsg
         self.predictor = predictor
         self.factor_scorer = factor_scorer
-        self.fusion_rule = fusion_rule
         self.risk_filters = risk_filters
         self.position_sizer = position_sizer
 
         # 确保 RobustSignalGenerator 使用外部传入的组件
         self.rsg.predictor = predictor
         self.rsg.factor_scorer = factor_scorer
-        self.rsg.fusion_rule = fusion_rule
         self.rsg.risk_filters = risk_filters
         self.rsg.position_sizer = position_sizer
 
