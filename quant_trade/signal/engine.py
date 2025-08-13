@@ -12,7 +12,6 @@ from .factor_scorer import FactorScorerImpl
 from .position_sizer import PositionSizerImpl
 from .predictor_adapter import PredictorAdapter
 from .risk_filters import RiskFiltersImpl
-from .position_sizing import calc_position_size
 
 
 def _to_float_dict(data: Mapping[str, Any]) -> dict[str, Any]:
@@ -226,7 +225,7 @@ class SignalEngine:
         )
         if result is None:
             return None
-        result["position_size"] = calc_position_size(
+        result["position_size"] = min(
             result.get("position_size", 0.0), self.rsg.max_position
         )
         return _to_float_dict(result)

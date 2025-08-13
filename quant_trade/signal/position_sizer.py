@@ -9,7 +9,6 @@ from ..constants import RiskReason
 from .utils import sigmoid
 from quant_trade.utils import get_cfg_value
 from .position_sizing import (
-    calc_position_size,
     compute_exit_multiplier as _compute_exit_multiplier,
     compute_tp_sl as _compute_tp_sl,
     _apply_risk_adjustment as apply_risk_adjustment,
@@ -244,7 +243,7 @@ class PositionSizerImpl:
         pos_size = base_size * sigmoid(confidence_factor)
         pos_size = self._apply_risk_adjustment(pos_size, risk_score)
         pos_size *= exit_mult
-        pos_size = calc_position_size(pos_size, self.rsg.max_position)
+        pos_size = min(pos_size, self.rsg.max_position)
         pos_size *= crowding_factor
         if direction == 0:
             pos_size = 0.0
@@ -268,6 +267,6 @@ class PositionSizerImpl:
             pos_size = min(max(pos_size, dynamic_min), self.rsg.max_position)
             zero_reason = RiskReason.MIN_POS.value
 
-        pos_size = calc_position_size(pos_size, self.rsg.max_position)
+        pos_size = min(pos_size, self.rsg.max_position)
 
         return pos_size, direction, tier, zero_reason

@@ -5,13 +5,46 @@ from typing import Tuple
 
 import numpy as np
 
-from .utils import sigmoid
+from .utils import sigmoid_dir
 from quant_trade.utils import get_cfg_value
 
 
-def calc_position_size(strength: float, target_risk: float) -> float:
-    """根据信号强度计算目标仓位大小并按风险预算压缩。"""
-    return min(abs(strength), target_risk)
+def calc_position_size(
+    fused_score: float,
+    base_th: float,
+    *,
+    max_position: float,
+    gamma: float = 0.05,
+    cvar_target: float | None = None,
+    vol_target: float | None = None,
+    min_exposure: float | None = None,
+) -> float:
+    """根据信号强度及风险目标计算最终仓位。
+
+    参数
+    ----
+    fused_score: 综合后的信号分数。
+    base_th: 基准阈值，用于确定信号有效性。
+    max_position: 仓位上限。
+    gamma: ``sigmoid_dir`` 平滑系数。
+    cvar_target: 来自 CVaR 管控的目标仓位(可选)。
+    vol_target: 来自波动率管控的目标仓位(可选)。
+    min_exposure: 信号弱但方向未被否定时的最低敞口(可选)。
+    """
+
+    strength = sigmoid_dir(fused_score, base_th, gamma)
+    target_risk = abs(strength) * max_position
+    final_size = target_risk
+
+    if cvar_target is not None:
+        final_size = min(final_size, cvar_target)
+    if vol_target is not None:
+        final_size = min(final_size, vol_target)
+
+    if min_exposure is not None and strength != 0:
+        final_size = max(final_size, min(min_exposure, max_position))
+
+    return final_size
 
 
 def compute_exit_multiplier(rsg, vote: float, prev_vote: float, last_signal: int) -> float:
