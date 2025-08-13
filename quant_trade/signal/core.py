@@ -16,6 +16,16 @@ from . import features_to_scores, ai_inference, multi_period_fusion
 from . import dynamic_thresholds, risk_filters, position_sizing
 
 
+class AIModelPredictor:  # pragma: no cover - compatibility stub
+    """Placeholder predictor to be monkeypatched in tests."""
+
+    def __init__(self, model_paths):
+        self.model_paths = model_paths
+
+    def get_ai_score(self, *args, **kwargs):  # pragma: no cover
+        return 0.0
+
+
 def _safe_factor_scores(period_features: Mapping[str, Mapping[str, Any]]) -> dict:
     """Helper to obtain factor scores for each period."""
     scores: dict[str, Any] = {}
@@ -25,7 +35,15 @@ def _safe_factor_scores(period_features: Mapping[str, Mapping[str, Any]]) -> dic
             scores[period] = features_to_scores.get_factor_scores(feats, period)
         except TypeError:
             # backward compat: get_factor_scores(core, features, period)
-            scores[period] = features_to_scores.get_factor_scores(None, feats, period)
+            from ..robust_signal_generator import RobustSignalGenerator
+
+            class _Cache(dict):
+                def set(self, k, v):
+                    self[k] = v
+
+            stub = RobustSignalGenerator.__new__(RobustSignalGenerator)
+            stub._factor_cache = _Cache()
+            scores[period] = features_to_scores.get_factor_scores(stub, feats, period)
     return scores
 
 
