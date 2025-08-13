@@ -4,17 +4,19 @@ from enum import StrEnum
 class RiskReason(StrEnum):
     """风险过滤或归零原因枚举"""
 
-    NO_DIRECTION = "no_direction"
-    VOL_RATIO = "vol_ratio"
-    MIN_POS = "min_pos"
-    VOTE_FILTER = "vote_filter"
-    FUNDING_CONFLICT = "funding_conflict"
-    CONFLICT_FILTER = "conflict_filter"
-    VOTE_PENALTY = "vote_penalty"
-    FUNDING_PENALTY = "funding_penalty"
-    CONFLICT_PENALTY = "conflict_penalty"
-    RISK_LIMIT = "risk_limit"
-    OI_OVERHEAT = "oi_overheat"
+    NO_DIRECTION = "NO_DIRECTION"
+    VOL_RATIO = "VOL_RATIO"
+    MIN_POS = "MIN_POS"
+    VOTE_FILTER = "VOTE_FILTER"
+    FUNDING_CONFLICT = "FUNDING_CONFLICT"
+    CONFLICT_FILTER = "CONFLICT_FILTER"
+    VOTE_PENALTY = "VOTE_PENALTY"
+    FUNDING_PENALTY = "FUNDING_PENALTY"
+    CONFLICT_PENALTY = "CONFLICT_PENALTY"
+    CROWDING_FILTER = "CROWDING_FILTER"
+    CROWDING_PENALTY = "CROWDING_PENALTY"
+    RISK_LIMIT = "RISK_LIMIT"
+    OI_OVERHEAT = "OI_OVERHEAT"
 
 
 # 旧名称的兼容别名

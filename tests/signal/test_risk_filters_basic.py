@@ -100,5 +100,5 @@ def test_crowding_conflict_reason(monkeypatch):
     )
     assert score_mult == pytest.approx(1.0)
     assert pos_mult == pytest.approx(0.5)
-    assert reasons == [RiskReason.CONFLICT_PENALTY.value]
+    assert reasons == [RiskReason.CROWDING_PENALTY.value]
 
