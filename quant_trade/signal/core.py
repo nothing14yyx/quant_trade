@@ -133,7 +133,12 @@ def generate_signal(
 
     # 6. 仓位与 TP/SL
     final_score = fused_score * score_mult
-    pos_size = position_sizing.calc_position_size(final_score, pos_mult)
+    pos_size = position_sizing.calc_position_size(
+        final_score,
+        base_th,
+        max_position=pos_mult,
+        min_exposure=0.2 * pos_mult,
+    )
     take_profit, stop_loss = None, None
 
     return {
