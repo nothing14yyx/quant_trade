@@ -10,8 +10,28 @@ from typing import Iterable, TYPE_CHECKING
 
 from .utils import smooth_series, _calc_history_base
 
-if TYPE_CHECKING:  # pragma: no cover - only for type hints
-    from .core import SignalThresholdParams, DynamicThresholdParams
+
+@dataclass
+class SignalThresholdParams:
+    """Simplified parameters for signal thresholding."""
+
+    base_th: float = 0.0
+    low_base: float = 0.0
+    quantile: float = 0.8
+    rev_boost: float = 0.0
+    rev_th_mult: float = 1.0
+
+
+@dataclass
+class DynamicThresholdParams:
+    """Parameters controlling dynamic threshold adjustments."""
+
+    atr_mult: float = 3.63636363636
+    atr_cap: float = 0.2
+    funding_mult: float = 2.7586206897
+    funding_cap: float = 0.2
+    adx_div: float = 25.0
+    adx_cap: float = 0.2
 
 
 def compute_dynamic_threshold(history_scores: Iterable[float], window: int, quantile: float):
@@ -76,8 +96,6 @@ def calc_dynamic_threshold(params: DynamicThresholdInput) -> tuple[float, float]
 
     Parameters are provided via :class:`DynamicThresholdInput`.
     """
-    from .core import SignalThresholdParams, DynamicThresholdParams  # local import
-
     sig_p = params.signal_params or SignalThresholdParams()
     dyn_p = params.dynamic_params or DynamicThresholdParams()
 
