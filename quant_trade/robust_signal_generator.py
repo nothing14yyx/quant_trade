@@ -8,7 +8,13 @@ import math
 import threading
 import types
 
-from .signal import core, calc_position_size
+from .signal import (
+    core,
+    calc_position_size,
+    compute_dynamic_threshold as _compute_dynamic_threshold,
+    ThresholdParams,
+    DynamicThresholdInput,
+)
 from .signal.dynamic_thresholds import DynamicThresholdParams, SignalThresholdParams
 from .signal.position_sizing import apply_normalized_multipliers
 from .constants import RiskReason
@@ -87,6 +93,42 @@ class RobustSignalGenerator:
 
     def detect_market_regime(self, *args, **kwargs):  # pragma: no cover
         return "range"
+
+    def compute_dynamic_threshold(
+        self,
+        data: Mapping[str, Any] | Any,
+        history_scores=None,
+        *,
+        base: float | None = None,
+        phase_mult: Mapping[str, float] | None = None,
+    ):
+        """Compute dynamic threshold via pure utility function.
+
+        Parameters are gathered from ``signal_params`` and ``dynamic_th_params``
+        to form :class:`ThresholdParams`, then delegated to
+        :func:`_compute_dynamic_threshold`.
+        """
+
+        params = ThresholdParams(
+            base_th=self.signal_params.base_th if base is None else base,
+            low_base=self.signal_params.low_base,
+            quantile=self.signal_params.quantile,
+            rev_boost=self.signal_params.rev_boost,
+            rev_th_mult=self.signal_params.rev_th_mult,
+            atr_mult=self.dynamic_th_params.atr_mult,
+            atr_cap=self.dynamic_th_params.atr_cap,
+            funding_mult=self.dynamic_th_params.funding_mult,
+            funding_cap=self.dynamic_th_params.funding_cap,
+            adx_div=self.dynamic_th_params.adx_div,
+            adx_cap=self.dynamic_th_params.adx_cap,
+            smooth_window=getattr(self, "smooth_window", 20),
+            smooth_alpha=getattr(self, "smooth_alpha", 0.2),
+            smooth_limit=getattr(self, "smooth_limit", 1.0),
+            th_window=getattr(self, "th_window", 60),
+            th_decay=getattr(self, "th_decay", 2.0),
+        )
+        hist = history_scores or getattr(self, "history_scores", None)
+        return _compute_dynamic_threshold(data, params, hist, phase_mult)
 
     # ------------------------------------------------------------------
     # Position finalization helpers
@@ -398,4 +440,10 @@ class RobustSignalGenerator:
         return result
 
 
-__all__ = ["RobustSignalGenerator", "RobustSignalGeneratorConfig"]
+__all__ = [
+    "RobustSignalGenerator",
+    "RobustSignalGeneratorConfig",
+    "SignalThresholdParams",
+    "DynamicThresholdParams",
+    "DynamicThresholdInput",
+]
