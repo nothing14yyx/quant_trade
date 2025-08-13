@@ -120,6 +120,15 @@ def test_fuse_multi_cycle():
     assert c3
 
 
+def test_fuse_multi_cycle_conflict_mult():
+    rsg = make_dummy_rsg()
+    scores = {'1h': 0.2, '4h': -0.1, 'd1': 0.1}
+    fused, a, b, c = rsg.fuse_multi_cycle(scores, (0.5, 0.3, 0.2), False)
+    expected = scores['1h'] * getattr(rsg, 'conflict_mult', 0.7)
+    assert fused == pytest.approx(expected)
+    assert not (a or b or c)
+
+
 def test_ai_dir_inconsistent_flagged():
     rsg = make_dummy_rsg()
     rsg.ai_dir_eps = 0.1
@@ -141,7 +150,10 @@ def test_ai_dir_inconsistent_flagged():
         None,
         None,
     )
-    assert res is not None and res["conflict"]
+    expected = 0.3 * getattr(rsg, "conflict_mult", 0.7)
+    assert "fused_score" in res
+    assert res["fused_score"] == pytest.approx(expected)
+    assert res["conflict"]
 
 
 def test_ai_dir_eps_threshold_check():
@@ -165,7 +177,9 @@ def test_ai_dir_eps_threshold_check():
         None,
         None,
     )
-    assert res is not None and res["conflict"]
+    assert "fused_score" in res
+    assert res["fused_score"] == pytest.approx(0.0)
+    assert res["conflict"]
 
 
 def test_compute_exit_multiplier():
