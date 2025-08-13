@@ -41,6 +41,7 @@ from .fusion_rule import FusionRuleBased
 from .risk_filters import RiskFiltersImpl
 from .position_sizer import PositionSizerImpl
 from .predictor_adapter import PredictorAdapter
+from .ai_inference import get_period_ai_scores, get_reg_predictions
 from .engine import SignalEngine
 
 __all__ = [
@@ -80,5 +81,7 @@ __all__ = [
     "RiskFiltersImpl",
     "PositionSizerImpl",
     "PredictorAdapter",
+    "get_period_ai_scores",
+    "get_reg_predictions",
     "SignalEngine",
 ]
