@@ -13,6 +13,7 @@ from .signal.dynamic_thresholds import DynamicThresholdParams, SignalThresholdPa
 from .signal.position_sizing import apply_normalized_multipliers
 from .constants import RiskReason
 from .risk_manager import cvar_limit
+from .signal.voting_model import safe_load, DEFAULT_MODEL_PATH
 
 
 @dataclass
@@ -23,6 +24,9 @@ class RobustSignalGeneratorConfig:
     feature_cols_1h: list[str] = field(default_factory=list)
     feature_cols_4h: list[str] = field(default_factory=list)
     feature_cols_d1: list[str] = field(default_factory=list)
+    prob_margin: float = 0.1
+    strong_prob_th: float = 0.8
+    config_path: str | Path | None = None
 
     @classmethod
     def from_cfg(
@@ -35,6 +39,9 @@ class RobustSignalGeneratorConfig:
             feature_cols_1h=cfg.get("feature_cols_1h", []),
             feature_cols_4h=cfg.get("feature_cols_4h", []),
             feature_cols_d1=cfg.get("feature_cols_d1", []),
+            prob_margin=cfg.get("prob_margin", 0.1),
+            strong_prob_th=cfg.get("strong_prob_th", 0.8),
+            config_path=cfg_path,
         )
 
 
@@ -84,6 +91,82 @@ class RobustSignalGenerator:
     # ------------------------------------------------------------------
     # Position finalization helpers
     # ------------------------------------------------------------------
+    def _compute_vote(
+        self,
+        fused_score: float,
+        ai_scores: Mapping[str, float],
+        short_mom: float,
+        vol_breakout: float | None,
+        factor_scores: Mapping[str, float],
+        score_details: Mapping[str, Any],
+        confirm_15m: float,
+        ob_imb: float,
+        base_th: float,
+    ) -> dict[str, Any]:
+        """Compute vote using probabilistic model if available."""
+
+        model_path: Path | None = None
+        if self.cfg:
+            mp = self.cfg.model_paths.get("voting_model")
+            if isinstance(mp, Mapping):
+                first = next(iter(mp.values()), None)
+                if first is not None:
+                    model_path = Path(first)
+            elif isinstance(mp, str):
+                model_path = Path(mp)
+
+        model = safe_load(model_path or DEFAULT_MODEL_PATH)
+        vote: float
+        prob: float
+        confidence: float
+
+        if model is None:
+            # fallback to legacy linear vote
+            vote_weights = getattr(self, "vote_weights", {"ai": 1.0})
+            raw_vote = vote_weights.get("ai", 1.0) * ai_scores.get("1h", 0.0)
+            prob = 1.0 / (1.0 + math.exp(-raw_vote))
+            confidence = abs(prob - 0.5) * 2.0
+            vote = math.copysign(confidence, raw_vote)
+        else:
+            def sgn(x: float) -> int:
+                return 1 if x > 0 else -1 if x < 0 else 0
+
+            features = {
+                "ai_dir": sgn(ai_scores.get("1h", 0.0)),
+                "short_mom_dir": sgn(short_mom),
+                "vol_breakout_dir": sgn(vol_breakout or 0.0),
+                "trend_dir": sgn(factor_scores.get("trend", 0.0)),
+                "confirm_dir": sgn(confirm_15m),
+                "ob_dir": sgn(ob_imb),
+                "abs_ai_score": abs(ai_scores.get("1h", 0.0)),
+                "abs_momentum": abs(short_mom),
+                "consensus_all": score_details.get("consensus_all", 0.0),
+                "ic_weight": score_details.get("ic_weight", 0.0),
+                "abs_score_minus_base_th": abs(fused_score) - base_th,
+                "confirm_15m": confirm_15m,
+                "short_mom": short_mom,
+                "ob_imb": ob_imb,
+            }
+            X = [[features.get(col, 0.0) for col in model.feature_cols]]
+            proba = model.predict_proba(X)[0]
+            prob = float(proba[1])
+            confidence = max(prob, 1 - prob)
+            direction = 1 if prob >= 0.5 else -1
+            vote = direction * confidence
+
+        prob_margin = self.cfg.prob_margin if self.cfg else 0.0
+        weak_vote = 0.5 - prob_margin <= prob <= 0.5 + prob_margin
+        strong_prob_th = self.cfg.strong_prob_th if self.cfg else 1.0
+        strong_confirm = confidence >= strong_prob_th
+
+        return {
+            "vote": float(vote),
+            "prob": float(prob),
+            "confidence": float(confidence),
+            "weak_vote": weak_vote,
+            "strong_confirm": strong_confirm,
+        }
+
     def finalize_position(
         self,
         fused_score: float,
@@ -173,22 +256,46 @@ class RobustSignalGenerator:
             final_score = fused_score * score_mult
 
         # -------------------------- direction & vote --------------------
-        vote_weights = getattr(self, "vote_weights", {"ai": 1.0})
-        min_vote = getattr(self, "signal_filters", {}).get("min_vote", 0.0)
         vol_breakout = raw_f1h.get("vol_breakout_1h")
         if vol_breakout is None:
             vol_breakout = std_1h.get("vol_breakout_1h")
-        vote = vote_weights.get("ai", 1.0) * ai_scores.get("1h", 0.0)
-        direction = 1 if fused_for_pos > 0 else -1 if fused_for_pos < 0 else 0
+        vote_res = self._compute_vote(
+            fused_for_pos,
+            ai_scores,
+            short_mom,
+            vol_breakout,
+            fs.get("1h", {}),
+            scores,
+            confirm_15m,
+            ob_imb,
+            risk_info.get("base_th", self.signal_params.base_th),
+        )
+        vote = vote_res["vote"]
+        prob = vote_res["prob"]
+        confidence = vote_res["confidence"]
+        weak_vote = vote_res["weak_vote"]
+        strong_confirm = vote_res["strong_confirm"]
+
+        min_vote = getattr(self, "signal_filters", {}).get("min_vote", 0.0)
+        direction = 1 if vote > 0 else -1 if vote < 0 else 0
         zero_reason = None
         if abs(vote) < min_vote or (vol_breakout is not None and vol_breakout <= 0):
             direction = 0
             zero_reason = RiskReason.VOTE_FILTER.value
 
         # record some vote related details
-        details.setdefault("vote", {})["ob_th"] = getattr(
-            self, "ob_th_params", {"min_ob_th": 0}
-        ).get("min_ob_th", 0)
+        details.setdefault("vote", {}).update(
+            {
+                "value": vote,
+                "prob": prob,
+                "confidence": confidence,
+                "weak_vote": weak_vote,
+                "ob_th": getattr(self, "ob_th_params", {"min_ob_th": 0}).get(
+                    "min_ob_th", 0
+                ),
+            }
+        )
+        details["strong_confirm_vote"] = strong_confirm
 
         # ----------------------- position sizing -----------------------
         base_th = risk_info.get("base_th", self.signal_params.base_th)
@@ -277,6 +384,10 @@ class RobustSignalGenerator:
             "stop_loss": sl,
             "zero_reason": zero_reason,
             "details": details,
+            "vote": float(vote),
+            "prob": float(prob),
+            "weak_vote": weak_vote,
+            "strong_confirm": strong_confirm,
         }
 
         if getattr(self, "enable_factor_breakdown", False):
