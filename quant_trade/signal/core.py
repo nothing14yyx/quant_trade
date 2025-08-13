@@ -119,17 +119,19 @@ def generate_signal(
 
     # 5. 风险乘数
     try:
-        score_mult, pos_mult, reasons = risk_filters.compute_risk_multipliers(
-            fused_score,
-            base_th,
-            combined,
-            global_metrics=global_metrics,
-            open_interest=open_interest,
-            all_scores_list=all_scores_list,
-            symbol=symbol,
+        score_mult, pos_mult, reasons, risk_info = (
+            risk_filters.compute_risk_multipliers(
+                fused_score,
+                base_th,
+                combined,
+                global_metrics=global_metrics,
+                open_interest=open_interest,
+                all_scores_list=all_scores_list,
+                symbol=symbol,
+            )
         )
-    except Exception:
-        score_mult, pos_mult, reasons = 1.0, 1.0, []
+    except Exception:  # pragma: no cover - graceful fallback
+        score_mult, pos_mult, reasons, risk_info = 1.0, 1.0, [], {}
 
     # 6. 仓位与 TP/SL
     final_score = fused_score * score_mult
@@ -141,25 +143,32 @@ def generate_signal(
     )
     take_profit, stop_loss = None, None
 
+    details = {
+        "factor_scores": factor_scores,
+        "ai_scores": ai_scores,
+        "vol_preds": vol_preds,
+        "rise_preds": rise_preds,
+        "drawdown_preds": drawdown_preds,
+        "consensus_all": consensus_all,
+        "consensus_14": consensus_14,
+        "consensus_4d1": consensus_4d1,
+        "risk_reasons": reasons,
+        "base_th": risk_info.get("base_th", base_th),
+        "rev_boost": rev_boost,
+        "crowding_factor": risk_info.get("crowding_factor"),
+        "oi_threshold": risk_info.get("oi_threshold"),
+        "risk_score": risk_info.get("risk_score"),
+        "flip": bool(risk_info.get("rev_dir")),
+        "cooldown": risk_info.get("cooldown"),
+    }
+
     return {
         "signal": int(np.sign(final_score)),
         "score": float(final_score),
         "position_size": float(pos_size),
         "take_profit": take_profit,
         "stop_loss": stop_loss,
-        "details": {
-            "factor_scores": factor_scores,
-            "ai_scores": ai_scores,
-            "vol_preds": vol_preds,
-            "rise_preds": rise_preds,
-            "drawdown_preds": drawdown_preds,
-            "consensus_all": consensus_all,
-            "consensus_14": consensus_14,
-            "consensus_4d1": consensus_4d1,
-            "risk_reasons": reasons,
-            "base_th": base_th,
-            "rev_boost": rev_boost,
-        },
+        "details": details,
     }
 
 
