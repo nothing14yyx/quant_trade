@@ -7,6 +7,7 @@ from .dynamic_thresholds import (
     ThresholdingDynamic,
     calc_dynamic_threshold,
     adaptive_rsi_threshold,
+    ThresholdParams,
 )
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "ThresholdingDynamic",
     "calc_dynamic_threshold",
     "adaptive_rsi_threshold",
+    "ThresholdParams",
 ]

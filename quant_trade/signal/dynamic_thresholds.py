@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
-from typing import Iterable, TYPE_CHECKING
+from typing import Iterable, Mapping, TYPE_CHECKING, Any
 
 from .utils import smooth_series, _calc_history_base
 
@@ -34,14 +34,168 @@ class DynamicThresholdParams:
     adx_cap: float = 0.2
 
 
-def compute_dynamic_threshold(history_scores: Iterable[float], window: int, quantile: float):
-    """Compute absolute score threshold from history."""
+@dataclass
+class ThresholdParams(SignalThresholdParams, DynamicThresholdParams):
+    """Combined params for :func:`compute_dynamic_threshold`."""
+
+    smooth_window: int = 20
+    smooth_alpha: float = 0.2
+    smooth_limit: float | None = 1.0
+    th_window: int = 60
+    th_decay: float = 2.0
+
+
+def _legacy_compute_dynamic_threshold(
+    history_scores: Iterable[float], window: int, quantile: float
+):
+    """Legacy helper kept for backward compatibility."""
     if not history_scores:
         return None
     arr = np.abs(np.asarray(list(history_scores)[-window:], dtype=float))
     if arr.size == 0:
         return None
     return float(np.quantile(arr, quantile))
+
+
+def _get(obj: Any, key: str, default: Any = None) -> Any:
+    """Safely get attribute or key from ``obj``."""
+    if obj is None:
+        return default
+    if isinstance(obj, Mapping):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def compute_dynamic_threshold(
+    data: Mapping[str, Any] | Any,
+    params: ThresholdParams | None = None,
+    history_scores: Iterable[float] | None = None,
+    phase_mult: Mapping[str, float] | None = None,
+):
+    """Compute dynamic base threshold and reversal boost.
+
+    Parameters
+    ----------
+    data:
+        Mapping or object containing fields like ``atr``, ``adx``, ``funding``,
+        ``pred_vol`` and ``vix_proxy``.
+    params:
+        Combined :class:`ThresholdParams` controlling behaviour.  If omitted a
+        default instance is created.
+    history_scores:
+        Optional iterable of recent scores used to derive a historical base
+        threshold.
+    phase_mult:
+        Optional mapping describing multipliers for multi-period indicators.
+
+    Returns
+    -------
+    tuple
+        ``(base_th, rev_boost)``.
+
+    Notes
+    -----
+    For backward compatibility this function also accepts the legacy
+    ``(history_scores, window, quantile)`` signature and will return a single
+    float threshold value in that case.
+    """
+
+    # ------------------------------------------------------------------
+    # Legacy interface support
+    # ------------------------------------------------------------------
+    if (
+        not isinstance(data, Mapping)
+        and not hasattr(data, "atr")
+        and isinstance(params, int)
+        and isinstance(history_scores, (float, int))
+        and phase_mult is None
+    ):
+        return _legacy_compute_dynamic_threshold(data, params, float(history_scores))
+
+    params = params or ThresholdParams()
+    phase_mult = phase_mult or {}
+
+    # -------------------------- history base ---------------------------
+    base = params.base_th
+    low_base = params.low_base
+
+    if history_scores is not None:
+        scores = smooth_series(
+            history_scores,
+            window=params.smooth_window,
+            alpha=params.smooth_alpha,
+        )
+        if params.smooth_limit is not None:
+            scores = np.clip(scores, -params.smooth_limit, params.smooth_limit)
+        hist_base = _calc_history_base(
+            scores,
+            base,
+            params.quantile,
+            params.th_window,
+            params.th_decay,
+            0.12,
+        )
+    else:
+        hist_base = base
+
+    th = hist_base
+
+    # ----------------------- dynamic adjustments -----------------------
+    def _mult(name: str, default: float) -> float:
+        return float(phase_mult.get(name, default))
+
+    atr_eff = abs(_get(data, "atr") or 0.0)
+    atr_4h = _get(data, "atr_4h")
+    if atr_4h is not None:
+        atr_eff += _mult("4h", 0.5) * abs(atr_4h)
+    atr_d1 = _get(data, "atr_d1")
+    if atr_d1 is not None:
+        atr_eff += _mult("d1", 0.25) * abs(atr_d1)
+    th += min(params.atr_cap, atr_eff * params.atr_mult)
+
+    fund_eff = abs(_get(data, "funding") or 0.0)
+    pv = _get(data, "pred_vol")
+    if pv is not None:
+        fund_eff += _mult("pred_vol", 0.5) * abs(pv)
+    pv_4h = _get(data, "pred_vol_4h")
+    if pv_4h is not None:
+        fund_eff += _mult("pred_vol_4h", 0.25) * abs(pv_4h)
+    pv_d1 = _get(data, "pred_vol_d1")
+    if pv_d1 is not None:
+        fund_eff += _mult("pred_vol_d1", 0.15) * abs(pv_d1)
+    vp = _get(data, "vix_proxy")
+    if vp is not None:
+        fund_eff += _mult("vix_proxy", 0.25) * abs(vp)
+    th += min(params.funding_cap, fund_eff * params.funding_mult)
+
+    adx_eff = abs(_get(data, "adx") or 0.0)
+    adx_4h = _get(data, "adx_4h")
+    if adx_4h is not None:
+        adx_eff += _mult("4h", 0.5) * abs(adx_4h)
+    adx_d1 = _get(data, "adx_d1")
+    if adx_d1 is not None:
+        adx_eff += _mult("d1", 0.25) * abs(adx_d1)
+    th += min(params.adx_cap, adx_eff / params.adx_div)
+
+    if atr_eff == 0 and adx_eff == 0 and fund_eff == 0:
+        th = min(th, hist_base)
+
+    # --------------------------- regime & rev -------------------------
+    regime = _get(data, "phase") or _classify_regime(
+        _get(data, "adx"), _get(data, "bb_width_chg")
+    )
+    if _get(data, "reversal"):
+        th *= params.rev_th_mult
+
+    rev_boost = params.rev_boost
+    if regime == "trend":
+        th *= 1.05
+        rev_boost *= 0.8
+    elif regime == "range":
+        th *= 0.95
+        rev_boost *= 1.2
+
+    return max(th, low_base), rev_boost
 
 
 @dataclass
@@ -263,4 +417,5 @@ __all__ = [
     "calc_dynamic_threshold",
     "ThresholdingDynamic",
     "adaptive_rsi_threshold",
+    "ThresholdParams",
 ]
