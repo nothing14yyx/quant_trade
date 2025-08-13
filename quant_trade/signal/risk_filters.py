@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import numpy as np
 
 from ..constants import RiskReason
-from .thresholding_dynamic import ThresholdingDynamic, compute_dynamic_threshold
+from .thresholding_dynamic import ThresholdingDynamic
 from .utils import risk_budget_threshold
 
 
@@ -81,10 +81,11 @@ class RiskFiltersImpl:
 
         return fused_score, crowding_factor, th_oi
 
+
     # ------------------------------------------------------------------
     # 综合风险过滤
     # ------------------------------------------------------------------
-    def apply_risk_filters(
+    def compute_risk_multipliers(
         self,
         fused_score: float,
         logic_score: float,
@@ -102,14 +103,13 @@ class RiskFiltersImpl:
         cache: dict,
         global_metrics: dict | None,
         symbol: str | None,
-    ):
-        """执行风险限制与拥挤度检查"""
+        *,
+        dyn_base: float | None,
+    ) -> tuple[float, float]:
+        """计算风险乘数"""
         core = self.core
         score_mult = 1.0
         pos_mult = 1.0
-        reasons: list[str] = []
-        if cache.get("oi_overheat"):
-            reasons.append(RiskReason.OI_OVERHEAT.value)
         if not core.risk_filters_enabled and not core.dynamic_threshold_enabled:
             self.last_risk_score = 0.0
             self.last_crowding_factor = 1.0
@@ -120,7 +120,8 @@ class RiskFiltersImpl:
             self.last_rev_dir = 0
             self.last_funding_conflicts = 0
             self.last_th_oi = None
-            return score_mult, pos_mult, reasons
+            return score_mult, pos_mult
+
         atr_1h = raw_f1h.get("atr_pct_1h", 0) if raw_f1h else 0
         adx_1h = raw_f1h.get("adx_1h", 0) if raw_f1h else 0
         funding_1h = raw_f1h.get("funding_rate_1h", 0) if raw_f1h else 0
@@ -160,9 +161,6 @@ class RiskFiltersImpl:
         params = core.signal_params
         cfg_base = cfg_th.get("base_th", params.base_th)
         if core.dynamic_threshold_enabled:
-            dyn_base = compute_dynamic_threshold(
-                cache["history_scores"], params.window, params.dynamic_quantile
-            )
             base_input = dyn_base if dyn_base is not None else cfg_base
             base_th, rev_boost = core.thresholding.base(
                 atr_1h,
@@ -200,7 +198,7 @@ class RiskFiltersImpl:
             self.last_risk_th = 0.0
             self.last_funding_conflicts = 0
             self.last_th_oi = None
-            return score_mult, pos_mult, reasons
+            return score_mult, pos_mult
 
         funding_conflicts = 0
         for p, raw_f in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
@@ -215,11 +213,9 @@ class RiskFiltersImpl:
             if core.filter_penalty_mode:
                 score_mult *= core.penalty_factor
                 pos_mult *= core.penalty_factor
-                reasons.append(RiskReason.FUNDING_PENALTY.value)
             else:
                 score_mult = 0.0
                 pos_mult = 0.0
-                reasons.append(RiskReason.FUNDING_CONFLICT.value)
 
         adj_score = fused_score * score_mult
         _, crowding_factor, th_oi = self.apply_crowding_protection(
@@ -241,7 +237,6 @@ class RiskFiltersImpl:
         )
 
         score_mult *= 1 - core.risk_adjust_factor * risk_score
-        # 根据历史波动或换手率动态调整风控阈值
         with core._lock:
             atr_hist = [
                 r.get("atr_pct_1h")
@@ -283,18 +278,11 @@ class RiskFiltersImpl:
         if abs(fused_score * score_mult) < risk_th:
             score_mult = 0.0
             pos_mult = 0.0
-            reasons.append(RiskReason.RISK_LIMIT.value)
 
         penalty_triggered = False
         if risk_score > core.risk_score_limit:
-            reasons.append(RiskReason.RISK_LIMIT.value)
             penalty_triggered = True
         if crowding_factor < 0 or crowding_factor > core.crowding_limit:
-            reasons.append(
-                RiskReason.CONFLICT_PENALTY.value
-                if core.filter_penalty_mode
-                else RiskReason.CONFLICT_FILTER.value
-            )
             penalty_triggered = True
         if penalty_triggered:
             if core.filter_penalty_mode:
@@ -309,4 +297,78 @@ class RiskFiltersImpl:
             cache["history_scores"].append(fs_adj)
             core.all_scores_list.append(fs_adj)
 
+        return score_mult, pos_mult
+
+    def collect_risk_reasons(
+        self,
+        fused_score: float,
+        score_mult: float,
+        pos_mult: float,
+        cache: dict,
+    ) -> list[str]:
+        """根据缓存信息收集风险原因"""
+        core = self.core
+        reasons: list[str] = []
+        if cache.get("oi_overheat"):
+            reasons.append(RiskReason.OI_OVERHEAT.value)
+        if self.last_funding_conflicts >= core.veto_conflict_count:
+            reasons.append(
+                RiskReason.FUNDING_PENALTY.value
+                if core.filter_penalty_mode
+                else RiskReason.FUNDING_CONFLICT.value
+            )
+        if abs(fused_score * score_mult) < self.last_risk_th or self.last_risk_score > core.risk_score_limit:
+            reasons.append(RiskReason.RISK_LIMIT.value)
+        if self.last_crowding_factor < 0 or self.last_crowding_factor > core.crowding_limit:
+            reasons.append(
+                RiskReason.CONFLICT_PENALTY.value
+                if core.filter_penalty_mode
+                else RiskReason.CONFLICT_FILTER.value
+            )
+        return reasons
+
+    def apply_risk_filters(
+        self,
+        fused_score: float,
+        logic_score: float,
+        env_score: float,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        raw_f1h: dict,
+        raw_f4h: dict,
+        raw_fd1: dict,
+        vol_preds: dict,
+        open_interest: dict | None,
+        all_scores_list: list | None,
+        rev_dir: int,
+        cache: dict,
+        global_metrics: dict | None,
+        symbol: str | None,
+        *,
+        dyn_base: float | None,
+    ) -> tuple[float, float, list[str]]:
+        """兼容旧接口的包装函数"""
+        score_mult, pos_mult = self.compute_risk_multipliers(
+            fused_score,
+            logic_score,
+            env_score,
+            std_1h,
+            std_4h,
+            std_d1,
+            raw_f1h,
+            raw_f4h,
+            raw_fd1,
+            vol_preds,
+            open_interest,
+            all_scores_list,
+            rev_dir,
+            cache,
+            global_metrics,
+            symbol,
+            dyn_base=dyn_base,
+        )
+        reasons = self.collect_risk_reasons(
+            fused_score, score_mult, pos_mult, cache
+        )
         return score_mult, pos_mult, reasons

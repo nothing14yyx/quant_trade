@@ -3,6 +3,7 @@ import pytest
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.robust_signal_generator import SignalThresholdParams
 from quant_trade.constants import RiskReason
+from quant_trade.signal import compute_dynamic_threshold
 from tests.test_overbought_oversold import base_inputs, make_cache
 
 
@@ -37,6 +38,10 @@ def test_funding_conflict_and_oi_overheat_finalization():
     raw_f1h_conflict = dict(raw_f1h)
     raw_f1h_conflict["funding_rate_1h"] = -0.0006
 
+    params = rsg.signal_params
+    dyn_base = compute_dynamic_threshold(
+        cache["history_scores"], params.window, params.dynamic_quantile
+    )
     ret = rsg.risk_filters.apply_risk_filters(
         fused_score=fused_score,
         logic_score=risk_info["logic_score"],
@@ -54,6 +59,7 @@ def test_funding_conflict_and_oi_overheat_finalization():
         cache=cache,
         global_metrics=None,
         symbol="BTCUSDT",
+        dyn_base=dyn_base,
     )
     assert ret is not None
     score_mult, pos_mult, reasons = ret

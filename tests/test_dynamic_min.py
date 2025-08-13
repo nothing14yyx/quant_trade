@@ -1,6 +1,7 @@
 import pytest
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.constants import RiskReason
+from quant_trade.signal import compute_dynamic_threshold
 
 
 def test_dynamic_min_risk_scaling():
@@ -80,6 +81,10 @@ def test_dyn_th_active_when_filters_off():
     rsg.dynamic_threshold = lambda *a, **k: (0.2, 0.0)
     rsg.detect_market_regime = lambda *a, **k: "range"
     cache = {"history_scores": rsg.history_scores, "_raw_history": {"1h": []}, "oi_change_history": []}
+    params = rsg.signal_params
+    dyn_base = compute_dynamic_threshold(
+        cache["history_scores"], params.window, params.dynamic_quantile
+    )
     res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.1,
         logic_score=0.1,
@@ -97,5 +102,6 @@ def test_dyn_th_active_when_filters_off():
         cache=cache,
         global_metrics=None,
         symbol=None,
+        dyn_base=dyn_base,
     )
     assert res == (1.0, 1.0, [])

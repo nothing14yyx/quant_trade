@@ -2649,7 +2649,16 @@ class RobustSignalGenerator:
         symbol: str | None,
     ):
         """执行资金费率、拥挤度等风险检查"""
-        ret = self.risk_filters.apply_risk_filters(
+        params = getattr(self, "signal_params", None)
+        if params is None:
+            params = SignalThresholdParams.from_cfg(self.signal_threshold_cfg)
+            self.signal_params = params
+        dyn_base = None
+        if self.dynamic_threshold_enabled:
+            dyn_base = compute_dynamic_threshold(
+                cache["history_scores"], params.window, params.dynamic_quantile
+            )
+        score_mult, pos_mult = self.risk_filters.compute_risk_multipliers(
             fused_score,
             logic_score,
             env_score,
@@ -2666,11 +2675,11 @@ class RobustSignalGenerator:
             cache,
             global_metrics,
             symbol,
+            dyn_base=dyn_base,
         )
-
-        if ret is None:
-            return None
-        score_mult, pos_mult, reasons = ret
+        reasons = self.risk_filters.collect_risk_reasons(
+            fused_score, score_mult, pos_mult, cache
+        )
         fused_score *= score_mult
         result = {
             "fused_score": fused_score,
