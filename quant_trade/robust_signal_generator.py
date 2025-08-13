@@ -4,11 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
+import math
 import threading
 import types
 
-from .signal import core
+from .signal import core, calc_position_size
 from .signal.dynamic_thresholds import DynamicThresholdParams, SignalThresholdParams
+from .signal.position_sizing import apply_normalized_multipliers
+from .constants import RiskReason
+from .risk_manager import cvar_limit
 
 
 @dataclass
@@ -76,6 +80,211 @@ class RobustSignalGenerator:
 
     def detect_market_regime(self, *args, **kwargs):  # pragma: no cover
         return "range"
+
+    # ------------------------------------------------------------------
+    # Position finalization helpers
+    # ------------------------------------------------------------------
+    def finalize_position(
+        self,
+        fused_score: float,
+        risk_info: dict,
+        logic_score: float,
+        env_score: float,
+        ai_scores: dict,
+        fs: dict,
+        scores: dict,
+        std_1h: dict,
+        std_4h: dict,
+        std_d1: dict,
+        std_15m: dict,
+        raw_f1h: dict,
+        raw_f4h: dict,
+        raw_fd1: dict,
+        raw_f15m: dict,
+        vol_preds: dict,
+        open_interest: dict | None,
+        global_metrics: dict | None,
+        *,
+        short_mom: float = 0.0,
+        ob_imb: float = 0.0,
+        confirm_15m: float = 0.0,
+        extreme_reversal: bool = False,
+        cache: dict | None = None,
+        symbol: str | None = None,
+    ) -> dict | None:
+        """Compute final trade parameters.
+
+        该方法是旧版 :class:`RobustSignalGenerator` 的 ``finalize_position`` 的轻量化
+        实现, 旨在满足单元测试对接口的依赖。逻辑上它会:
+
+        1. 根据账户风险(当日亏损、CVaR)决定是否继续;
+        2. 调用 :mod:`risk_filters` 获取分数/仓位乘数;
+        3. 使用 ``calc_position_size`` 计算基础仓位并统一应用倍率;
+        4. 根据风险预算与最小敞口约束得出最终仓位, 同时给出止盈止损价。
+        """
+
+        cache = cache or {}
+
+        # ------------------------- risk pre-checks ----------------------
+        account = getattr(self, "account", None)
+        if account is not None:
+            day_loss = getattr(account, "day_loss_pct", lambda: 0.0)()
+            if day_loss > 0.03:
+                return None
+            alpha = getattr(self, "cvar_alpha", None)
+            if alpha is not None and hasattr(account, "pnl_history"):
+                if cvar_limit(getattr(account, "pnl_history"), alpha) < 0:
+                    return None
+
+        # -------------------------- risk filters -----------------------
+        details = dict(risk_info.get("details", {}))
+        score_mult = risk_info.get("score_mult")
+        pos_mult = risk_info.get("pos_mult")
+        if score_mult is None or pos_mult is None:
+            sm, pm, reasons = self.risk_filters.apply_risk_filters(
+                fused_score,
+                logic_score,
+                env_score,
+                std_1h,
+                std_4h,
+                std_d1,
+                raw_f1h,
+                raw_f4h,
+                raw_fd1,
+                vol_preds,
+                open_interest,
+                self.all_scores_list,
+                risk_info.get("rev_dir", 0),
+                cache,
+                global_metrics,
+                symbol,
+                dyn_base=None,
+            )
+            score_mult = 1.0 if score_mult is None else score_mult
+            pos_mult = 1.0 if pos_mult is None else pos_mult
+            score_mult *= sm
+            pos_mult *= pm
+            if reasons:
+                details.setdefault("penalties", []).extend(reasons)
+            fused_for_pos = fused_score * sm
+            final_score = fused_for_pos * score_mult / sm
+        else:
+            fused_for_pos = fused_score
+            final_score = fused_score * score_mult
+
+        # -------------------------- direction & vote --------------------
+        vote_weights = getattr(self, "vote_weights", {"ai": 1.0})
+        min_vote = getattr(self, "signal_filters", {}).get("min_vote", 0.0)
+        vol_breakout = raw_f1h.get("vol_breakout_1h")
+        if vol_breakout is None:
+            vol_breakout = std_1h.get("vol_breakout_1h")
+        vote = vote_weights.get("ai", 1.0) * ai_scores.get("1h", 0.0)
+        direction = 1 if fused_for_pos > 0 else -1 if fused_for_pos < 0 else 0
+        zero_reason = None
+        if abs(vote) < min_vote or (vol_breakout is not None and vol_breakout <= 0):
+            direction = 0
+            zero_reason = RiskReason.VOTE_FILTER.value
+
+        # record some vote related details
+        details.setdefault("vote", {})["ob_th"] = getattr(
+            self, "ob_th_params", {"min_ob_th": 0}
+        ).get("min_ob_th", 0)
+
+        # ----------------------- position sizing -----------------------
+        base_th = risk_info.get("base_th", self.signal_params.base_th)
+        gamma = self.signal_threshold_cfg.get("gamma", getattr(self.signal_params, "gamma", 0.05))
+        min_pos = self.signal_threshold_cfg.get(
+            "min_pos", getattr(self.signal_params, "min_pos", 0.0)
+        )
+
+        pos_size = calc_position_size(
+            fused_for_pos,
+            base_th,
+            max_position=self.max_position,
+            gamma=gamma,
+            cvar_target=risk_info.get("cvar_target"),
+            vol_target=risk_info.get("vol_target"),
+            min_exposure=min_pos,
+        )
+
+        pos_size *= pos_mult
+
+        vol_ratio = raw_f1h.get("vol_ma_ratio_1h")
+        if vol_ratio is None:
+            vol_ratio = std_1h.get("vol_ma_ratio_1h")
+
+        factors = {
+            "low_volume": {
+                "rsg": self,
+                "regime": risk_info.get("regime", "range"),
+                "vol_ratio": vol_ratio,
+                "fused_score": fused_for_pos,
+                "base_th": base_th,
+                "consensus_all": False,
+            },
+            "vol_prediction": vol_preds.get("1h"),
+        }
+        pos_size, flags = apply_normalized_multipliers(pos_size, factors)
+        if flags.get("low_volume"):
+            zero_reason = RiskReason.VOL_RATIO.value
+            details.setdefault("penalties", []).append(RiskReason.VOL_RATIO.value)
+
+        if direction == 0:
+            pos_size = 0.0
+        else:
+            pos_size = max(min_pos, min(pos_size, self.max_position))
+
+        price = raw_f1h.get("close")
+        atr = raw_f1h.get("atr_pct_1h")
+        if hasattr(self, "position_sizer") and hasattr(
+            self.position_sizer, "compute_tp_sl"
+        ):
+            tp, sl = self.position_sizer.compute_tp_sl(
+                price, atr, direction, regime=risk_info.get("regime")
+            )
+        else:  # pragma: no cover - fallback
+            from .signal.position_sizing import compute_tp_sl as _compute_tp_sl
+
+            tp, sl = _compute_tp_sl(
+                self, price, atr, direction, regime=risk_info.get("regime")
+            )
+
+        # 风险预算限制
+        rb = self.cfg.get("risk_budget_per_trade") if self.cfg else None
+        if (
+            rb
+            and account is not None
+            and price is not None
+            and sl is not None
+            and abs(price - sl) > 0
+        ):
+            cap = rb * getattr(account, "equity", 1.0) / abs(price - sl)
+            pos_size = min(pos_size, cap)
+
+        max_pct = self.cfg.get("max_pos_pct") if self.cfg else None
+        if max_pct is not None:
+            pos_size = min(pos_size, max_pct)
+
+        if pos_size == 0 and zero_reason is None:
+            penalties = details.get("penalties", [])
+            zero_reason = ",".join(penalties) if penalties else RiskReason.NO_DIRECTION.value
+
+        result = {
+            "position_size": float(pos_size),
+            "signal": int(direction),
+            "score": float(final_score),
+            "take_profit": tp,
+            "stop_loss": sl,
+            "zero_reason": zero_reason,
+            "details": details,
+        }
+
+        if getattr(self, "enable_factor_breakdown", False):
+            fb = {k: fs.get("1h", {}).get(k, 0.0) for k in fs.get("1h", {})}
+            fb["ai"] = ai_scores.get("1h", 0.0)
+            result["factor_breakdown"] = fb
+
+        return result
 
 
 __all__ = ["RobustSignalGenerator", "RobustSignalGeneratorConfig"]
