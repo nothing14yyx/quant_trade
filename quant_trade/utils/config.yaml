@@ -10,6 +10,8 @@ enable_factor_breakdown: false
 max_stop_loss_pct: 0.05
 trailing_stop_pct: 0.03
 risk_budget_per_trade: 0.01
+cv:
+  embargo: 1  # 交叉验证时的隔离步数(1~2 个 horizon)
 binance:
   api_key: "${BINANCE_API_KEY}"
   api_secret: "${BINANCE_API_SECRET}"
