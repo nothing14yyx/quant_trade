@@ -172,7 +172,13 @@ from .features_to_scores import (
     get_volume_ratio_thresholds as _get_volume_ratio_thresholds,
 )
 from .voting_model import safe_load
-from .fusion_rule import FusionRuleBased
+from .multi_period_fusion import (
+    fuse_scores,
+    consensus_check,
+    crowding_protection,
+    get_ic_weights,
+)
+from .fusion_rule import combine_score as _combine_score, combine_score_vectorized as _combine_score_vectorized
 from .risk_filters import RiskFiltersImpl
 from .thresholding_dynamic import (
     ThresholdingDynamic,
@@ -671,13 +677,23 @@ class RobustSignalGenerator:
         self._factor_score_cache = LRU(self.cache_maxsize)
         self._fuse_cache = LRU(self.cache_maxsize)
 
-        # 融合规则实现
-        self.fusion_rule = FusionRuleBased(self)
-        self.consensus_check = self.fusion_rule.consensus_check
-        self.crowding_protection = self.fusion_rule.crowding_protection
-        self.fuse = self.fusion_rule.fuse
-        # 兼容旧接口
-        self.fuse_multi_cycle = self.fusion_rule.fuse
+        # 多周期融合工具
+        self.consensus_check = consensus_check
+        self.crowding_protection = lambda scores, current_score, base_th=0.2: crowding_protection(
+            scores,
+            current_score,
+            base_th,
+            max_same_direction_rate=self.max_same_direction_rate,
+            equity_drawdown=getattr(self, "_equity_drawdown", 0.0),
+        )
+        self.fuse = lambda scores, weights, strong_confirm_4h: fuse_scores(
+            scores,
+            weights,
+            strong_confirm_4h,
+            cycle_weight=self.cycle_weight,
+            conflict_mult=getattr(self, "conflict_mult", 0.7),
+        )
+        self.fuse_multi_cycle = self.fuse
 
         # 风险过滤器实现
         self.risk_filters = RiskFiltersImpl(self)
@@ -694,7 +710,6 @@ class RobustSignalGenerator:
             self,
             self.predictor,
             factor_scorer,
-            self.fusion_rule,
             self.risk_filters,
             self.position_sizer,
         )
@@ -717,7 +732,6 @@ class RobustSignalGenerator:
                 self,
                 getattr(self, "predictor", None) or PredictorAdapter(None),
                 getattr(self, "factor_scorer", None) or FactorScorerImpl(self),
-                getattr(self, "fusion_rule", None) or FusionRuleBased(self),
                 getattr(self, "risk_filters", None) or RiskFiltersImpl(self),
                 getattr(self, "position_sizer", None) or PositionSizerImpl(self),
             )
@@ -1312,7 +1326,7 @@ class RobustSignalGenerator:
             with self._lock:
                 weights = self.current_weights
 
-        return FusionRuleBased.combine_score(ai_score, factor_scores, weights)
+        return _combine_score(ai_score, factor_scores, weights)
 
     def combine_score_vectorized(self, ai_scores, factor_scores, weights=None):
         """向量化计算多个样本的合并得分。
@@ -1329,7 +1343,7 @@ class RobustSignalGenerator:
             with self._lock:
                 weights = self.current_weights
 
-        return FusionRuleBased.combine_score_vectorized(ai_scores, factor_scores, weights)
+        return _combine_score_vectorized(ai_scores, factor_scores, weights)
 
     def _compute_factor_breakdown(self, ai_scores: dict, fs: dict) -> dict:
         """使用 SHAP 计算各因子贡献度"""
@@ -1750,16 +1764,11 @@ class RobustSignalGenerator:
             symbol,
         )
 
-        ic_periods = {
-            "1h": self.ic_scores.get("1h", 1.0),
-            "4h": self.ic_scores.get("4h", 1.0),
-            "d1": self.ic_scores.get("d1", 1.0),
-        }
-        w1, w4, wd = self.get_ic_period_weights(ic_periods)
+        ic_weights = get_ic_weights(self)
 
-        fused_score, consensus_all, consensus_14, consensus_4d1 = self.fusion_rule.fuse(
+        fused_score, consensus_all, consensus_14, consensus_4d1 = self.fuse(
             scores,
-            (w1, w4, wd),
+            ic_weights,
             local_details.get("strong_confirm_4h", False),
         )
 

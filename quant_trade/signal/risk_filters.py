@@ -59,7 +59,7 @@ class RiskFiltersImpl:
 
         crowding_factor = 1.0
         if not oi_overheat and all_scores_list is not None:
-            factor = self.core.fusion_rule.crowding_protection(
+            factor = self.core.crowding_protection(
                 all_scores_list, fused_score, base_th
             )
             fused_score *= factor
