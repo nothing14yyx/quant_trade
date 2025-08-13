@@ -2,6 +2,7 @@
 # ----------------------------------------------------------------
 import os
 import re
+import json
 import yaml
 import joblib
 import lightgbm as lgb
@@ -11,8 +12,14 @@ import datetime
 import logging
 import gc
 from pathlib import Path
-from sklearn.metrics import mean_absolute_error, log_loss
+from sklearn.metrics import (
+    mean_absolute_error,
+    log_loss,
+    roc_auc_score,
+    brier_score_loss,
+)
 from sklearn.metrics import precision_recall_curve
+from sklearn.calibration import calibration_curve
 from sklearn.impute import SimpleImputer
 from quant_trade.utils.purged_split import PurgedTimeSeriesSplit
 from sklearn.pipeline import Pipeline
@@ -51,6 +58,23 @@ def _sanitize_feature_names(
         sanitized.append(clean)
     df_out = df.rename(columns=mapping, inplace=False) if mapping else df
     return df_out, sanitized, mapping
+
+
+def compute_classification_metrics(
+    y_true: pd.Series | np.ndarray, proba: np.ndarray
+) -> tuple[dict[str, float], dict[str, list[float]]]:
+    """计算分类指标和校准曲线数据。"""
+
+    auc = roc_auc_score(y_true, proba[:, 1])
+    brier = brier_score_loss(y_true, proba[:, 1])
+    prob_true, prob_pred = calibration_curve(y_true, proba[:, 1], n_bins=10)
+    logloss = log_loss(y_true, proba)
+    metrics = {"AUC": float(auc), "Brier": float(brier), "LogLoss": float(logloss)}
+    calibration = {
+        "prob_true": prob_true.tolist(),
+        "prob_pred": prob_pred.tolist(),
+    }
+    return metrics, calibration
 
 
 def forward_chain_split(time_or_n, n_splits: int = 5, gap: int = 0):
@@ -404,6 +428,7 @@ def train_one(
             EMBARGO,
         )
         splits.append((tr_idx, va_idx))
+    report_data = {"splits": {**cv_cfg, "n_splits": len(splits)}, "embargo": EMBARGO}
 
     imputer = SimpleImputer(strategy="median", keep_empty_features=True)
 
@@ -659,17 +684,29 @@ def train_one(
     )
 
     # ----- 留出集评估 -----
+    metrics: dict[str, float] = {}
     if len(X_hold):
-        X_hold_imp = pd.DataFrame(imputer.transform(X_hold), columns=X_hold.columns, index=X_hold.index)
+        X_hold_imp = pd.DataFrame(
+            imputer.transform(X_hold), columns=X_hold.columns, index=X_hold.index
+        )
         if regression:
             hold_pred = best.predict(X_hold_imp, num_iteration=best.best_iteration_)
             hold_score = mean_absolute_error(y_hold, hold_pred)
+            metrics["MAE"] = float(hold_score)
             label = "Holdout-MAE"
+            logging.info(f"{label}: {hold_score:.4f}")
         else:
-            hold_pred = best.predict_proba(X_hold_imp, num_iteration=best.best_iteration_)
-            hold_score = log_loss(y_hold, hold_pred)
+            hold_pred = best.predict_proba(
+                X_hold_imp, num_iteration=best.best_iteration_
+            )
+            metrics, calibration = compute_classification_metrics(y_hold, hold_pred)
+            hold_score = metrics["LogLoss"]
             label = "Holdout-LogLoss"
-        logging.info(f"{label}: {hold_score:.4f}")
+            logging.info(f"{label}: {hold_score:.4f}")
+            logging.info(f"Holdout-AUC: {metrics['AUC']:.4f}")
+            logging.info(f"Holdout-Brier: {metrics['Brier']:.4f}")
+            report_data["calibration_curve"] = calibration
+        report_data["metrics"] = metrics
 
     feat_imp = getattr(best, "feature_importances_", None)
 
@@ -707,6 +744,8 @@ def train_one(
     logging.info(
         f"✔ Saved: {model_path.name}  ({score_label} {best_val:.4f}, th{best_th:.3f})"
     )
+    with open(model_path.parent / "report.json", "w", encoding="utf-8") as f:
+        json.dump(report_data, f, ensure_ascii=False, indent=2)
 
     # 5-8  打印前 15 个重要特征
     if feat_imp is not None:
