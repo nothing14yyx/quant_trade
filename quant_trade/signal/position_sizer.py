@@ -12,8 +12,7 @@ from .position_sizing import (
     compute_exit_multiplier as _compute_exit_multiplier,
     compute_tp_sl as _compute_tp_sl,
     _apply_risk_adjustment as apply_risk_adjustment,
-    _apply_low_volume_penalty as apply_low_vol_penalty,
-    _apply_vol_prediction_adjustment as apply_vol_pred_adj,
+    apply_normalized_multipliers as apply_norm_mults,
     _adjust_min_pos_vol as adjust_min_pos_vol,
 )
 
@@ -32,7 +31,7 @@ class PositionSizerImpl:
         """根据风险评分调整仓位大小"""
         return apply_risk_adjustment(pos_size, risk_score, self.rsg.risk_scale)
 
-    def _apply_low_volume_penalty(
+    def _apply_normalized_multipliers(
         self,
         pos_size: float,
         *,
@@ -41,21 +40,22 @@ class PositionSizerImpl:
         fused_score: float,
         base_th: float,
         consensus_all: bool,
+        vol_p: float | None,
     ) -> Tuple[float, bool]:
-        """在低成交量环境下惩罚仓位, 返回是否触发标记"""
-        return apply_low_vol_penalty(
-            self.rsg,
-            pos_size,
-            regime=regime,
-            vol_ratio=vol_ratio,
-            fused_score=fused_score,
-            base_th=base_th,
-            consensus_all=consensus_all,
-        )
-
-    def _apply_vol_prediction_adjustment(self, pos_size: float, vol_p: float | None) -> float:
-        """根据预测波动率对仓位进行修正"""
-        return apply_vol_pred_adj(pos_size, vol_p)
+        """统一应用各类倍率调整并返回低成交量标记"""
+        factors = {
+            "low_volume": {
+                "rsg": self.rsg,
+                "regime": regime,
+                "vol_ratio": vol_ratio,
+                "fused_score": fused_score,
+                "base_th": base_th,
+                "consensus_all": consensus_all,
+            },
+            "vol_prediction": vol_p,
+        }
+        adj_pos, flags = apply_norm_mults(pos_size, factors)
+        return adj_pos, flags.get("low_volume", False)
 
     def _adjust_min_pos_vol(self, min_pos: float, atr: float | None, vol_p: float | None) -> float:
         """根据历史 ATR 或预测波动率调节仓位下限"""
@@ -249,16 +249,15 @@ class PositionSizerImpl:
             pos_size = 0.0
             zero_reason = RiskReason.NO_DIRECTION.value
 
-        pos_size, low_vol_flag = self._apply_low_volume_penalty(
+        pos_size, low_vol_flag = self._apply_normalized_multipliers(
             pos_size,
             regime=regime,
             vol_ratio=vol_ratio,
             fused_score=fused_score,
             base_th=base_th,
             consensus_all=consensus_all,
+            vol_p=vol_p,
         )
-
-        pos_size = self._apply_vol_prediction_adjustment(pos_size, vol_p)
 
         min_pos = cfg_th_sig.get("min_pos", self.rsg.signal_params.min_pos)
         min_pos = self._adjust_min_pos_vol(min_pos, atr, vol_p)

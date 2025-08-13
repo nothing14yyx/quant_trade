@@ -88,34 +88,60 @@ def _apply_risk_adjustment(pos_size: float, risk_score: float, risk_scale: float
     return pos_size * risk_factor
 
 
-def _apply_low_volume_penalty(
-    rsg,
-    pos_size: float,
-    *,
-    regime: str,
-    vol_ratio: float | None,
-    fused_score: float,
-    base_th: float,
-    consensus_all: bool,
-) -> Tuple[float, bool]:
-    """在低成交量环境下惩罚仓位, 返回是否触发标记"""
-    low_vol_flag = (
-        regime == "range"
-        and vol_ratio is not None
-        and vol_ratio < rsg.low_vol_ratio
-        and abs(fused_score) < base_th + 0.02
-        and not consensus_all
-    )
-    if low_vol_flag:
-        pos_size *= 0.5
-    return pos_size, low_vol_flag
+def apply_normalized_multipliers(pos_size: float, factors: dict) -> Tuple[float, dict]:
+    """应用并规范化多个倍率因子。
 
+    参数
+    ----
+    pos_size: 初始仓位大小。
+    factors: 包含倍率计算所需参数的字典，可包含以下键：
+        - ``low_volume``: dict，低成交量惩罚相关参数；
+        - ``vol_prediction``: float，可选，预测波动率；
+        - ``extra``: Iterable[float]，额外需直接应用的倍率。
 
-def _apply_vol_prediction_adjustment(pos_size: float, vol_p: float | None) -> float:
-    """根据预测波动率对仓位进行修正"""
-    if vol_p is not None:
-        pos_size *= max(0.4, 1 - min(0.6, vol_p))
-    return pos_size
+    返回
+    ----
+    调整后的仓位以及标记字典（目前仅包含 ``low_volume``）。
+    """
+
+    flags: dict = {}
+    mults: list[float] = []
+
+    # 低成交量惩罚逻辑
+    if "low_volume" in factors:
+        lv = factors["low_volume"]
+        rsg = lv.get("rsg")
+        regime = lv.get("regime")
+        vol_ratio = lv.get("vol_ratio")
+        fused_score = lv.get("fused_score")
+        base_th = lv.get("base_th")
+        consensus_all = lv.get("consensus_all", False)
+        low_vol_flag = (
+            regime == "range"
+            and vol_ratio is not None
+            and vol_ratio < getattr(rsg, "low_vol_ratio", 0)
+            and abs(fused_score) < base_th + 0.02
+            and not consensus_all
+        )
+        flags["low_volume"] = low_vol_flag
+        if low_vol_flag:
+            mults.append(0.5)
+
+    # 预测波动率修正逻辑
+    if "vol_prediction" in factors:
+        vol_p = factors["vol_prediction"]
+        if vol_p is not None:
+            mults.append(max(0.4, 1 - min(0.6, vol_p)))
+
+    # 其他额外倍率
+    for m in factors.get("extra", []):
+        if m is not None and np.isfinite(m):
+            mults.append(m)
+
+    norm_mults = [max(0.0, min(1.0, m)) for m in mults]
+    final_mult = float(np.prod(norm_mults)) if norm_mults else 1.0
+
+    return pos_size * final_mult, flags
 
 
 def _adjust_min_pos_vol(
