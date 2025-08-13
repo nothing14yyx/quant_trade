@@ -1,89 +1,27 @@
 """Signal generation subpackage exports."""
 
-from .core import (
-    SignalThresholdParams,
-    DynamicThresholdParams,
-    RobustSignalGeneratorConfig,
-    PeriodFeatures,
-    RobustSignalGenerator,
-    DEFAULT_AI_DIR_EPS,
-    DEFAULT_POS_K_RANGE,
-    DEFAULT_POS_K_TREND,
-    DEFAULT_LOW_BASE,
-    DEFAULT_LOW_VOL_RATIO,
-    DEFAULT_CACHE_MAXSIZE,
-    DEFAULTS,
-    SAFE_FALLBACKS,
-)
-from .dynamic_thresholds import (
-    ThresholdingDynamic,
-    DynamicThresholdInput,
-    compute_dynamic_threshold,
-    calc_dynamic_threshold,
-)
-from .utils import (
-    softmax,
-    sigmoid,
-    smooth_score,
-    smooth_series,
-    weighted_quantile,
-    _calc_history_base,
-    risk_budget_threshold,
-    adjust_score,
-    volume_guard,
-    cap_positive,
-    fused_to_risk,
-    sigmoid_dir,
-    sigmoid_confidence,
-)
-from .voting_model import VotingModel, load_cached_model
-from .factor_scorer import FactorScorerImpl
-from .fusion_rule import FusionRuleBased
-from .risk_filters import RiskFiltersImpl
-from .position_sizer import PositionSizerImpl
-from .predictor_adapter import PredictorAdapter
+from .core import generate_signal
+from .features_to_scores import get_factor_scores
 from .ai_inference import get_period_ai_scores, get_reg_predictions
-from .engine import SignalEngine
+from .multi_period_fusion import fuse_scores
+from .dynamic_thresholds import DynamicThresholdInput, calc_dynamic_threshold
+from .position_sizing import calc_position_size
+
+try:  # optional
+    from .risk_filters import compute_risk_multipliers
+except Exception:  # pragma: no cover
+    compute_risk_multipliers = None
 
 __all__ = [
-    "SignalThresholdParams",
-    "DynamicThresholdParams",
-    "RobustSignalGeneratorConfig",
-    "DynamicThresholdInput",
-    "PeriodFeatures",
-    "RobustSignalGenerator",
-    "ThresholdingDynamic",
-    "compute_dynamic_threshold",
-    "calc_dynamic_threshold",
-    "DEFAULT_AI_DIR_EPS",
-    "DEFAULT_POS_K_RANGE",
-    "DEFAULT_POS_K_TREND",
-    "DEFAULT_LOW_BASE",
-    "DEFAULT_LOW_VOL_RATIO",
-    "DEFAULT_CACHE_MAXSIZE",
-    "DEFAULTS",
-    "SAFE_FALLBACKS",
-    "softmax",
-    "sigmoid",
-    "smooth_score",
-    "smooth_series",
-    "weighted_quantile",
-    "_calc_history_base",
-    "risk_budget_threshold",
-    "adjust_score",
-    "volume_guard",
-    "cap_positive",
-    "fused_to_risk",
-    "sigmoid_dir",
-    "sigmoid_confidence",
-    "VotingModel",
-    "load_cached_model",
-    "FactorScorerImpl",
-    "FusionRuleBased",
-    "RiskFiltersImpl",
-    "PositionSizerImpl",
-    "PredictorAdapter",
+    "generate_signal",
+    "get_factor_scores",
     "get_period_ai_scores",
     "get_reg_predictions",
-    "SignalEngine",
+    "fuse_scores",
+    "DynamicThresholdInput",
+    "calc_dynamic_threshold",
+    "calc_position_size",
 ]
+if compute_risk_multipliers is not None:
+    __all__.append("compute_risk_multipliers")
+
