@@ -36,7 +36,8 @@ from ..config_manager import ConfigManager
 from ..ai_model_predictor import AIModelPredictor
 from ..risk_manager import RiskManager, cvar_limit
 from ..feature_processor import FeatureProcessor
-from scipy.special import inv_boxcox
+from .ai_inference import get_period_ai_scores, get_reg_predictions
+from .predictor_adapter import PredictorAdapter
 
 logger = get_logger(__name__)
 _warned_missing_voting_model = False
@@ -171,7 +172,6 @@ from .features_to_scores import (
     get_volume_ratio_thresholds as _get_volume_ratio_thresholds,
 )
 from .voting_model import safe_load
-from .predictor_adapter import PredictorAdapter
 from .fusion_rule import FusionRuleBased
 from .risk_filters import RiskFiltersImpl
 from .thresholding_dynamic import (
@@ -466,9 +466,8 @@ class RobustSignalGenerator:
                 self.boxcox_lambda = json.load(f)
         else:
             self.boxcox_lambda = {}
-        self.predictor = PredictorAdapter(
-            self.ai_predictor, self.rise_transform, self.boxcox_lambda
-        )
+        # 为向后兼容保留 predictor 属性，外部可替换其方法
+        self.predictor = PredictorAdapter(self.ai_predictor)
         self.signal_threshold_cfg = get_cfg_value(cfg, "signal_threshold", {})
         if "low_base" not in self.signal_threshold_cfg:
             self.signal_threshold_cfg["low_base"] = DEFAULT_LOW_BASE
@@ -1603,49 +1602,6 @@ class RobustSignalGenerator:
             "deltas": deltas,
         }
 
-    def _calc_ai_for_period(self, period: str, feats: dict):
-        """计算单个周期的 AI 相关预测"""
-
-        models_p = self.models.get(period, {})
-
-        if not models_p:
-            return None, None, None, None
-
-        if "cls" in models_p and "up" not in models_p:
-            ai_score = self.predictor.get_ai_score_cls(feats, models_p["cls"])
-        else:
-            cal_up = self.calibrators.get(period, {}).get("up")
-            cal_down = self.calibrators.get(period, {}).get("down")
-            if cal_up is None and cal_down is None:
-                ai_score = self.predictor.get_ai_score(
-                    feats,
-                    models_p["up"],
-                    models_p["down"],
-                )
-            else:
-                ai_score = self.predictor.get_ai_score(
-                    feats,
-                    models_p["up"],
-                    models_p["down"],
-                    cal_up,
-                    cal_down,
-                )
-
-        vol_pred = None
-        rise_pred = None
-        drawdown_pred = None
-
-        if "vol" in models_p:
-            vol_pred = self.predictor.get_vol_prediction(feats, models_p["vol"])
-        if "rise" in models_p:
-            rise_pred = self.predictor.get_reg_prediction(
-                feats, models_p["rise"], tag="rise", period=period
-            )
-        if "drawdown" in models_p:
-            drawdown_pred = self.predictor.get_reg_prediction(feats, models_p["drawdown"])
-
-        return ai_score, vol_pred, rise_pred, drawdown_pred
-
     def compute_ai_scores(
         self,
         feats_1h: PeriodFeatures,
@@ -1659,7 +1615,7 @@ class RobustSignalGenerator:
             return cached
 
         # 若未加载 AI 模型且无外部模型, 直接返回全零得分
-        if self.ai_predictor is None and not self.models:
+        if getattr(self, "ai_predictor", None) is None and not self.models:
             ai_scores = {"1h": 0.0, "4h": 0.0, "d1": 0.0}
             vol_preds = {"1h": None, "4h": None, "d1": None}
             rise_preds = {"1h": None, "4h": None, "d1": None}
@@ -1669,31 +1625,25 @@ class RobustSignalGenerator:
             self._ai_score_cache.set(key, result)
             return result
 
-        ai_scores: dict[str, float] = {}
-        vol_preds: dict[str, float | None] = {}
-        rise_preds: dict[str, float | None] = {}
-        drawdown_preds: dict[str, float | None] = {}
-
-        for p, feats in [
-            ("1h", feats_1h.std),
-            ("4h", feats_4h.std),
-            ("d1", feats_d1.std),
-        ]:
-            ai, vol, rise, drawdown = self._calc_ai_for_period(p, feats)
-            if ai is not None:
-                ai_scores[p] = ai
-            if vol is not None:
-                vol_preds[p] = vol
-            if rise is not None:
-                rise_preds[p] = rise
-            if drawdown is not None:
-                drawdown_preds[p] = drawdown
-
-        for p in ("1h", "4h", "d1"):
-            ai_scores.setdefault(p, 0.0)
-            vol_preds.setdefault(p, None)
-            rise_preds.setdefault(p, None)
-            drawdown_preds.setdefault(p, None)
+        period_features = {
+            "1h": feats_1h.std,
+            "4h": feats_4h.std,
+            "d1": feats_d1.std,
+        }
+        predictor = getattr(self, "predictor", None)
+        ai_scores = get_period_ai_scores(
+            predictor,
+            period_features,
+            self.models,
+            getattr(self, "calibrators", {}),
+        )
+        vol_preds, rise_preds, drawdown_preds = get_reg_predictions(
+            predictor,
+            period_features,
+            self.models,
+            getattr(self, "rise_transform", "none"),
+            getattr(self, "boxcox_lambda", {}),
+        )
 
         extreme_reversal = False
         rsi = feats_d1.raw.get("rsi_d1", 50)
