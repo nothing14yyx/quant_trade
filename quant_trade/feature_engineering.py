@@ -397,15 +397,32 @@ class FeatureEngineer:
                     if window > 1:
                         down_ret = down_ret.rolling(window, min_periods=1).max()
 
-                up_thr = up_ret.quantile(q_up)
-                down_thr = down_ret.quantile(q_low)
+                vol_window = int(cfg.get("vol_window", base_n))
+                min_periods = int(cfg.get("min_periods", 1))
 
-                # allow both thresholds to be on the same side of zero when the
-                # market shows a persistent trend. Only ensure `down_thr` is
-                # strictly smaller than `up_thr` to avoid degenerate targets.
-                if not (down_thr < up_thr):
+                up_thr_roll = (
+                    up_ret.rolling(vol_window, min_periods=min_periods)
+                    .quantile(q_up)
+                    .shift(1)
+                )
+                up_thr_exp = (
+                    up_ret.expanding(min_periods).quantile(q_up).shift(1)
+                )
+                up_thr = up_thr_roll.combine_first(up_thr_exp)
+
+                down_thr_roll = (
+                    down_ret.rolling(vol_window, min_periods=min_periods)
+                    .quantile(q_low)
+                    .shift(1)
+                )
+                down_thr_exp = (
+                    down_ret.expanding(min_periods).quantile(q_low).shift(1)
+                )
+                down_thr = down_thr_roll.combine_first(down_thr_exp)
+
+                if (down_thr > up_thr).dropna().any():
                     raise ValueError(
-                        f"Invalid thresholds for {p}: {down_thr}, {up_thr}"
+                        f"Invalid thresholds for {p}: down > up at some points"
                     )
 
                 if classification_mode != "three":
