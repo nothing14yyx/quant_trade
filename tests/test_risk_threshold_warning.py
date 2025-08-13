@@ -5,6 +5,7 @@ import pytest
 
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.robust_signal_generator import SignalThresholdParams
+from quant_trade.signal import compute_dynamic_threshold
 
 
 def test_nan_dynamic_risk_threshold(caplog):
@@ -17,6 +18,10 @@ def test_nan_dynamic_risk_threshold(caplog):
         "oi_change_history": deque(),
         "_raw_history": {"1h": deque(maxlen=4)},
     }
+    params = rsg.signal_params
+    dyn_base = compute_dynamic_threshold(
+        cache["history_scores"], params.window, params.dynamic_quantile
+    )
     with caplog.at_level(logging.WARNING):
         res = rsg.risk_filters.apply_risk_filters(
             fused_score=0.04,
@@ -35,6 +40,7 @@ def test_nan_dynamic_risk_threshold(caplog):
             cache=cache,
             global_metrics=None,
             symbol=None,
+            dyn_base=dyn_base,
         )
     assert res is not None
     score_mult, pos_mult, _ = res

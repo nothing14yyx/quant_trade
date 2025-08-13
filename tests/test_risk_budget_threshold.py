@@ -8,6 +8,7 @@ from quant_trade.robust_signal_generator import (
     SignalThresholdParams,
 )
 from quant_trade.tests.test_utils import make_dummy_rsg
+from quant_trade.signal import compute_dynamic_threshold
 
 
 def test_risk_budget_threshold_basic():
@@ -26,6 +27,10 @@ def test_risk_budget_threshold_in_filter():
         "oi_change_history": rsg.oi_change_history,
         "_raw_history": {"1h": deque(maxlen=4)},
     }
+    params = rsg.signal_params
+    dyn_base = compute_dynamic_threshold(
+        cache["history_scores"], params.window, params.dynamic_quantile
+    )
     res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.04,
         logic_score=0.04,
@@ -43,12 +48,16 @@ def test_risk_budget_threshold_in_filter():
         cache=cache,
         global_metrics=None,
         symbol=None,
+        dyn_base=dyn_base,
     )
     assert res is not None
     score_mult, pos_mult, reasons = res
     assert score_mult == 0.0
     assert pos_mult == 0.0
 
+    dyn_base = compute_dynamic_threshold(
+        cache["history_scores"], params.window, params.dynamic_quantile
+    )
     res2 = rsg.risk_filters.apply_risk_filters(
         fused_score=0.06,
         logic_score=0.06,
@@ -66,6 +75,7 @@ def test_risk_budget_threshold_in_filter():
         cache=cache,
         global_metrics=None,
         symbol=None,
+        dyn_base=dyn_base,
     )
     assert res2 is not None
     score_mult2, pos_mult2, reasons2 = res2
@@ -85,6 +95,10 @@ def test_history_quantile_threshold():
         "_raw_history": {"1h": deque(maxlen=4)},
     }
 
+    params = rsg.signal_params
+    dyn_base = compute_dynamic_threshold(
+        cache["history_scores"], params.window, params.dynamic_quantile
+    )
     res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.02,
         logic_score=0.02,
@@ -102,6 +116,7 @@ def test_history_quantile_threshold():
         cache=cache,
         global_metrics=None,
         symbol=None,
+        dyn_base=dyn_base,
     )
 
     assert res is not None
@@ -109,6 +124,9 @@ def test_history_quantile_threshold():
     assert score_mult == 0.0
     assert pos_mult == 0.0
 
+    dyn_base = compute_dynamic_threshold(
+        cache["history_scores"], params.window, params.dynamic_quantile
+    )
     res2 = rsg.risk_filters.apply_risk_filters(
         fused_score=0.06,
         logic_score=0.06,
@@ -126,6 +144,7 @@ def test_history_quantile_threshold():
         cache=cache,
         global_metrics=None,
         symbol=None,
+        dyn_base=dyn_base,
     )
 
     assert res2 is not None

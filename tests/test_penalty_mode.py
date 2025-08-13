@@ -4,6 +4,7 @@ from collections import deque
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.robust_signal_generator import SignalThresholdParams
 from quant_trade.constants import RiskReason
+from quant_trade.signal import compute_dynamic_threshold
 
 
 def make_cache():
@@ -25,6 +26,10 @@ def test_penalty_on_risk_filters():
     rsg.risk_manager.calc_risk = lambda *a, **k: 1.0
     cache = make_cache()
     raw_f1h = {"funding_rate_1h": -0.001}
+    params = rsg.signal_params
+    dyn_base = compute_dynamic_threshold(
+        cache["history_scores"], params.window, params.dynamic_quantile
+    )
     res = rsg.risk_filters.apply_risk_filters(
         fused_score=0.5,
         logic_score=0.5,
@@ -42,6 +47,7 @@ def test_penalty_on_risk_filters():
         cache=cache,
         global_metrics=None,
         symbol=None,
+        dyn_base=dyn_base,
     )
     assert res is not None
     score_mult, pos_mult, reasons = res
