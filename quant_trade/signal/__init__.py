@@ -18,6 +18,7 @@ from .fusion_rule import FusionRuleBased
 from .risk_filters import RiskFiltersImpl
 from .position_sizer import PositionSizerImpl
 from .position_sizing import calc_position_size
+from .voting_model import VotingModel
 
 try:  # optional
     from .risk_filters import compute_risk_multipliers
@@ -42,6 +43,7 @@ __all__ = [
     "compute_dynamic_threshold",
     "calc_dynamic_threshold",
     "calc_position_size",
+    "VotingModel",
 ]
 if compute_risk_multipliers is not None:
     __all__.append("compute_risk_multipliers")
