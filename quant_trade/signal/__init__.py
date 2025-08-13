@@ -15,10 +15,11 @@ from .core import (
     DEFAULTS,
     SAFE_FALLBACKS,
 )
-from .thresholding_dynamic import (
+from .dynamic_thresholds import (
     ThresholdingDynamic,
     DynamicThresholdInput,
     compute_dynamic_threshold,
+    calc_dynamic_threshold,
 )
 from .utils import (
     softmax,
@@ -53,6 +54,7 @@ __all__ = [
     "RobustSignalGenerator",
     "ThresholdingDynamic",
     "compute_dynamic_threshold",
+    "calc_dynamic_threshold",
     "DEFAULT_AI_DIR_EPS",
     "DEFAULT_POS_K_RANGE",
     "DEFAULT_POS_K_TREND",

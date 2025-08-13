@@ -180,10 +180,11 @@ from .multi_period_fusion import (
 )
 from .fusion_rule import combine_score as _combine_score, combine_score_vectorized as _combine_score_vectorized
 from .risk_filters import RiskFiltersImpl
-from .thresholding_dynamic import (
+from .dynamic_thresholds import (
     ThresholdingDynamic,
     DynamicThresholdInput,
     compute_dynamic_threshold,
+    calc_dynamic_threshold,
 )
 from .position_sizer import PositionSizerImpl
 
@@ -1279,28 +1280,19 @@ class RobustSignalGenerator:
         low_base: float | None = None,
         history_scores=None,
     ):
-        """Delegate to :class:`ThresholdingDynamic` base method."""
+        """入口函数 :func:`calc_dynamic_threshold` 的简单封装."""
 
-        return self.thresholding.base(
-            data.atr,
-            data.adx,
-            funding=data.funding,
-            atr_4h=data.atr_4h,
-            adx_4h=data.adx_4h,
-            atr_d1=data.atr_d1,
-            adx_d1=data.adx_d1,
-            bb_width_chg=data.bb_width_chg,
-            channel_pos=data.channel_pos,
-            pred_vol=data.pred_vol,
-            pred_vol_4h=data.pred_vol_4h,
-            pred_vol_d1=data.pred_vol_d1,
-            vix_proxy=data.vix_proxy,
-            base=base,
-            regime=data.regime,
-            low_base=low_base,
-            reversal=data.reversal,
-            history_scores=history_scores,
-        )
+        data.base = base
+        data.low_base = low_base
+        data.history_scores = history_scores
+        data.signal_params = self.signal_params
+        data.dynamic_params = self.dynamic_th_params
+        data.smooth_window = getattr(self, "smooth_window", 20)
+        data.smooth_alpha = getattr(self, "smooth_alpha", 0.2)
+        data.smooth_limit = getattr(self, "smooth_limit", 1.0)
+        data.th_window = getattr(self, "th_window", 60)
+        data.th_decay = getattr(self, "th_decay", 2.0)
+        return calc_dynamic_threshold(data)
 
     # Backward compatible property for easier monkeypatching
     @property
