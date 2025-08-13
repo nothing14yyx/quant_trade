@@ -61,6 +61,7 @@ market_phase:
 -   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
 -   新增 `dynamic_threshold` 配置项，可自定义 ATR、ADX 与 funding 对阈值的影响系数及上限。
 -   新增 `smooth_window`、`smooth_alpha` 与 `smooth_limit` 参数，用于平滑最近得分，减少噪声影响。
+-   `vote_system.prob_th` 为基础概率阈值（默认 0.5），`prob_margin` 用于弱票判定（如 0.08 表示 `0.5±0.08`），`strong_prob_th` 与 `_compute_vote` 结合使用以判定强票。
 -   新增 `risk_budget_threshold` 函数，可依据历史波动率或换手率分布计算风险阈值：
 
 ```python

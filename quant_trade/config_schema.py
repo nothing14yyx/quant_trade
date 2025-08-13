@@ -20,9 +20,13 @@ class VoteSystem(BaseModel):
     weight_ai: float = 3
     strong_min: int = 2
     conf_min: float = 0.25
-    prob_th: float = 0.5
-    prob_margin: float = 0.1
-    strong_prob_th: float = 0.8
+    prob_th: float = Field(0.5, description="基础概率阈值")
+    prob_margin: float = Field(
+        0.08, description="用于弱票判定的概率边际，如0.08表示0.5±0.08"
+    )
+    strong_prob_th: float = Field(
+        0.8, description="与 _compute_vote 结合使用的强票概率阈值"
+    )
     ai_dir_eps: float = 0.10
 
 

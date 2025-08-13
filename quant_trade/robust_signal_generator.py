@@ -24,8 +24,8 @@ class RobustSignalGeneratorConfig:
     feature_cols_1h: list[str] = field(default_factory=list)
     feature_cols_4h: list[str] = field(default_factory=list)
     feature_cols_d1: list[str] = field(default_factory=list)
-    prob_margin: float = 0.1
-    strong_prob_th: float = 0.8
+    prob_margin: float = 0.08
+    strong_prob_th: float = 0.8  # 与 _compute_vote 配合判断强票
     config_path: str | Path | None = None
 
     @classmethod
@@ -39,7 +39,7 @@ class RobustSignalGeneratorConfig:
             feature_cols_1h=cfg.get("feature_cols_1h", []),
             feature_cols_4h=cfg.get("feature_cols_4h", []),
             feature_cols_d1=cfg.get("feature_cols_d1", []),
-            prob_margin=cfg.get("prob_margin", 0.1),
+            prob_margin=cfg.get("prob_margin", 0.08),
             strong_prob_th=cfg.get("strong_prob_th", 0.8),
             config_path=cfg_path,
         )
