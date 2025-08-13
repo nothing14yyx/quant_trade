@@ -161,7 +161,15 @@ from .utils import (
     sigmoid_dir,
     sigmoid_confidence,
 )
-from .factor_scorer import FactorScorerImpl
+from .features_to_scores import (
+    get_factor_scores as _get_factor_scores,
+    calc_factor_scores as _calc_factor_scores,
+    calc_factor_scores_vectorized as _calc_factor_scores_vectorized,
+    apply_local_adjustments as _apply_local_adjustments,
+    ma_cross_logic as _ma_cross_logic,
+    record_volume_ratio as _record_volume_ratio,
+    get_volume_ratio_thresholds as _get_volume_ratio_thresholds,
+)
 from .voting_model import safe_load
 from .predictor_adapter import PredictorAdapter
 from .fusion_rule import FusionRuleBased
@@ -664,9 +672,6 @@ class RobustSignalGenerator:
         self._factor_score_cache = LRU(self.cache_maxsize)
         self._fuse_cache = LRU(self.cache_maxsize)
 
-        # 因子得分计算实现
-        self.factor_scorer = FactorScorerImpl(self)
-
         # 融合规则实现
         self.fusion_rule = FusionRuleBased(self)
         self.consensus_check = self.fusion_rule.consensus_check
@@ -683,11 +688,13 @@ class RobustSignalGenerator:
 
         # 信号引擎
         from .engine import SignalEngine
+        from .factor_scorer import FactorScorerImpl
 
+        factor_scorer = FactorScorerImpl(self)
         self.engine = SignalEngine(
             self,
             self.predictor,
-            self.factor_scorer,
+            factor_scorer,
             self.fusion_rule,
             self.risk_filters,
             self.position_sizer,
@@ -705,6 +712,7 @@ class RobustSignalGenerator:
         """确保 ``self.engine`` 存在。"""
         if self.__dict__.get("engine") is None:
             from .engine import SignalEngine
+            from .factor_scorer import FactorScorerImpl
 
             self.engine = SignalEngine(
                 self,
@@ -1008,32 +1016,6 @@ class RobustSignalGenerator:
                     deque(maxlen=self.volume_ratio_history.maxlen),
                 ).append(float(ratio))
 
-    def record_volume_ratio(self, ratio: float | None, symbol: str | None = None):
-        if ratio is None:
-            return
-        cache = self._get_symbol_cache(symbol)
-        cache.setdefault(
-            "volume_ratio_history", deque(maxlen=self.volume_ratio_history.maxlen)
-        ).append(float(ratio))
-
-    def get_volume_ratio_thresholds(self, symbol: str | None = None) -> tuple[float, float]:
-        cache = self._get_symbol_cache(symbol)
-        hist = cache.get("volume_ratio_history")
-        if not hist or len(hist) < 10:
-            return (
-                self.volume_guard_params["ratio_low"],
-                self.volume_guard_params["ratio_high"],
-            )
-        arr = np.asarray(hist, dtype=float)
-        arr = arr[~np.isnan(arr)]
-        if arr.size < 10:
-            return (
-                self.volume_guard_params["ratio_low"],
-                self.volume_guard_params["ratio_high"],
-            )
-        low = float(np.quantile(arr, self.volume_quantile_low))
-        high = float(np.quantile(arr, self.volume_quantile_high))
-        return low, high
 
     def _normalize_features(self, feats, period: str) -> dict:
         """将 DataFrame/Series 输入转为字典, 并缓存列索引"""
@@ -1072,24 +1054,15 @@ class RobustSignalGenerator:
             return default
         return val
 
+    def record_volume_ratio(self, ratio: float | None, symbol: str | None = None):
+        return _record_volume_ratio(self, ratio, symbol)
+
+    def get_volume_ratio_thresholds(self, symbol: str | None = None) -> tuple[float, float]:
+        return _get_volume_ratio_thresholds(self, symbol)
+
     def ma_cross_logic(self, features: dict, sma_20_1h_prev=None) -> float:
-        """根据1h MA5 与 MA20 判断并返回分数乘数"""
+        return _ma_cross_logic(self, features, sma_20_1h_prev)
 
-        sma5 = self.get_feat_value(features, 'sma_5_1h', None)
-        sma20 = self.get_feat_value(features, 'sma_20_1h', None)
-        ma_ratio = self.get_feat_value(features, 'ma_ratio_5_20', 1.0)
-        if sma5 is None or sma20 is None:
-            return 1.0
-
-        slope = 0.0
-        if sma_20_1h_prev not in (None, 0):
-            slope = (sma20 - sma_20_1h_prev) / sma_20_1h_prev
-
-        if (ma_ratio > 1.02 and slope > 0) or (ma_ratio < 0.98 and slope < 0):
-            return 1.15
-        if (ma_ratio > 1.02 and slope < 0) or (ma_ratio < 0.98 and slope > 0):
-            return 0.85
-        return 1.0
 
     def detect_reversal(
         self,
@@ -1133,8 +1106,11 @@ class RobustSignalGenerator:
     # robust_signal_generator.py
 
     def get_factor_scores(self, features: dict, period: str) -> dict:
-        """兼容旧接口, 实际委托给 :class:`FactorScorerImpl`."""
-        return self.factor_scorer.score(features, period)
+        """兼容旧接口, 优先调用 ``factor_scorer`` 属性."""
+        scorer = getattr(self, "factor_scorer", None)
+        if scorer is not None and hasattr(scorer, "score"):
+            return scorer.score(features, period)
+        return _get_factor_scores(self, features, period)
 
     def update_ic_scores(self, df, *, window=None, group_by=None, time_col="open_time"):
         """根据历史数据计算并更新各因子的 IC 分数
@@ -1428,8 +1404,11 @@ class RobustSignalGenerator:
 
     # ===== 新增辅助函数 =====
     def calc_factor_scores(self, ai_scores: dict, factor_scores: dict, weights: dict) -> dict:
-        """计算未调整的各周期得分, 委托给 ``FactorScorerImpl``."""
-        return self.factor_scorer.calc_factor_scores(ai_scores, factor_scores, weights)
+        """计算未调整的各周期得分, 优先调用 ``factor_scorer`` 属性."""
+        scorer = getattr(self, "factor_scorer", None)
+        if scorer is not None and hasattr(scorer, "calc_factor_scores"):
+            return scorer.calc_factor_scores(ai_scores, factor_scores, weights)
+        return _calc_factor_scores(self, ai_scores, factor_scores, weights)
 
     def calc_factor_scores_vectorized(
         self,
@@ -1437,8 +1416,11 @@ class RobustSignalGenerator:
         factor_scores: dict,
         weights: dict,
     ) -> dict:
-        """向量化版本的各周期得分计算, 委托给 ``FactorScorerImpl``."""
-        return self.factor_scorer.calc_factor_scores_vectorized(ai_scores, factor_scores, weights)
+        """向量化版本的各周期得分计算, 优先调用 ``factor_scorer`` 属性."""
+        scorer = getattr(self, "factor_scorer", None)
+        if scorer is not None and hasattr(scorer, "calc_factor_scores_vectorized"):
+            return scorer.calc_factor_scores_vectorized(ai_scores, factor_scores, weights)
+        return _calc_factor_scores_vectorized(self, ai_scores, factor_scores, weights)
 
     def apply_local_adjustments(
         self,
@@ -1450,8 +1432,20 @@ class RobustSignalGenerator:
         drawdown_pred_1h: float | None = None,
         symbol: str | None = None,
     ) -> tuple[dict, dict]:
-        """应用本地逻辑修正分数并返回细节, 委托实现."""
-        return self.factor_scorer.apply_local_adjustments(
+        """应用本地逻辑修正分数并返回细节, 优先调用 ``factor_scorer`` 属性."""
+        scorer = getattr(self, "factor_scorer", None)
+        if scorer is not None and hasattr(scorer, "apply_local_adjustments"):
+            return scorer.apply_local_adjustments(
+                scores,
+                raw_feats,
+                factor_scores,
+                deltas,
+                rise_pred_1h,
+                drawdown_pred_1h,
+                symbol,
+            )
+        return _apply_local_adjustments(
+            self,
             scores,
             raw_feats,
             factor_scores,
@@ -1786,17 +1780,17 @@ class RobustSignalGenerator:
         std_15m = feats_15m.std
 
         fs = {
-            "1h": self.factor_scorer.score(std_1h, "1h"),
-            "4h": self.factor_scorer.score(std_4h, "4h"),
-            "d1": self.factor_scorer.score(std_d1, "d1"),
+            "1h": self.get_factor_scores(std_1h, "1h"),
+            "4h": self.get_factor_scores(std_4h, "4h"),
+            "d1": self.get_factor_scores(std_d1, "d1"),
         }
 
         with self._lock:
             weights = self.current_weights.copy()
 
-        scores = self.factor_scorer.calc_factor_scores(ai_scores, fs, weights)
+        scores = self.calc_factor_scores(ai_scores, fs, weights)
 
-        scores, local_details = self.factor_scorer.apply_local_adjustments(
+        scores, local_details = self.apply_local_adjustments(
             scores,
             raw_dict,
             fs,
