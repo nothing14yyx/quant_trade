@@ -187,6 +187,7 @@ from .dynamic_thresholds import (
     calc_dynamic_threshold,
 )
 from .position_sizer import PositionSizerImpl
+from .position_sizing import calc_position_size
 
 
 @dataclass
@@ -2373,6 +2374,8 @@ class RobustSignalGenerator:
             ),
             consensus_all=risk_info.get("consensus_all", False),
         )
+
+        pos_size = calc_position_size(pos_size, self.max_position)
 
         pos_size, direction, zero_reason, penalties = self.position_sizer._apply_position_filters(
             pos_size,
