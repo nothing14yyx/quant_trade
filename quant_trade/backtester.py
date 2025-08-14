@@ -11,6 +11,8 @@ from quant_trade.robust_signal_generator import (
 from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
 from quant_trade.logging import get_logger
 from quant_trade.json_logger import log_signal
+from quant_trade.backtest.backtester import ExecutionPolicy, execute_signal
+from quant_trade.slippage_model import SlippageModel
 
 logger = get_logger(__name__)
 
@@ -47,9 +49,12 @@ def convert_model_paths(paths: dict) -> dict:
 # =========== 数据库&配置 ===========
 def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: float, slippage: float) -> pd.DataFrame:
     """根据信号和K线计算回测交易明细"""
+    policy = ExecutionPolicy(maker_fee=fee_rate, taker_fee=fee_rate)
+    slippage_model = SlippageModel(bp_per_hv=slippage * 10000)
     trades = []
     in_pos = False
     entry_price = entry_time = pos_size = score = direction = tp = sl = None
+    entry_fee = 0.0
     for i in range(1, len(df_sym) - 1):
         if not in_pos:
             if (
@@ -59,12 +64,27 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
                 and not np.isnan(sig_df.at[i-1, 'position_size'])
             ):
                 direction = sig_df.at[i-1, 'signal']
-                entry_price = df_sym.at[i, 'open'] * (1 + slippage * direction)
-                entry_time = df_sym.at[i, 'open_time']
                 pos_size = sig_df.at[i-1, 'position_size']
                 score = sig_df.at[i-1, 'score']
                 tp = sig_df.at[i-1, 'take_profit']
                 sl = sig_df.at[i-1, 'stop_loss']
+                is_strong = score >= 0.8
+                slip = 0.0 if is_strong else slippage_model.slippage_bp(1.0) / 10000.0
+                price, fee = execute_signal(
+                    df_sym.at[i, 'open'],
+                    df_sym.at[i, 'high'],
+                    df_sym.at[i, 'low'],
+                    direction,
+                    policy=policy,
+                    slippage=slip,
+                    position_size=pos_size,
+                    is_taker=is_strong,
+                )
+                if price is None:
+                    continue
+                entry_price = price
+                entry_fee = fee
+                entry_time = df_sym.at[i, 'open_time']
                 in_pos = True
             continue
 
@@ -72,6 +92,7 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
         low = df_sym.at[i, 'low']
         exit_price = None
         exit_time = None
+        exit_fee = 0.0
         if direction == 1:
             if sl is not None and low <= sl:
                 exit_price = sl
@@ -88,14 +109,36 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
                 exit_time = df_sym.at[i, 'open_time']
 
         if exit_price is None and i < len(sig_df) and sig_df.at[i, 'signal'] == -direction:
-            # 用下一根 K 线开盘价平仓，至少吃到完整波动
-            exit_price = df_sym.at[i + 1, 'open'] * (1 - slippage * direction)
+            exit_price, exit_fee = execute_signal(
+                df_sym.at[i + 1, 'open'],
+                df_sym.at[i + 1, 'high'],
+                df_sym.at[i + 1, 'low'],
+                -direction,
+                policy=policy,
+                slippage=0.0,
+                position_size=pos_size,
+                is_taker=True,
+            )
             exit_time = df_sym.at[i + 1, 'open_time']
+
+        if exit_price is not None and exit_fee == 0.0:
+            _, exit_fee = execute_signal(
+                exit_price,
+                exit_price,
+                exit_price,
+                -direction,
+                policy=policy,
+                slippage=0.0,
+                position_size=pos_size,
+                is_taker=True,
+            )
+            exit_time = exit_time or df_sym.at[i, 'open_time']
 
         if exit_price is not None:
             pnl = (exit_price - entry_price) * direction * pos_size
+            total_fee = entry_fee + exit_fee
             if pos_size:
-                ret = pnl / (entry_price * pos_size) - 2 * fee_rate
+                ret = pnl / (entry_price * pos_size) - total_fee / (entry_price * pos_size)
             else:
                 ret = 0.0
             holding_s = (exit_time - entry_time).total_seconds()
@@ -110,16 +153,27 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
                 'position_size': pos_size,
                 'pnl': pnl,
                 'ret': ret,
-                'holding_s': holding_s
+                'fee': total_fee,
+                'holding_s': holding_s,
             })
             in_pos = False
 
     if in_pos:
-        exit_price = df_sym.at[len(df_sym)-1, 'close'] * (1 - slippage * direction)
+        exit_price, exit_fee = execute_signal(
+            df_sym.at[len(df_sym)-1, 'close'],
+            df_sym.at[len(df_sym)-1, 'close'],
+            df_sym.at[len(df_sym)-1, 'close'],
+            -direction,
+            policy=policy,
+            slippage=0.0,
+            position_size=pos_size,
+            is_taker=True,
+        )
         exit_time = df_sym.at[len(df_sym)-1, 'close_time']
         pnl = (exit_price - entry_price) * direction * pos_size
+        total_fee = entry_fee + exit_fee
         if pos_size:
-            ret = pnl / (entry_price * pos_size) - 2 * fee_rate
+            ret = pnl / (entry_price * pos_size) - total_fee / (entry_price * pos_size)
         else:
             ret = 0.0
         holding_s = (exit_time - entry_time).total_seconds()
@@ -134,7 +188,8 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
             'position_size': pos_size,
             'pnl': pnl,
             'ret': ret,
-            'holding_s': holding_s
+            'fee': total_fee,
+            'holding_s': holding_s,
         })
 
     columns = [
@@ -148,6 +203,7 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
         'position_size',
         'pnl',
         'ret',
+        'fee',
         'holding_s',
     ]
     return pd.DataFrame(trades, columns=columns)
