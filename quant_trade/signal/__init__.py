@@ -20,6 +20,7 @@ from .risk_filters import RiskFiltersImpl
 from .position_sizer import PositionSizerImpl
 from .position_sizing import calc_position_size
 from .voting_model import VotingModel
+from .vote_fusion import Vote, fuse_votes
 
 try:  # optional
     from .risk_filters import compute_risk_multipliers
@@ -47,6 +48,8 @@ __all__ = [
     "ThresholdParams",
     "calc_position_size",
     "VotingModel",
+    "Vote",
+    "fuse_votes",
 ]
 if compute_risk_multipliers is not None:
     __all__.append("compute_risk_multipliers")
