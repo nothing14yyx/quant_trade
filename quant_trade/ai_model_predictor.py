@@ -36,11 +36,25 @@ class AIModelPredictor:
                 }
                 self.calibrators[period][direction] = loaded.get("calibrator")
 
-    def _build_df(
-        self, features: Mapping[str, float | int | None], train_cols: list[str]
-    ) -> pd.DataFrame:
-        row = {c: [features.get(c, np.nan)] for c in train_cols}
-        df = pd.DataFrame(row)
+    def _build_df(self, features, train_cols: list[str]) -> pd.DataFrame:
+        """构建 pandas ``DataFrame`` 以便送入模型.
+
+        ``features`` 可以是单条特征 ``Mapping``、``list``[``Mapping``]
+        或者二维 ``ndarray``/``list``，以适配批量推理需求。
+        """
+
+        if isinstance(features, Mapping):
+            row = {c: [features.get(c, np.nan)] for c in train_cols}
+            df = pd.DataFrame(row)
+        elif isinstance(features, (list, tuple)) and features and isinstance(features[0], Mapping):
+            data = [{c: f.get(c, np.nan) for c in train_cols} for f in features]
+            df = pd.DataFrame(data, columns=train_cols)
+        else:
+            arr = np.asarray(features)
+            if arr.ndim == 1:
+                arr = arr.reshape(1, -1)
+            df = pd.DataFrame(arr, columns=train_cols)
+
         df = df.replace(['', None], np.nan).infer_objects(copy=False).astype(float)
         return df
 
@@ -59,12 +73,12 @@ class AIModelPredictor:
 
     def get_ai_score(
         self,
-        features: Mapping[str, float | int | None],
+        features,
         model_up: Mapping[str, Any],
         model_down: Mapping[str, Any],
         calibrator_up: Any | None = None,
         calibrator_down: Any | None = None,
-    ) -> float:
+    ) -> float | np.ndarray:
         """根据上涨/下跌模型概率差值计算AI得分"""
         X_up = self._build_df(features, model_up["features"])
         X_down = self._build_df(features, model_down["features"])
@@ -78,28 +92,27 @@ class AIModelPredictor:
         ai_score = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
         if ai_score.size == 1:
             return float(ai_score[0])
-        return float(ai_score)
+        return ai_score.astype(float)
 
-    def get_ai_score_cls(
-        self, features: Mapping[str, float | int | None], model_dict: Mapping[str, Any]
-    ) -> float:
+    def get_ai_score_cls(self, features, model_dict: Mapping[str, Any]) -> float | np.ndarray:
         cols = model_dict["features"]
         pipeline = model_dict["pipeline"]
         df = self._build_df(features, cols)
-        probs = pipeline.predict_proba(df)[0]
-        classes = getattr(pipeline, "classes_", np.arange(len(probs)))
+        probs = pipeline.predict_proba(df)
+        classes = getattr(pipeline, "classes_", np.arange(probs.shape[1]))
         if len(classes) >= 3:
             idx_down = int(np.argmin(classes))
             idx_up = int(np.argmax(classes))
         else:
             idx_down = 0
-            idx_up = min(1, len(probs) - 1)
-        prob_down = probs[idx_down]
-        prob_up = probs[idx_up]
+            idx_up = min(1, len(classes) - 1)
+        prob_down = probs[:, idx_down]
+        prob_up = probs[:, idx_up]
         denom = prob_up + prob_down
-        if denom == 0:
-            return 0.0
-        return float((prob_up - prob_down) / denom)
+        scores = np.where(denom == 0, 0.0, (prob_up - prob_down) / denom)
+        if scores.size == 1:
+            return float(scores[0])
+        return scores.astype(float)
 
     def get_reg_prediction(
         self, features: Mapping[str, float | int | None], model_dict: Mapping[str, Any]

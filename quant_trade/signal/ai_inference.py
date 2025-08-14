@@ -13,6 +13,89 @@ def _hash_features(feats: Mapping[str, float | int | None]) -> int:
     return hash(tuple(sorted(feats.items())))
 
 
+def compute_ai_scores_batch(
+    predictor: Any | None,
+    period_features_batch,
+    models: Mapping[str, Mapping[str, Any]],
+    calibrators: Mapping[str, Mapping[str, Any]] | None = None,
+    cache: Any | None = None,
+) -> list[dict[str, float]]:
+    """批量计算各周期 AI 分数.
+
+    ``period_features_batch`` 可以是 ``{period: list[Mapping]}``，也可以是形如
+    ``numpy.ndarray`` 的二维数组（仅针对单个周期）。返回值为每条样本对应
+    的 ``{period: score}`` 字典列表。
+    """
+
+    calibrators = calibrators or {}
+
+    if predictor is None:
+        if isinstance(period_features_batch, Mapping):
+            n = len(next(iter(period_features_batch.values())))
+            return [
+                {p: 0.0 for p in period_features_batch}
+                for _ in range(n)
+            ]
+        arr = np.asarray(period_features_batch)
+        return [
+            {next(iter(models.keys()), "1h"): 0.0} for _ in range(len(arr))
+        ]
+
+    if isinstance(period_features_batch, Mapping):
+        periods = list(period_features_batch.keys())
+        n = len(next(iter(period_features_batch.values())))
+        results: list[dict[str, float]] = [dict() for _ in range(n)]
+        for period in periods:
+            feats_list = period_features_batch[period]
+            models_p = models.get(period, {})
+            if not models_p:
+                for r in results:
+                    r[period] = 0.0
+                continue
+            if "cls" in models_p and "up" not in models_p:
+                scores = predictor.get_ai_score_cls(feats_list, models_p["cls"])
+            else:
+                cal_up = calibrators.get(period, {}).get("up")
+                cal_down = calibrators.get(period, {}).get("down")
+                scores = predictor.get_ai_score(
+                    feats_list,
+                    models_p.get("up", {}),
+                    models_p.get("down", {}),
+                    cal_up,
+                    cal_down,
+                )
+            scores_arr = np.asarray(scores, dtype=float).reshape(-1)
+            for i, sc in enumerate(scores_arr):
+                results[i][period] = float(sc)
+                if cache is not None and isinstance(feats_list, list) and feats_list:
+                    f = feats_list[i] if feats_list[i] is not None else {}
+                    key = (period, _hash_features(f))
+                    cache.set(key, float(sc))
+        return results
+
+    # period_features_batch is array for a single period
+    arr = np.asarray(period_features_batch)
+    n = arr.shape[0]
+    period = next(iter(models.keys()), "1h")
+    models_p = models.get(period, {})
+    if not models_p:
+        return [{period: 0.0} for _ in range(n)]
+    if "cls" in models_p and "up" not in models_p:
+        scores = predictor.get_ai_score_cls(arr, models_p["cls"])
+    else:
+        cal_up = calibrators.get(period, {}).get("up")
+        cal_down = calibrators.get(period, {}).get("down")
+        scores = predictor.get_ai_score(
+            arr,
+            models_p.get("up", {}),
+            models_p.get("down", {}),
+            cal_up,
+            cal_down,
+        )
+    scores_arr = np.asarray(scores, dtype=float).reshape(-1)
+    return [{period: float(s)} for s in scores_arr]
+
+
 def get_period_ai_scores(
     predictor: Any | None,
     period_features: Mapping[str, Mapping[str, float | int | None]],
