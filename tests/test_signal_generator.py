@@ -3,7 +3,11 @@ import pytest
 
 from quant_trade.tests.test_utils import make_dummy_rsg
 from quant_trade.data_loader import compute_vix_proxy
-from quant_trade.robust_signal_generator import SignalThresholdParams, DynamicThresholdInput
+from quant_trade.robust_signal_generator import (
+    SignalThresholdParams,
+    DynamicThresholdInput,
+    RobustSignalGenerator,
+)
 from quant_trade.signal import compute_dynamic_threshold
 
 
@@ -371,6 +375,7 @@ def test_update_ic_scores_window_group(monkeypatch):
 
 def test_dynamic_weight_update(monkeypatch):
     rsg = make_dummy_rsg()
+    rsg.dynamic_weight_update = RobustSignalGenerator.dynamic_weight_update.__get__(rsg)
 
     import pandas as pd
     df = pd.DataFrame({"open_time": [0], "open": [1], "close": [1]})
@@ -384,7 +389,7 @@ def test_dynamic_weight_update(monkeypatch):
     ))
 
     rsg.update_ic_scores(df)
-    weights = rsg.dynamic_weight_update()
+    weights = rsg.update_weights()
 
     base_arr = np.array(list(rsg.base_weights.values()))
     ic_arr = np.array(list(rsg.ic_scores.values()))

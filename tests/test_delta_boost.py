@@ -24,4 +24,4 @@ def test_delta_boost():
     s0 = 0.5
     s1 = g._apply_delta_boost(s0, d)
     assert s1 > s0
-    g.stop_weight_update_thread()
+    g.update_weights()

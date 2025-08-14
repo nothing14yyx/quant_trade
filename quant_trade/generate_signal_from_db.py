@@ -77,8 +77,8 @@ def main(symbol: str = "ETHUSDT") -> None:
 
     logger.info("最新交易信号:\n%s", latest_signal)
     logger.info("%s", pd.DataFrame(results).to_string(index=False))
-    if hasattr(sg, "stop_weight_update_thread"):
-        sg.stop_weight_update_thread()
+    if hasattr(sg, "update_weights"):
+        sg.update_weights()
 
 
 if __name__ == "__main__":

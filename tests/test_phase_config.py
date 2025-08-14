@@ -24,7 +24,7 @@ def test_update_market_phase_uses_config(tmp_path, monkeypatch):
     )
     rsg.update_market_phase(None)
     assert rsg.phase_th_mult == pytest.approx(0.8)
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()
 
 
 def test_update_phase_dir_mult(tmp_path, monkeypatch):
@@ -52,4 +52,4 @@ def test_update_phase_dir_mult(tmp_path, monkeypatch):
     )
     rsg.update_market_phase(None)
     assert rsg.phase_dir_mult == {"long": 1, "short": 2}
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()

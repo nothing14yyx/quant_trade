@@ -29,9 +29,7 @@
 |  _factor_cache        |
 +-----+-------------+---+
       |             |
-      |     start_weight_update_thread
-      |             |
-      |     stop_weight_update_thread
+      |     update_weights
       v             v
 +-----+-------------+---+
 |   risk_manager        |
@@ -57,7 +55,7 @@
 - **职责**：融合因子、AI 得分与风险控制，产生交易信号。
 - **不变量**：
   - 缓存命中时返回与重新计算一致的结果；
-  - 权重更新线程始终安全启动与停止，不会泄露资源；
+  - 权重更新通过显式调用 `update_weights` 进行；
   - 信号计算对外接口保持幂等。
 
 ### risk_manager / backtester
@@ -72,7 +70,7 @@
 - **淘汰策略**：超过上限时淘汰最久未使用的数据。
 - **线程安全**：
   - 缓存读写在内部锁保护下执行，防止并发污染；
-  - `start_weight_update_thread` 启动后台线程定期更新因子权重，`stop_weight_update_thread` 确保线程安全退出；
+  - 因子权重由调度器定期调用 `update_weights` 刷新；
   - 多线程环境下，所有共享状态必须通过原子操作或锁维护一致性。
 
 ## 无行为变更

@@ -263,10 +263,10 @@ class Scheduler:
             )
             self.cfg = load_config()
             rsg_cfg = RobustSignalGeneratorConfig.from_cfg(self.cfg)
-            self.sg.stop_weight_update_thread()
             self.sg = RobustSignalGenerator(rsg_cfg)
             categories = load_symbol_categories(self.engine)
             self.sg.set_symbol_categories(categories)
+            self.sg.update_weights()
         except (OSError, ValueError, RuntimeError) as exc:
             logger.exception("search_and_reload_params failed")
 
@@ -538,7 +538,7 @@ class Scheduler:
         except KeyboardInterrupt:
             logging.info("scheduler stopped")
         finally:
-            self.sg.stop_weight_update_thread()
+            self.sg.update_weights()
 
 
 if __name__ == "__main__":

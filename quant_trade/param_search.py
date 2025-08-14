@@ -413,8 +413,8 @@ def run_param_search(
                     ic,
                     sg_iter,
                 )
-                if hasattr(sg_iter, "stop_weight_update_thread"):
-                    sg_iter.stop_weight_update_thread()
+                if hasattr(sg_iter, "update_weights"):
+                    sg_iter.update_weights()
                 ret_vals.append(tot_ret)
                 sharpe_vals.append(sharpe)
                 trades += trade_count
@@ -453,8 +453,8 @@ def run_param_search(
             )
 
         logger.info("best params: %s best_sharpe: %.6f", best, best_metric)
-        if hasattr(sg, "stop_weight_update_thread"):
-            sg.stop_weight_update_thread()
+        if hasattr(sg, "update_weights"):
+            sg.update_weights()
         return best_metric
     else:
         def objective(trial: optuna.Trial) -> float:
@@ -532,8 +532,8 @@ def run_param_search(
                     ic,
                     sg_iter,
                 )
-                if hasattr(sg_iter, "stop_weight_update_thread"):
-                    sg_iter.stop_weight_update_thread()
+                if hasattr(sg_iter, "update_weights"):
+                    sg_iter.update_weights()
                 ret_vals.append(tot_ret)
                 sharpe_vals.append(sharpe)
                 trades += trade_count
@@ -589,8 +589,8 @@ def run_param_search(
         logger.info(
             "best params: %s best_sharpe: %.6f", study.best_params, study.best_value
         )
-        if hasattr(sg, "stop_weight_update_thread"):
-            sg.stop_weight_update_thread()
+        if hasattr(sg, "update_weights"):
+            sg.update_weights()
         return study.best_value
 
 

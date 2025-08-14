@@ -32,4 +32,4 @@ def test_get_ai_score_auto_features(tmp_path):
     df = pd.DataFrame({"f1": [0.5], "f2": [0.1]})
     score = rsg.predictor.get_ai_score(df, rsg.models["1h"]["up"], rsg.models["1h"]["down"])
     assert score == pytest.approx(1.0)
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()
