@@ -7,6 +7,7 @@ from typing import Any, Mapping
 import math
 import threading
 import types
+from collections import deque
 
 from .signal import (
     core,
@@ -14,6 +15,7 @@ from .signal import (
     compute_dynamic_threshold as _compute_dynamic_threshold,
     ThresholdParams,
     DynamicThresholdInput,
+    features_to_scores,
 )
 from .signal.dynamic_thresholds import DynamicThresholdParams, SignalThresholdParams
 from .signal.position_sizing import apply_normalized_multipliers
@@ -86,6 +88,7 @@ class RobustSignalGenerator:
     rsi_k = 1.0
     veto_conflict_count = 1
     all_scores_list: list[float] = []
+    eth_dom_history = deque(maxlen=500)
 
     def __init__(self, cfg: RobustSignalGeneratorConfig | None = None):
         self.cfg = cfg
@@ -120,6 +123,15 @@ class RobustSignalGenerator:
         **kwargs,
     ):
         features_15m_list = features_15m_list or [None] * len(features_1h_list)
+
+        # 预先批量计算因子分以利用缓存与矢量化实现
+        try:
+            features_to_scores.get_factor_scores_batch(self, features_1h_list, "1h")
+            features_to_scores.get_factor_scores_batch(self, features_4h_list, "4h")
+            features_to_scores.get_factor_scores_batch(self, features_d1_list, "d1")
+        except Exception:
+            pass
+
         results = []
         for i, f1 in enumerate(features_1h_list):
             f4 = features_4h_list[i]

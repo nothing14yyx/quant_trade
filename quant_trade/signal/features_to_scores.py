@@ -73,49 +73,78 @@ def ma_cross_logic(core, features: dict, sma_20_1h_prev=None) -> float:
 # Core scoring utilities copied from ``FactorScorerImpl``
 # ---------------------------------------------------------------------------
 
-def score(core, features: Mapping[str, Any], period: str) -> dict[str, float]:
-    """Compute raw factor scores for a given ``period``."""
-    key = core._make_cache_key(features, period)
-    cached = core._factor_cache.get(key)
-    if cached is not None:
-        return cached
+def _extract_feature_arrays(core, rows, period: str) -> dict[str, np.ndarray]:
+    """将输入的多行特征提取为按列存储的 ``ndarray``。
 
-    dedup_row = {k: v for k, v in features.items()}
-    safe = lambda k, d=0: core.get_feat_value(dedup_row, k, d)
+    ``rows`` 可以是 ``list[Mapping]`` 或带字段名的 ``ndarray``。"""
+
+    names_defaults = {
+        f"price_vs_ma200_{period}": 0.0,
+        f"ema_slope_50_{period}": 0.0,
+        f"adx_{period}": 0.0,
+        f"rsi_{period}": 50.0,
+        f"macd_hist_{period}": 0.0,
+        f"atr_pct_{period}": 0.0,
+        f"bb_width_{period}": 0.0,
+        f"vol_ma_ratio_{period}": 0.0,
+        f"buy_sell_ratio_{period}": 1.0,
+        f"funding_rate_{period}": 0.0,
+        f"funding_rate_anom_{period}": 0.0,
+        f"channel_pos_{period}": 0.5,
+    }
+
+    n = len(rows)
+    out: dict[str, np.ndarray] = {}
+    if isinstance(rows, np.ndarray) and rows.dtype.names:
+        for k, d in names_defaults.items():
+            if k in rows.dtype.names:
+                out[k] = rows[k].astype(float)
+            else:
+                out[k] = np.full(n, d, dtype=float)
+    else:
+        for k, d in names_defaults.items():
+            out[k] = np.array(
+                [core.get_feat_value(row, k, d) for row in rows], dtype=float
+            )
+    return out
+
+
+def _score_vectorized(core, rows, period: str) -> dict[str, np.ndarray]:
+    """矢量化计算多行 ``rows`` 的因子得分。"""
+
+    arrs = _extract_feature_arrays(core, rows, period)
 
     trend_raw = (
-        np.tanh(safe(f"price_vs_ma200_{period}", 0) * 5)
-        + np.tanh(safe(f"ema_slope_50_{period}", 0) * 5)
-        + 0.5 * np.tanh(safe(f"adx_{period}", 0) / 50)
+        np.tanh(arrs[f"price_vs_ma200_{period}"] * 5)
+        + np.tanh(arrs[f"ema_slope_50_{period}"] * 5)
+        + 0.5 * np.tanh(arrs[f"adx_{period}"] / 50)
     )
 
     momentum_raw = (
-        (safe(f"rsi_{period}", 50) - 50) / 50
-        + np.tanh(safe(f"macd_hist_{period}", 0) * 5)
+        (arrs[f"rsi_{period}"] - 50) / 50
+        + np.tanh(arrs[f"macd_hist_{period}"] * 5)
     )
 
     volatility_raw = (
-        np.tanh(safe(f"atr_pct_{period}", 0) * 8)
-        + np.tanh(safe(f"bb_width_{period}", 0) * 2)
+        np.tanh(arrs[f"atr_pct_{period}"] * 8)
+        + np.tanh(arrs[f"bb_width_{period}"] * 2)
     )
 
     volume_raw = (
-        np.tanh(safe(f"vol_ma_ratio_{period}", 0))
-        + np.tanh((safe(f"buy_sell_ratio_{period}", 1) - 1) * 2)
+        np.tanh(arrs[f"vol_ma_ratio_{period}"])
+        + np.tanh((arrs[f"buy_sell_ratio_{period}"] - 1) * 2)
     )
 
-    sentiment_raw = np.tanh(safe(f"funding_rate_{period}", 0) * 4000)
+    sentiment_raw = np.tanh(arrs[f"funding_rate_{period}"] * 4000)
 
-    f_rate = safe(f"funding_rate_{period}", 0)
-    f_anom = safe(f"funding_rate_anom_{period}", 0)
+    f_rate = arrs[f"funding_rate_{period}"]
+    f_anom = arrs[f"funding_rate_anom_{period}"]
     thr = 0.0005
-    if abs(f_rate) > thr:
-        funding_raw = -np.tanh(f_rate * 4000)
-    else:
-        funding_raw = np.tanh(f_rate * 4000)
-    if abs(f_rate) < 0.001:
-        funding_raw = 0.0
-    funding_raw += np.tanh(f_anom * 50)
+    funding_raw = np.where(
+        np.abs(f_rate) > thr, -np.tanh(f_rate * 4000), np.tanh(f_rate * 4000)
+    )
+    funding_raw = np.where(np.abs(f_rate) < 0.001, 0.0, funding_raw)
+    funding_raw = funding_raw + np.tanh(f_anom * 50)
 
     scores = {
         "trend": np.tanh(trend_raw),
@@ -126,19 +155,58 @@ def score(core, features: Mapping[str, Any], period: str) -> dict[str, float]:
         "funding": np.tanh(funding_raw),
     }
 
-    pos = safe(f"channel_pos_{period}", 0.5)
+    pos = arrs[f"channel_pos_{period}"]
     for k, v in scores.items():
-        if pos > 1 and v > 0:
-            scores[k] = v * 1.2
-        elif pos < 0 and v < 0:
-            scores[k] = v * 1.2
-        elif pos > 0.9 and v > 0:
-            scores[k] = v * 0.8
-        elif pos < 0.1 and v < 0:
-            scores[k] = v * 0.8
-
-    core._factor_cache.set(key, scores)
+        v = np.where((pos > 1) & (v > 0), v * 1.2, v)
+        v = np.where((pos < 0) & (v < 0), v * 1.2, v)
+        v = np.where((pos > 0.9) & (v > 0), v * 0.8, v)
+        v = np.where((pos < 0.1) & (v < 0), v * 0.8, v)
+        scores[k] = v
     return scores
+
+
+def score(core, features: Mapping[str, Any], period: str) -> dict[str, float]:
+    """Compute raw factor scores for单条特征."""
+
+    return get_factor_scores_batch(core, [features], period)[0]
+
+
+def get_factor_scores_batch(core, features_iter, period: str):
+    """批量计算因子分。``features_iter`` 可以是 ``list[Mapping]`` 或 ``ndarray``。"""
+
+    if isinstance(features_iter, np.ndarray):
+        rows = list(features_iter)
+    else:
+        rows = list(features_iter)
+
+    results: list[dict[str, float] | None] = []
+    to_compute_idx: list[int] = []
+    to_compute_rows: list[Any] = []
+    for idx, row in enumerate(rows):
+        if isinstance(row, np.void):  # structured array row
+            mapping = {name: row[name] for name in row.dtype.names}
+        else:
+            mapping = dict(row)
+        key = core._make_cache_key(mapping, period)
+        cached = core._factor_cache.get(key)
+        if cached is not None:
+            results.append(cached)
+        else:
+            results.append(None)
+            to_compute_idx.append(idx)
+            to_compute_rows.append(mapping)
+
+    if to_compute_rows:
+        arrays_scores = _score_vectorized(core, to_compute_rows, period)
+        n = len(to_compute_rows)
+        for j in range(n):
+            sc = {k: float(v[j]) for k, v in arrays_scores.items()}
+            mapping = to_compute_rows[j]
+            key = core._make_cache_key(mapping, period)
+            core._factor_cache.set(key, sc)
+            results[to_compute_idx[j]] = sc
+
+    return results
 
 
 def calc_factor_scores(core, ai_scores: dict, factor_scores: dict, weights: dict) -> dict:
