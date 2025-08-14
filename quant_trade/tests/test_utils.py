@@ -61,6 +61,7 @@ def make_dummy_rsg():
     rsg.volume_ratio_history = deque([0.8, 1.0, 1.2], maxlen=500)
     rsg.risk_filters_enabled = True
     rsg.dynamic_threshold_enabled = True
+    rsg.direction_filters_enabled = True
     rsg.enable_factor_breakdown = True
     rsg.cycle_weight = {'strong': 1.0, 'weak': 1.0, 'opposite': 1.0}
     rsg.smooth_window = 20

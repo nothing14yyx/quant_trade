@@ -327,7 +327,9 @@ class RobustSignalGenerator:
 
         model_path: Path | None = None
         if self.cfg:
-            mp = self.cfg.model_paths.get("voting_model")
+            mp = getattr(self.cfg, "model_paths", None)
+            if mp is None and isinstance(self.cfg, Mapping):
+                mp = self.cfg.get("model_paths")
             if isinstance(mp, Mapping):
                 first = next(iter(mp.values()), None)
                 if first is not None:
@@ -374,9 +376,16 @@ class RobustSignalGenerator:
             direction = 1 if prob >= 0.5 else -1
             vote = direction * confidence
 
-        prob_margin = self.cfg.prob_margin if self.cfg else 0.0
+        prob_margin = 0.0
+        strong_prob_th = 1.0
+        if self.cfg:
+            if isinstance(self.cfg, Mapping):
+                prob_margin = self.cfg.get("prob_margin", 0.0)
+                strong_prob_th = self.cfg.get("strong_prob_th", 1.0)
+            else:
+                prob_margin = getattr(self.cfg, "prob_margin", 0.0)
+                strong_prob_th = getattr(self.cfg, "strong_prob_th", 1.0)
         weak_vote = 0.5 - prob_margin <= prob <= 0.5 + prob_margin
-        strong_prob_th = self.cfg.strong_prob_th if self.cfg else 1.0
         strong_confirm = confidence >= strong_prob_th
 
         return {
@@ -534,6 +543,7 @@ class RobustSignalGenerator:
             min_exposure=min_pos,
         )
 
+        pos_size = max(min_pos, min(pos_size, self.max_position))
         pos_size *= pos_mult
 
         vol_ratio = raw_f1h.get("vol_ma_ratio_1h")
@@ -558,8 +568,6 @@ class RobustSignalGenerator:
 
         if direction == 0:
             pos_size = 0.0
-        else:
-            pos_size = max(min_pos, min(pos_size, self.max_position))
 
         price = raw_f1h.get("close")
         atr = raw_f1h.get("atr_pct_1h")

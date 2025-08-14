@@ -322,9 +322,9 @@ class RiskFiltersImpl:
             reasons.append(RiskReason.RISK_LIMIT.value)
         if self.last_crowding_factor < 0 or self.last_crowding_factor > core.crowding_limit:
             reasons.append(
-                RiskReason.CONFLICT_PENALTY.value
+                RiskReason.CROWDING_PENALTY.value
                 if core.filter_penalty_mode
-                else RiskReason.CONFLICT_FILTER.value
+                else RiskReason.CROWDING_FILTER.value
             )
         return reasons
 
