@@ -120,7 +120,10 @@ def test_merge_features_with_order_book(tmp_path):
     fe.merge_features(save_to_db=False, batch_size=None)
     out_df = fe.out_df
     assert 'bid_ask_imbalance' in out_df.columns
-    assert out_df['bid_ask_imbalance'].iloc[0] == pytest.approx((20-10)/30)
+    imb = out_df['bid_ask_imbalance']
+    assert pd.isna(imb.iloc[0])
+    first_valid = imb.dropna().iloc[0]
+    assert first_valid == pytest.approx((20-10)/30)
 
 
 def test_merge_features_scaler_batch(tmp_path):

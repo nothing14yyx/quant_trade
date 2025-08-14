@@ -27,6 +27,7 @@ from quant_trade.utils.helper import (
     calc_features_raw,
     calc_order_book_features,
 )  # pylint: disable=import-error
+from quant_trade.features import safe_merge
 
 # Robust-z 参数持久化工具
 from quant_trade.utils.robust_scaler import (
@@ -859,10 +860,14 @@ class FeatureEngineer:
                 on="open_time",
                 direction="backward",
             )
-
+        merged.set_index("open_time", inplace=True)
+        merged = merged.select_dtypes(include="number")
+        shifted = safe_merge(df_1h[["open", "high", "low", "close", "volume"]], merged)
+        shifted = shifted.drop(columns=["open", "high", "low", "close", "volume"])
+        shifted.reset_index(inplace=True)
         raw = df_1h.reset_index()
         out = raw.merge(
-            merged,
+            shifted,
             on="open_time",
             how="left",
             suffixes=("", "_feat"),
