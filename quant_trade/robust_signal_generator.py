@@ -16,6 +16,7 @@ from .signal import (
     ThresholdParams,
     DynamicThresholdInput,
     features_to_scores,
+    ai_inference,
 )
 from .signal.dynamic_thresholds import DynamicThresholdParams, SignalThresholdParams
 from .signal.position_sizing import apply_normalized_multipliers
@@ -129,6 +130,26 @@ class RobustSignalGenerator:
             features_to_scores.get_factor_scores_batch(self, features_1h_list, "1h")
             features_to_scores.get_factor_scores_batch(self, features_4h_list, "4h")
             features_to_scores.get_factor_scores_batch(self, features_d1_list, "d1")
+        except Exception:
+            pass
+
+        # 预先批量计算 AI 分以复用缓存
+        try:
+            pred = getattr(self, "predictor", None)
+            period_batch = {
+                "1h": features_1h_list,
+                "4h": features_4h_list,
+                "d1": features_d1_list,
+            }
+            if pred is not None and any(features_15m_list) and "15m" in getattr(pred, "models", {}):
+                period_batch["15m"] = features_15m_list
+            ai_inference.compute_ai_scores_batch(
+                pred,
+                period_batch,
+                getattr(pred, "models", {}),
+                getattr(pred, "calibrators", {}),
+                cache=self._ai_score_cache,
+            )
         except Exception:
             pass
 
