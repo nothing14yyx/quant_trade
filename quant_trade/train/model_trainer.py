@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Tuple
 import json
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -73,7 +74,7 @@ class PurgedKFold:
         fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=int)
         fold_sizes[: n_samples % self.n_splits] += 1
         current = 0
-        for fold_size in fold_sizes:
+        for i, fold_size in enumerate(fold_sizes):
             start, stop = current, current + fold_size
             test_indices = indices[start:stop]
             val_start_time = times.iloc[start]
@@ -83,6 +84,24 @@ class PurgedKFold:
             embargo_end = val_end_time + self.embargo_td
             train_mask = (times < embargo_start) | (times > embargo_end)
             train_indices = indices[train_mask.to_numpy()]
+
+            if len(train_indices) == 0:
+                if self.embargo_td > pd.Timedelta(0):
+                    warnings.warn(
+                        f"Fold {i} has no training samples with embargo_td="
+                        f"{self.embargo_td}. Reducing embargo_td to 0.",
+                        RuntimeWarning,
+                    )
+                    train_mask = (times < val_start_time) | (times > val_end_time)
+                    train_indices = indices[train_mask.to_numpy()]
+                if len(train_indices) == 0:
+                    warnings.warn(
+                        f"Fold {i} still has no training samples; skipping this fold. "
+                        "Consider reducing n_splits or providing more data.",
+                        RuntimeWarning,
+                    )
+                    current = stop
+                    continue
 
             if price is not None:
                 # Retrieve the price series for the validation window
