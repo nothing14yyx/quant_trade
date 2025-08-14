@@ -13,7 +13,7 @@ import os
 import re
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 if __package__ is None and __name__ == "__main__":
     import os
@@ -75,6 +75,25 @@ def _safe_retry(fn, retries: int = 3, backoff: float = 1.0,
     raise RuntimeError(
         f"Failed after {retries} retries for {fn.__qualname__}"
     ) from last_exc
+
+
+def fetch_funding_incremental(symbol: str, start_ms: int, end_ms: int,
+                              step_hours: int = 12,
+                              req: Callable[[str, dict], List[Dict]] = None,
+                              sleep: float = 0.2) -> list[dict]:
+    assert req is not None, "req(path, params)->list[dict] 必须注入"
+    cur = int(start_ms)
+    out: list[dict] = []
+    while cur <= end_ms:
+        nxt = min(cur + step_hours * 3600 * 1000, end_ms)
+        res = req("/fapi/v1/fundingRate", {
+            "symbol": symbol, "startTime": cur, "endTime": nxt, "limit": 1000
+        }) or []
+        out.extend(res)
+        last = res[-1]["fundingTime"] if res else nxt
+        cur = int(last) + 1     # 前移 1ms，避免重复/空窗
+        time.sleep(sleep)       # 留限速余量
+    return out
 
 
 def compute_vix_proxy(funding_rate: Optional[float], oi_chg: Optional[float]) -> Optional[float]:
@@ -216,16 +235,8 @@ class DataLoader:
             start_dt = last["fundingTime"].iloc[0]
         start_ms = int(start_dt.timestamp() * 1000)
         end_ms = int(pd.Timestamp.utcnow().timestamp() * 1000)
-        rows: List[dict] = []
-        while start_ms < end_ms:
-            params = {
-                "symbol": symbol,
-                "startTime": start_ms,
-                "endTime": end_ms,
-                "limit": 1000,
-            }
-
-            def _req():
+        def _req(_path: str, params: dict) -> List[Dict]:
+            def _call():
                 resp = self.client.session.get(
                     self.FUNDING_URL,
                     params=params,
@@ -242,16 +253,13 @@ class DataLoader:
                     )
                     return []
 
-            payload = _safe_retry(
-                _req,
+            return _safe_retry(
+                _call,
                 retries=self.retries,
                 backoff=self.backoff,
             )
-            if not payload:
-                break
-            rows.extend(payload)
-            start_ms = payload[-1]["fundingTime"] + 1
-            time.sleep(0.2)
+
+        rows = fetch_funding_incremental(symbol, start_ms, end_ms, req=_req)
         if not rows:
             return
         df = pd.DataFrame(rows)[["fundingTime", "fundingRate"]]
