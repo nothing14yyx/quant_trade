@@ -73,4 +73,4 @@ def test_golden_batch(cases_data, monkeypatch):
         for field in ("vote", "protect", "env", "exit", "factors"):
             assert field in details
 
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()

@@ -17,7 +17,7 @@ def test_model_path_resolution(tmp_path, monkeypatch):
     rsg = RobustSignalGenerator(cfg)
     assert "cls" in rsg.models.get("1h", {})
     assert hasattr(rsg.models["1h"]["cls"]["pipeline"], "predict")
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()
 
 
 def test_base_weights_from_config(tmp_path, monkeypatch):
@@ -56,7 +56,7 @@ ic_scores:
         "funding": 3 / total,
     }
     assert rsg.base_weights == pytest.approx(expected)
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()
 
 
 def test_signal_threshold_from_config(tmp_path, monkeypatch):
@@ -78,5 +78,5 @@ signal_threshold:
     )
     rsg = RobustSignalGenerator(cfg)
     assert rsg.signal_threshold_cfg["base_th"] == pytest.approx(0.2)
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()
 

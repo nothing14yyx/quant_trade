@@ -66,7 +66,7 @@ def test_golden_single(case_data, monkeypatch):
 
     assert isinstance(result["details"], dict)
 
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()
 
 
 def test_generate_signal_structure_consistency(case_data, monkeypatch):
@@ -128,4 +128,4 @@ def test_generate_signal_structure_consistency(case_data, monkeypatch):
         assert expected_keys.issubset(result.keys())
         assert isinstance(result["details"], dict)
 
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()

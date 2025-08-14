@@ -83,27 +83,28 @@ def make_rsg():
     rsg.combine_score_vectorized = rsg.fusion_rule.combine_score_vectorized
     rsg.risk_filters = RiskFiltersImpl(rsg)
     rsg.position_sizer = PositionSizerImpl(rsg)
-    rsg.dynamic_weight_update = lambda *a, **k: rsg.base_weights
     return rsg
 
 
 def test_dynamic_weight_non_negative_sum_one():
     rsg = make_rsg()
+    rsg.dynamic_weight_update = RobustSignalGenerator.dynamic_weight_update.__get__(rsg)
     for k in rsg.ic_history:
         rsg.ic_history[k].extend([0.5, 1.0, -0.2])
-    weights = rsg.dynamic_weight_update()
+    weights = rsg.update_weights()
     assert all(w >= 0 for w in weights.values())
     assert pytest.approx(sum(weights.values()), rel=1e-6) == 1.0
 
 
 def test_dynamic_weight_recent_ic_priority():
     rsg = make_rsg()
+    rsg.dynamic_weight_update = RobustSignalGenerator.dynamic_weight_update.__get__(rsg)
     rsg.ic_history['ai'].extend([0.0, 1.0, 2.0])
     for k in rsg.ic_history:
         if k != 'ai':
             rsg.ic_history[k].extend([1.0, 1.0, 1.0])
 
-    weights = rsg.dynamic_weight_update(halflife=1)
+    weights = rsg.update_weights(halflife=1)
 
     arr = np.array([0.0, 1.0, 2.0], dtype=float)
     decay = np.log(0.5) / 1
@@ -130,11 +131,12 @@ def test_dynamic_weight_recent_ic_priority():
 
 def test_dynamic_weight_handles_nan_history():
     rsg = make_rsg()
+    rsg.dynamic_weight_update = RobustSignalGenerator.dynamic_weight_update.__get__(rsg)
     for k in rsg.ic_history:
         rsg.ic_history[k].extend([float('nan'), 0.5])
     rsg.ic_history['ai'] = deque([float('nan'), float('nan')], maxlen=500)
 
-    weights = rsg.dynamic_weight_update()
+    weights = rsg.update_weights()
 
     assert all(np.isfinite(w) for w in weights.values())
     assert pytest.approx(sum(weights.values()), rel=1e-6) == 1.0
@@ -259,12 +261,13 @@ def test_dynamic_threshold_smoothing():
 
 def test_update_dynamic_weights_sets_w_ai():
     rsg = make_rsg()
+    rsg.dynamic_weight_update = RobustSignalGenerator.dynamic_weight_update.__get__(rsg)
     for k in rsg.ic_history:
         rsg.ic_history[k].extend([0.0, 0.0, 0.0])
     rsg.ic_history['ai'] = deque([2.0, 2.0, 2.0], maxlen=500)
 
     prev = rsg.w_ai
-    weights = rsg._update_dynamic_weights()
+    weights = rsg.update_weights()
 
     assert rsg.w_ai == pytest.approx(weights['ai'])
     assert rsg.w_ai > prev

@@ -388,8 +388,8 @@ def run_backtest(
     else:
         all_trades = pd.DataFrame()
     all_trades.to_csv(BASE_DIR / 'backtest_fusion_trades_all.csv', index=False)
-    if hasattr(sg, "stop_weight_update_thread"):
-        sg.stop_weight_update_thread()
+    if hasattr(sg, "update_weights"):
+        sg.update_weights()
 
 if __name__ == '__main__':
     import argparse

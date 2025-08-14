@@ -95,7 +95,7 @@ def _evaluate(
             }
         )
 
-    sg.stop_weight_update_thread()
+    sg.update_weights()
     df_rec = pd.DataFrame(records)
     trades = df_rec[df_rec["signal"] != 0]
     if len(trades) < MIN_TRADES or df_rec["pnl"].std(ddof=0) == 0:

@@ -101,7 +101,7 @@ def test_bull_phase_dir_multiplier(tmp_path, monkeypatch):
     res = rsg.generate_signal({}, {}, {})
     assert cap["score"] == pytest.approx(1.0)
     assert res["signal"] == 1
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()
 
 
 def test_bear_phase_dir_multiplier(tmp_path, monkeypatch):
@@ -116,5 +116,5 @@ def test_bear_phase_dir_multiplier(tmp_path, monkeypatch):
     res = rsg.generate_signal({}, {}, {})
     assert cap["score"] == pytest.approx(-1.0)
     assert res["signal"] == -1
-    rsg.stop_weight_update_thread()
+    rsg.update_weights()
 

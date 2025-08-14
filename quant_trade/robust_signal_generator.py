@@ -8,6 +8,7 @@ import math
 import threading
 import types
 from collections import deque
+import numpy as np
 
 from .signal import (
     core,
@@ -166,9 +167,97 @@ class RobustSignalGenerator:
     def diagnose(self):  # pragma: no cover
         return getattr(self, "_diagnostic", {})
 
-    def stop_weight_update_thread(self):  # pragma: no cover
-        """Legacy no-op method kept for compatibility."""
-        return None
+    # ------------------------------------------------------------------
+    # Weight management
+    # ------------------------------------------------------------------
+    def dynamic_weight_update(self, halflife: float | None = None) -> dict:
+        """Compute factor weights based on IC scores/history.
+
+        Parameters
+        ----------
+        halflife : float | None
+            如果提供, 使用指数加权平均值计算 IC 分数, 否则使用普通平均。
+        """
+
+        ic_values: dict[str, float] = {}
+        if hasattr(self, "ic_history") and self.ic_history:
+            decay = None
+            if halflife is not None:
+                decay = math.log(0.5) / halflife
+            for k, hist in self.ic_history.items():
+                arr = np.asarray(list(hist), dtype=float)
+                mask = np.isfinite(arr)
+                arr = arr[mask]
+                if arr.size == 0:
+                    ic_values[k] = 0.0
+                    continue
+                if decay is not None:
+                    w = np.exp(decay * np.arange(len(arr))[::-1])
+                    w /= w.sum()
+                    ic_values[k] = float(np.sum(arr * w))
+                else:
+                    ic_values[k] = float(np.mean(arr))
+        else:
+            ic_values = getattr(self, "ic_scores", {})
+
+        weights = {}
+        total = 0.0
+        base_weights = getattr(self, "base_weights", {})
+        min_ratio = getattr(self, "min_weight_ratio", 0.0)
+        for k, base in base_weights.items():
+            ic = ic_values.get(k, 0.0) or 0.0
+            raw = max(base * min_ratio, base * (1 + ic))
+            weights[k] = raw
+            total += raw
+        total = total or 1.0
+        for k in weights:
+            weights[k] /= total
+        return weights
+
+    def update_weights(self, weights: dict | None = None, **kwargs) -> dict:
+        """Synchronously update internal factor weights.
+
+        If ``weights`` is ``None``, they are recalculated using
+        :meth:`dynamic_weight_update`.  Custom keyword arguments are passed to
+        ``dynamic_weight_update``.
+        """
+
+        if weights is None:
+            weights = self.dynamic_weight_update(**kwargs)
+        self.current_weights = dict(weights)
+        self.w_ai = self.current_weights.get("ai", 0.0)
+        return self.current_weights
+
+    def update_ic_scores(self, df, window: int | None = None, group_by: str | None = None):
+        """Update IC scores from a DataFrame and refresh weights.
+
+        Parameters
+        ----------
+        df : DataFrame
+            历史特征数据。
+        window : int | None
+            若提供, 每个分组只取最近 ``window`` 条记录。
+        group_by : str | None
+            如果提供, 按列名分组分别计算 IC, 最后取平均。
+        """
+
+        from . import param_search
+
+        if group_by is not None and group_by in df:
+            scores = {k: [] for k in getattr(self, "base_weights", {})}
+            for _, grp in df.groupby(group_by):
+                if window is not None:
+                    grp = grp.tail(window)
+                ic = param_search.compute_ic_scores(grp, self)
+                for k, v in ic.items():
+                    scores[k].append(v)
+            self.ic_scores = {k: float(np.nanmean(v) if v else 0.0) for k, v in scores.items()}
+        else:
+            if window is not None:
+                df = df.tail(window)
+            self.ic_scores = param_search.compute_ic_scores(df, self)
+
+        return self.update_weights()
 
     def detect_market_regime(self, *args, **kwargs):  # pragma: no cover
         return "range"
