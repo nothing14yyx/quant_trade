@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, Iterator, Tuple
+import json
 
 import numpy as np
 import pandas as pd
@@ -104,6 +106,7 @@ def train_with_cv(
     times: pd.Series,
     *,
     n_splits: int = 5,
+    save_path: str | Path | None = None,
 ) -> dict:
     """使用 ``PurgedKFold`` 执行交叉验证并返回报告。
 
@@ -119,6 +122,8 @@ def train_with_cv(
         与 ``X`` 对齐的时间索引，用于生成折叠。
     n_splits : int, default=5
         交叉验证折数。
+    save_path : str or Path, optional
+        若提供，则把 ``report`` 以 JSON 格式写入该路径。
 
     Returns
     -------
@@ -162,4 +167,10 @@ def train_with_cv(
     }
 
     report = {"cv": cv_avg, "bt": bt}
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        with save_path.open("w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+
     return report
