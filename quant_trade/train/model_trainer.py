@@ -28,6 +28,7 @@ class PurgedKFold:
         X: Iterable,
         y: Iterable | None = None,
         times: pd.Series | None = None,
+        price: pd.Series | None = None,
     ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
         """Generate indices to split data into train and validation sets.
 
@@ -38,6 +39,9 @@ class PurgedKFold:
         times : pd.Series
             Timestamps aligned with ``X`` used to determine the validation
             windows and the embargo regions.
+        price : pd.Series, optional
+            Price series aligned with ``X``. If provided, its length must
+            match ``X`` and missing values will raise an error.
         """
 
         if times is None:
@@ -47,6 +51,12 @@ class PurgedKFold:
         n_samples = len(times)
         if len(X) != n_samples:
             raise ValueError("times and X have different lengths")
+        if price is not None:
+            price = pd.Series(price).reset_index(drop=True)
+            if len(price) != n_samples:
+                raise ValueError("price and X have different lengths")
+            if price.isna().any():
+                raise ValueError("price contains missing values")
         if self.n_splits <= 1 or self.n_splits > n_samples:
             raise ValueError("n_splits must be between 2 and n_samples")
 
@@ -64,6 +74,14 @@ class PurgedKFold:
             embargo_end = val_end_time + self.embargo_td
             train_mask = (times < embargo_start) | (times > embargo_end)
             train_indices = indices[train_mask.to_numpy()]
+
+            if price is not None:
+                # Retrieve the price series for the validation window
+                test_price = price.iloc[test_indices]
+                if test_price.isna().any():
+                    raise ValueError(
+                        "price contains missing values in validation set"
+                    )
 
             yield train_indices, test_indices
             current = stop
