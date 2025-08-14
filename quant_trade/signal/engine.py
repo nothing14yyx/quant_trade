@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
+import numpy as np
 
-from .core import RobustSignalGenerator
+from ..robust_signal_generator import RobustSignalGenerator
 from .factor_scorer import FactorScorerImpl
 from .position_sizer import PositionSizerImpl
 from .predictor_adapter import PredictorAdapter
@@ -85,8 +86,33 @@ class SignalEngine:
         ``stop_loss`` 的简化结果字典。
         """
 
+        f1 = ctx.get("features_1h")
+        if isinstance(f1, (list, np.ndarray)):
+            f4 = ctx.get("features_4h")
+            fd = ctx.get("features_d1")
+            f15 = ctx.get("features_15m")
+            symbols = ctx.get("symbols")
+            kwargs = {
+                k: ctx.get(k)
+                for k in (
+                    "raw_features_1h",
+                    "raw_features_4h",
+                    "raw_features_d1",
+                    "raw_features_15m",
+                    "global_metrics",
+                    "open_interest",
+                    "order_book_imbalance",
+                    "all_scores_list",
+                )
+            }
+            kwargs = {k: v for k, v in kwargs.items() if v is not None}
+            results = self.rsg.generate_signal_batch(
+                f1, f4, fd, f15, symbols=symbols, **kwargs
+            )
+            return [_to_float_dict(r) for r in results]
+
         prepared = self.rsg._prepare_inputs(
-            ctx.get("features_1h"),
+            f1,
             ctx.get("features_4h"),
             ctx.get("features_d1"),
             ctx.get("features_15m"),
