@@ -8,11 +8,17 @@ import numpy as np
 from scipy.special import inv_boxcox
 
 
+def _hash_features(feats: Mapping[str, float | int | None]) -> int:
+    """将特征映射转换为可哈希的整数."""
+    return hash(tuple(sorted(feats.items())))
+
+
 def get_period_ai_scores(
     predictor: Any | None,
     period_features: Mapping[str, Mapping[str, float | int | None]],
     models: Mapping[str, Mapping[str, Any]],
     calibrators: Mapping[str, Mapping[str, Any]] | None = None,
+    cache: Any | None = None,
 ) -> dict[str, float]:
     """根据各周期模型计算 AI 得分.
 
@@ -38,23 +44,34 @@ def get_period_ai_scores(
         if not models_p:
             ai_scores[period] = 0.0
             continue
+
+        key = (period, _hash_features(feats))
+        if cache is not None:
+            cached = cache.get(key)
+            if cached is not None:
+                ai_scores[period] = cached
+                continue
+
         if "cls" in models_p and "up" not in models_p:
-            ai_scores[period] = predictor.get_ai_score_cls(feats, models_p["cls"])
+            score_val = predictor.get_ai_score_cls(feats, models_p["cls"])
         else:
             cal_up = calibrators.get(period, {}).get("up")
             cal_down = calibrators.get(period, {}).get("down")
             if cal_up is None and cal_down is None:
-                ai_scores[period] = predictor.get_ai_score(
+                score_val = predictor.get_ai_score(
                     feats, models_p.get("up", {}), models_p.get("down", {})
                 )
             else:
-                ai_scores[period] = predictor.get_ai_score(
+                score_val = predictor.get_ai_score(
                     feats,
                     models_p.get("up", {}),
                     models_p.get("down", {}),
                     cal_up,
                     cal_down,
                 )
+        ai_scores[period] = score_val
+        if cache is not None:
+            cache.set(key, score_val)
     for p in period_features:
         ai_scores.setdefault(p, 0.0)
     return ai_scores

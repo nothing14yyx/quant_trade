@@ -20,6 +20,16 @@ from .signal.position_sizing import apply_normalized_multipliers
 from .constants import RiskReason
 from .risk_manager import cvar_limit
 from .signal.voting_model import safe_load, DEFAULT_MODEL_PATH
+from .utils.lru import LRU
+from .signal.utils import (
+    adjust_score,
+    volume_guard,
+    cap_positive,
+    fused_to_risk,
+    smooth_score,
+    softmax,
+    risk_budget_threshold,
+)
 
 
 @dataclass
@@ -51,6 +61,14 @@ class RobustSignalGeneratorConfig:
         )
 
 
+@dataclass
+class PeriodFeatures:
+    """占位数据类, 用于向后兼容旧接口."""
+
+    fast: Mapping[str, Any] | None = None
+    slow: Mapping[str, Any] | None = None
+
+
 class RobustSignalGenerator:
     """Thin wrapper around the functional signal pipeline."""
     _lock = threading.Lock()
@@ -71,6 +89,9 @@ class RobustSignalGenerator:
 
     def __init__(self, cfg: RobustSignalGeneratorConfig | None = None):
         self.cfg = cfg
+        # 缓存采用线程安全的 LRU, 默认最多保存 300 条目
+        self._factor_cache = LRU(maxsize=300)
+        self._ai_score_cache = LRU(maxsize=300)
 
     def _make_cache_key(self, features: Mapping[str, Any], period: str):  # pragma: no cover
         return (period, tuple(sorted(features.items())))
@@ -79,6 +100,7 @@ class RobustSignalGenerator:
         return row.get(key, default)
 
     def generate_signal(self, features_1h, features_4h, features_d1, features_15m=None, **kwargs):
+        kwargs.setdefault("ai_score_cache", self._ai_score_cache)
         return core.generate_signal(
             features_1h,
             features_4h,
@@ -87,12 +109,45 @@ class RobustSignalGenerator:
             **kwargs,
         )
 
+    def generate_signal_batch(
+        self,
+        features_1h_list,
+        features_4h_list,
+        features_d1_list,
+        features_15m_list=None,
+        *,
+        symbols=None,
+        **kwargs,
+    ):
+        features_15m_list = features_15m_list or [None] * len(features_1h_list)
+        results = []
+        for i, f1 in enumerate(features_1h_list):
+            f4 = features_4h_list[i]
+            fd = features_d1_list[i]
+            f15 = features_15m_list[i]
+            sym = symbols[i] if symbols else None
+            res = self.generate_signal(f1, f4, fd, f15, symbol=sym, **kwargs)
+            results.append(res)
+        return results
+
+    def diagnose(self):  # pragma: no cover
+        return getattr(self, "_diagnostic", {})
+
     def stop_weight_update_thread(self):  # pragma: no cover
         """Legacy no-op method kept for compatibility."""
         return None
 
     def detect_market_regime(self, *args, **kwargs):  # pragma: no cover
         return "range"
+
+    def detect_reversal(self, prices, atr=None, volume=None):  # pragma: no cover
+        """简化的趋势反转检测: 最近价格反弹则返回 1."""
+        try:
+            if len(prices) >= 3 and prices[-1] > prices[-2] < prices[-3]:
+                return 1
+        except Exception:
+            pass
+        return 0
 
     def compute_dynamic_threshold(
         self,
@@ -101,6 +156,7 @@ class RobustSignalGenerator:
         *,
         base: float | None = None,
         phase_mult: Mapping[str, float] | None = None,
+        **_legacy_kwargs,
     ):
         """Compute dynamic threshold via pure utility function.
 
@@ -443,7 +499,15 @@ class RobustSignalGenerator:
 __all__ = [
     "RobustSignalGenerator",
     "RobustSignalGeneratorConfig",
+    "PeriodFeatures",
     "SignalThresholdParams",
     "DynamicThresholdParams",
     "DynamicThresholdInput",
+    "adjust_score",
+    "volume_guard",
+    "cap_positive",
+    "fused_to_risk",
+    "smooth_score",
+    "softmax",
+    "risk_budget_threshold",
 ]

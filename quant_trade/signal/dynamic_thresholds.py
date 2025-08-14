@@ -21,6 +21,16 @@ class SignalThresholdParams:
     rev_boost: float = 0.0
     rev_th_mult: float = 1.0
 
+    @classmethod
+    def from_cfg(cls, cfg: Mapping[str, Any]) -> "SignalThresholdParams":  # pragma: no cover
+        return cls(
+            base_th=cfg.get("base_th", 0.0),
+            low_base=cfg.get("low_base", 0.0),
+            quantile=cfg.get("quantile", 0.8),
+            rev_boost=cfg.get("rev_boost", 0.0),
+            rev_th_mult=cfg.get("rev_th_mult", 1.0),
+        )
+
 
 @dataclass
 class DynamicThresholdParams:
@@ -32,6 +42,17 @@ class DynamicThresholdParams:
     funding_cap: float = 0.2
     adx_div: float = 25.0
     adx_cap: float = 0.2
+
+    @classmethod
+    def from_cfg(cls, cfg: Mapping[str, Any]) -> "DynamicThresholdParams":  # pragma: no cover
+        return cls(
+            atr_mult=cfg.get("atr_mult", 3.63636363636),
+            atr_cap=cfg.get("atr_cap", 0.2),
+            funding_mult=cfg.get("funding_mult", 2.7586206897),
+            funding_cap=cfg.get("funding_cap", 0.2),
+            adx_div=cfg.get("adx_div", 25.0),
+            adx_cap=cfg.get("adx_cap", 0.2),
+        )
 
 
 @dataclass

@@ -17,6 +17,7 @@ from quant_trade.signal import (
 def make_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
     rsg._factor_cache = LRU(300)
+    rsg._ai_score_cache = LRU(300)
     rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)

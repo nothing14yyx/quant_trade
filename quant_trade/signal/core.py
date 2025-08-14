@@ -65,6 +65,7 @@ def generate_signal(
     open_interest: Mapping[str, Any] | None = None,
     order_book_imbalance: Mapping[str, Any] | None = None,
     symbol: str | None = None,
+    ai_score_cache: Any | None = None,
 ) -> dict[str, Any]:
     """Generate trading signal using modular pipeline.
 
@@ -90,7 +91,7 @@ def generate_signal(
     models = models or {}
     calibrators = calibrators or {}
     ai_scores = ai_inference.get_period_ai_scores(
-        predictor, period_features, models, calibrators
+        predictor, period_features, models, calibrators, cache=ai_score_cache
     )
     vol_preds, rise_preds, drawdown_preds = ai_inference.get_reg_predictions(
         predictor, period_features, models

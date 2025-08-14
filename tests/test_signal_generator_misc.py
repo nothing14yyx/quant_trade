@@ -12,6 +12,7 @@ from quant_trade.signal import FactorScorerImpl
 def make_rsg():
     r = RobustSignalGenerator.__new__(RobustSignalGenerator)
     r._factor_cache = LRU(300)
+    r._ai_score_cache = LRU(300)
     r.factor_scorer = FactorScorerImpl(r)
     r._prev_raw = {p: None for p in ("1h", "4h", "d1")}
     r.sentiment_alpha = 0.5
