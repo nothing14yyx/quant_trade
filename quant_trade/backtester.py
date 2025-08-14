@@ -10,6 +10,7 @@ from quant_trade.robust_signal_generator import (
 )
 from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
 from quant_trade.logging import get_logger
+from quant_trade.json_logger import log_signal
 
 logger = get_logger(__name__)
 
@@ -308,15 +309,24 @@ def run_backtest(
                     'stop_loss': None,
                     'details': None,
                 }
-            signals.append({
-                'open_time': df_sym.at[idx + 1, 'open_time'],
+            open_time = df_sym.at[idx + 1, 'open_time']
+            details = result.get('details') or {}
+            log_record = {
+                'open_time': open_time,
+                'symbol': symbol,
                 'signal': result.get('signal', 0),
                 'score': result.get('score'),
                 'position_size': result.get('position_size', 0.0),
                 'take_profit': result.get('take_profit'),
                 'stop_loss': result.get('stop_loss'),
                 'details': result.get('details'),
-            })
+                'reasons': details.get('penalties', []),
+                'score_mult': details.get('score_mult', result.get('score_mult', 1.0)),
+                'pos_mult': details.get('pos_mult', result.get('pos_mult', 1.0)),
+                'base_th': details.get('base_th'),
+            }
+            log_signal(log_record)
+            signals.append(log_record)
 
         sig_df = pd.DataFrame(signals)
         sig_df['symbol'] = symbol
