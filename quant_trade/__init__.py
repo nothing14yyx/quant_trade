@@ -7,7 +7,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type hints only
     from . import data_loader, feature_engineering
     from .data_loader import DataLoader
     from .feature_engineering import FeatureEngineer
-    from .robust_signal_generator import RobustSignalGenerator
+    from .robust_signal_generator import RobustSignalGenerator, Vote, fuse_votes
     from .coinmetrics_loader import CoinMetricsLoader
     from .constants import RiskReason, ZeroReason
     from .offline_price_table import generate_offline_price_table
@@ -20,6 +20,8 @@ __all__ = [
     "RiskReason",
     "ZeroReason",
     "generate_offline_price_table",
+    "Vote",
+    "fuse_votes",
 ]
 
 
@@ -38,6 +40,8 @@ def __getattr__(name: str):
             "RiskReason": "constants",
             "ZeroReason": "constants",
             "generate_offline_price_table": "offline_price_table",
+            "Vote": "robust_signal_generator",
+            "fuse_votes": "robust_signal_generator",
         }
         module = importlib.import_module(f".{module_map[name]}", __name__)
         value = getattr(module, name)

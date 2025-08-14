@@ -17,6 +17,8 @@ from .signal import (
     DynamicThresholdInput,
     features_to_scores,
     ai_inference,
+    Vote,
+    fuse_votes,
 )
 from .signal.dynamic_thresholds import (
     DynamicThresholdParams,
@@ -635,4 +637,6 @@ __all__ = [
     "smooth_score",
     "softmax",
     "risk_budget_threshold",
+    "Vote",
+    "fuse_votes",
 ]
