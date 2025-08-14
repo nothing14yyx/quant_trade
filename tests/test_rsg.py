@@ -18,6 +18,7 @@ from quant_trade.signal import (
 def make_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
     rsg._factor_cache = LRU(300)
+    rsg._ai_score_cache = LRU(300)
     rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)
@@ -78,8 +79,11 @@ def make_rsg():
     rsg.crowding_protection = rsg.fusion_rule.crowding_protection
     rsg.fuse = rsg.fusion_rule.fuse
     rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
+    rsg.combine_score = rsg.fusion_rule.combine_score
+    rsg.combine_score_vectorized = rsg.fusion_rule.combine_score_vectorized
     rsg.risk_filters = RiskFiltersImpl(rsg)
     rsg.position_sizer = PositionSizerImpl(rsg)
+    rsg.dynamic_weight_update = lambda *a, **k: rsg.base_weights
     return rsg
 
 

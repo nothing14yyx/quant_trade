@@ -6,6 +6,7 @@ from quant_trade.signal.features_to_scores import get_factor_scores
 def make_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
     rsg._factor_cache = LRU(300)
+    rsg._ai_score_cache = LRU(300)
     return rsg
 
 

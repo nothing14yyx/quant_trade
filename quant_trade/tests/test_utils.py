@@ -1,6 +1,7 @@
 import pytest
 
 from collections import deque
+import types
 
 from quant_trade.utils.lru import LRU
 from quant_trade.robust_signal_generator import RobustSignalGenerator
@@ -17,6 +18,7 @@ from quant_trade.signal import (
 def make_dummy_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
     rsg._factor_cache = LRU(300)
+    rsg._ai_score_cache = LRU(300)
     rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)
@@ -64,7 +66,7 @@ def make_dummy_rsg():
     rsg.smooth_window = 20
     rsg.smooth_alpha = 0.2
     rsg.smooth_limit = 1.0
-    rsg.cfg = {
+    cfg_dict = {
         'signal_threshold': {
             'mode': 'sigmoid',
             'base_th': 0.12,
@@ -75,8 +77,11 @@ def make_dummy_rsg():
         'ob_threshold': {'min_ob_th': 0.10},
         'risk_budget_per_trade': 0.01,
         'max_pos_pct': 0.3,
+        'model_paths': {},
     }
-    rsg.signal_threshold_cfg = rsg.cfg['signal_threshold']
+    rsg.cfg = types.SimpleNamespace(**cfg_dict)
+    rsg.cfg.get = lambda k, d=None: getattr(rsg.cfg, k, d)
+    rsg.signal_threshold_cfg = rsg.cfg.signal_threshold
     rsg.min_trend_align = 1
     rsg.flip_confirm_bars = 3
     rsg.predictor = PredictorAdapter(None)
@@ -85,7 +90,10 @@ def make_dummy_rsg():
     rsg.crowding_protection = rsg.fusion_rule.crowding_protection
     rsg.fuse = rsg.fusion_rule.fuse
     rsg.fuse_multi_cycle = rsg.fusion_rule.fuse
+    rsg.combine_score = rsg.fusion_rule.combine_score
+    rsg.combine_score_vectorized = rsg.fusion_rule.combine_score_vectorized
     rsg.thresholding = ThresholdingDynamic(rsg)
     rsg.risk_filters = RiskFiltersImpl(rsg)
     rsg.position_sizer = PositionSizerImpl(rsg)
+    rsg.dynamic_weight_update = lambda *a, **k: rsg.base_weights
     return rsg
