@@ -17,11 +17,11 @@ from sklearn.metrics import (
     mean_absolute_error,
     log_loss,
     roc_auc_score,
-    brier_score_loss,
 )
 from sklearn.metrics import precision_recall_curve
 from sklearn.calibration import calibration_curve
 from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import label_binarize
 from quant_trade.utils.purged_split import PurgedTimeSeriesSplit
 from sklearn.pipeline import Pipeline
 
@@ -63,18 +63,29 @@ def _sanitize_feature_names(
 
 def compute_classification_metrics(
     y_true: pd.Series | np.ndarray, proba: np.ndarray
-) -> tuple[dict[str, float], dict[str, list[float]]]:
+) -> tuple[dict[str, float], dict[str, dict[str, list[float]]]]:
     """计算分类指标和校准曲线数据。"""
 
-    auc = roc_auc_score(y_true, proba[:, 1])
-    brier = brier_score_loss(y_true, proba[:, 1])
-    prob_true, prob_pred = calibration_curve(y_true, proba[:, 1], n_bins=10)
-    logloss = log_loss(y_true, proba)
+    y_true_arr = np.asarray(y_true)
+    n_classes = proba.shape[1]
+    auc = roc_auc_score(
+        y_true_arr, proba, multi_class="ovr", average="macro"
+    )
+    y_true_bin = label_binarize(y_true_arr, classes=np.arange(n_classes))
+    if y_true_bin.shape[1] == 1:
+        y_true_bin = np.hstack([1 - y_true_bin, y_true_bin])
+    brier = np.mean(np.sum((proba - y_true_bin) ** 2, axis=1))
+    logloss = log_loss(y_true_arr, proba)
     metrics = {"AUC": float(auc), "Brier": float(brier), "LogLoss": float(logloss)}
-    calibration = {
-        "prob_true": prob_true.tolist(),
-        "prob_pred": prob_pred.tolist(),
-    }
+    calibration: dict[str, dict[str, list[float]]] = {}
+    for i in range(n_classes):
+        pt, pp = calibration_curve(
+            (y_true_arr == i).astype(int), proba[:, i], n_bins=10
+        )
+        calibration[str(i)] = {
+            "prob_true": pt.tolist(),
+            "prob_pred": pp.tolist(),
+        }
     return metrics, calibration
 
 
