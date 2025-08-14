@@ -5,6 +5,13 @@ from typing import Iterable, Iterator, Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
+from sklearn.metrics import (
+    log_loss,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 
 @dataclass
@@ -88,3 +95,71 @@ class PurgedKFold:
 
     def get_n_splits(self, X=None, y=None, groups=None) -> int:
         return self.n_splits
+
+
+def train_with_cv(
+    model,
+    X: pd.DataFrame,
+    y: pd.Series,
+    times: pd.Series,
+    *,
+    n_splits: int = 5,
+) -> dict:
+    """使用 ``PurgedKFold`` 执行交叉验证并返回报告。
+
+    Parameters
+    ----------
+    model : sklearn-like estimator
+        需要实现 ``fit`` 与 ``predict_proba`` 方法。
+    X : pd.DataFrame
+        特征数据。
+    y : pd.Series
+        二分类标签。
+    times : pd.Series
+        与 ``X`` 对齐的时间索引，用于生成折叠。
+    n_splits : int, default=5
+        交叉验证折数。
+
+    Returns
+    -------
+    dict
+        ``{"cv": {...}, "bt": {...}}``，分别为交叉验证平均指标
+        与全量回测指标。
+    """
+
+    pkf = PurgedKFold(n_splits=n_splits)
+    cv: dict[str, list[float]] = {
+        "AUC": [],
+        "LogLoss": [],
+        "Precision": [],
+        "Recall": [],
+    }
+
+    for tr, va in pkf.split(X, y, times=times):
+        clf = clone(model)
+        clf.fit(X.iloc[tr], y.iloc[tr])
+        proba = clf.predict_proba(X.iloc[va])
+        y_va = y.iloc[va]
+
+        cv["AUC"].append(roc_auc_score(y_va, proba[:, 1]))
+        cv["LogLoss"].append(log_loss(y_va, proba))
+        pred = (proba[:, 1] >= 0.5).astype(int)
+        cv["Precision"].append(
+            precision_score(y_va, pred, zero_division=0)
+        )
+        cv["Recall"].append(recall_score(y_va, pred, zero_division=0))
+
+    cv_avg = {k: float(np.mean(v)) for k, v in cv.items()}
+
+    model.fit(X, y)
+    proba_bt = model.predict_proba(X)
+    pred_bt = (proba_bt[:, 1] >= 0.5).astype(int)
+    bt = {
+        "AUC": float(roc_auc_score(y, proba_bt[:, 1])),
+        "LogLoss": float(log_loss(y, proba_bt)),
+        "Precision": float(precision_score(y, pred_bt, zero_division=0)),
+        "Recall": float(recall_score(y, pred_bt, zero_division=0)),
+    }
+
+    report = {"cv": cv_avg, "bt": bt}
+    return report
