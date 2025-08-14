@@ -13,13 +13,16 @@ import numpy as np
 from .signal import (
     core,
     calc_position_size,
-    compute_dynamic_threshold as _compute_dynamic_threshold,
     ThresholdParams,
     DynamicThresholdInput,
     features_to_scores,
     ai_inference,
 )
-from .signal.dynamic_thresholds import DynamicThresholdParams, SignalThresholdParams
+from .signal.dynamic_thresholds import (
+    DynamicThresholdParams,
+    SignalThresholdParams,
+    compute_dynamic_threshold as _compute_dynamic_threshold,
+)
 from .signal.position_sizing import apply_normalized_multipliers
 from .constants import RiskReason
 from .risk_manager import cvar_limit
