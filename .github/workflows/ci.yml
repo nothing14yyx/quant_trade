@@ -20,3 +20,4 @@ jobs:
       - run: ruff .
       - run: mypy .
       - run: pytest -q
+      - run: pytest -q tests/test_dynamic_thresholds.py tests/test_risk_filters.py tests/test_position_sizing.py
