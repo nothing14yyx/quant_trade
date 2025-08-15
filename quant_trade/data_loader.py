@@ -508,7 +508,12 @@ class DataLoader:
             for f in as_completed(futures):
                 try:
                     rows.extend(f.result())
-                except (requests.exceptions.RequestException, ValueError, KeyError) as exc:  # pragma: no cover - unexpected errors
+                except (
+                    requests.exceptions.RequestException,
+                    ValueError,
+                    KeyError,
+                    RuntimeError,
+                ) as exc:  # pragma: no cover - unexpected errors
                     logger.exception("[cg_market] worker err: %s", exc)
 
         if not rows:
