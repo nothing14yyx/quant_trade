@@ -102,6 +102,15 @@ class RobustSignalGenerator:
         # 缓存采用线程安全的 LRU, 默认最多保存 300 条目
         self._factor_cache = LRU(maxsize=300)
         self._ai_score_cache = LRU(maxsize=300)
+        # 币种到板块映射，默认空字典
+        self.symbol_categories: Mapping[str, str] | Mapping[str, list[str]] = {}
+
+    def set_symbol_categories(
+        self,
+        categories: Mapping[str, str] | Mapping[str, list[str]] | None,
+    ) -> None:
+        """记录币种到板块列表的映射，供其他模块使用。"""
+        self.symbol_categories = categories or {}
 
     def _make_cache_key(self, features: Mapping[str, Any], period: str):  # pragma: no cover
         return (period, tuple(sorted(features.items())))
