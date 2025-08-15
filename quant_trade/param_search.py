@@ -26,6 +26,7 @@ from quant_trade.ai_model_predictor import AIModelPredictor
 from quant_trade.signal import PredictorAdapter
 from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.logging import get_logger
+from quant_trade.risk_manager import RiskManager
 
 logger = get_logger(__name__)
 
@@ -341,6 +342,7 @@ def run_param_search(
 
     rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
     sg = RobustSignalGenerator(rsg_cfg)
+    sg.risk_manager = RiskManager(**cfg.get("risk_manager", {}))
     cached_ics = [precompute_ic_scores(tr, sg) for tr, _ in splits]
     base_delta = sg.delta_params.copy()
     if method == "grid":
@@ -432,6 +434,7 @@ def run_param_search(
                 iter_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
                 iter_cfg.delta_params = delta_params
                 sg_iter = RobustSignalGenerator(iter_cfg)
+                sg_iter.risk_manager = RiskManager(**cfg.get("risk_manager", {}))
                 tot_ret, sharpe, trade_count = run_single_backtest(
                     val_df,
                     base_weights,
@@ -551,6 +554,7 @@ def run_param_search(
                 iter_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
                 iter_cfg.delta_params = delta_params
                 sg_iter = RobustSignalGenerator(iter_cfg)
+                sg_iter.risk_manager = RiskManager(**cfg.get("risk_manager", {}))
                 tot_ret, sharpe, trade_count = run_single_backtest(
                     val_df,
                     base_weights,

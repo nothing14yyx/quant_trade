@@ -3,6 +3,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from quant_trade.risk_manager import RiskManager
 
 
 def test_model_path_resolution(tmp_path, monkeypatch):
@@ -15,6 +16,7 @@ def test_model_path_resolution(tmp_path, monkeypatch):
         feature_cols_d1=[],
     )
     rsg = RobustSignalGenerator(cfg)
+    rsg.risk_manager = RiskManager()
     assert "cls" in rsg.models.get("1h", {})
     assert hasattr(rsg.models["1h"]["cls"]["pipeline"], "predict")
     rsg.update_weights()
@@ -45,6 +47,7 @@ ic_scores:
         config_path=cfg_path,
     )
     rsg = RobustSignalGenerator(cfg)
+    rsg.risk_manager = RiskManager()
     total = 1 + 1 + 2 + 2 + 1 + 1 + 3
     expected = {
         "ai": 1 / total,
@@ -77,6 +80,7 @@ signal_threshold:
         config_path=cfg_path,
     )
     rsg = RobustSignalGenerator(cfg)
+    rsg.risk_manager = RiskManager()
     assert rsg.signal_threshold_cfg["base_th"] == pytest.approx(0.2)
     rsg.update_weights()
 

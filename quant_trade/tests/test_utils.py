@@ -5,6 +5,7 @@ import types
 
 from quant_trade.utils.lru import LRU
 from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.risk_manager import RiskManager
 from quant_trade.signal import (
     ThresholdingDynamic,
     PredictorAdapter,
@@ -17,6 +18,7 @@ from quant_trade.signal import (
 
 def make_dummy_rsg():
     rsg = RobustSignalGenerator.__new__(RobustSignalGenerator)
+    rsg.risk_manager = RiskManager()
     rsg._factor_cache = LRU(300)
     rsg._ai_score_cache = LRU(300)
     rsg.factor_scorer = FactorScorerImpl(rsg)

@@ -288,6 +288,15 @@ class Scheduler:
             self.cfg = load_config()
             rsg_cfg = RobustSignalGeneratorConfig.from_cfg(self.cfg)
             self.sg = RobustSignalGenerator(rsg_cfg)
+            rm_cfg = self.cfg.get("optimize_weights", {})
+            rm_kwargs = {}
+            if isinstance(rm_cfg, dict):
+                if "cap" in rm_cfg:
+                    rm_kwargs["cap"] = rm_cfg["cap"]
+                if "max_weight" in rm_cfg:
+                    rm_kwargs["max_weight"] = rm_cfg["max_weight"]
+            from quant_trade.risk_manager import RiskManager
+            self.sg.risk_manager = RiskManager(**rm_kwargs)
             self.sg.base_weights = self.cfg.get("ic_scores", {}).get("base_weights", {})
             categories = load_symbol_categories(self.engine)
             self.sg.set_symbol_categories(categories)

@@ -5,6 +5,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from quant_trade.risk_manager import RiskManager
 
 
 def setup_simple_rsg(tmp_path, monkeypatch, phase, mult_cfg, score):
@@ -18,6 +19,7 @@ def setup_simple_rsg(tmp_path, monkeypatch, phase, mult_cfg, score):
         config_path=cfg_path,
     )
     rsg = RobustSignalGenerator(rsg_cfg)
+    rsg.risk_manager = RiskManager()
     monkeypatch.setattr(
         "quant_trade.market_phase.get_market_phase",
         lambda engine: {"phase": phase},

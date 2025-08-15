@@ -1,6 +1,7 @@
 import yaml
 import pytest
 from quant_trade.robust_signal_generator import RobustSignalGenerator, RobustSignalGeneratorConfig
+from quant_trade.risk_manager import RiskManager
 
 
 def test_update_market_phase_uses_config(tmp_path, monkeypatch):
@@ -19,6 +20,7 @@ def test_update_market_phase_uses_config(tmp_path, monkeypatch):
         config_path=cfg_path,
     )
     rsg = RobustSignalGenerator(rsg_cfg)
+    rsg.risk_manager = RiskManager()
     monkeypatch.setattr(
         "quant_trade.market_phase.get_market_phase", lambda engine: {"phase": "bull"}
     )
@@ -47,6 +49,7 @@ def test_update_phase_dir_mult(tmp_path, monkeypatch):
         config_path=cfg_path,
     )
     rsg = RobustSignalGenerator(rsg_cfg)
+    rsg.risk_manager = RiskManager()
     monkeypatch.setattr(
         "quant_trade.market_phase.get_market_phase", lambda engine: {"phase": "bear"}
     )

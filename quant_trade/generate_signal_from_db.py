@@ -12,6 +12,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from quant_trade.risk_manager import RiskManager
 from quant_trade.utils.robust_scaler import load_scaler_params_from_json
 from quant_trade.feature_loader import (
     load_latest_klines,
@@ -45,6 +46,7 @@ def main(symbol: str = "ETHUSDT") -> None:
 
     rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
     sg = RobustSignalGenerator(rsg_cfg)
+    sg.risk_manager = RiskManager(**cfg.get("risk_manager", {}))
     sg.set_symbol_categories(categories)
 
     results = []

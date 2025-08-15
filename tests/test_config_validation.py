@@ -10,6 +10,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from quant_trade.risk_manager import RiskManager
 
 
 def _write_cfg(tmp_path: Path, cfg: dict) -> Path:
@@ -31,7 +32,9 @@ def _make_rsg(tmp_path: Path, cfg: dict):
         "enable_ai": False,
     }
     config_obj = RobustSignalGeneratorConfig.from_cfg(init_cfg, cfg_path)
-    return RobustSignalGenerator(config_obj)
+    rsg = RobustSignalGenerator(config_obj)
+    rsg.risk_manager = RiskManager()
+    return rsg
 
 
 def test_cfg_validation_success(tmp_path):
