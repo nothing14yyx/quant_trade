@@ -13,6 +13,8 @@ from quant_trade.logging import get_logger
 from quant_trade.json_logger import log_signal
 from quant_trade.backtest.backtester import ExecutionPolicy, execute_signal
 from quant_trade.slippage_model import SlippageModel
+from quant_trade.signal.decision import DecisionConfig, decide_signal
+from quant_trade.calibration import apply_temperature, TemperatureModel
 
 logger = get_logger(__name__)
 
@@ -30,6 +32,8 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
 FEATURE_COLS_1H = collect_feature_cols(_cfg, "1h")
 FEATURE_COLS_4H = collect_feature_cols(_cfg, "4h")
 FEATURE_COLS_D1 = collect_feature_cols(_cfg, "d1")
+DECISION_CONFIG = DecisionConfig.from_dict(_cfg.get("signal", {}))
+TEMP_MODEL = TemperatureModel(_cfg.get("calibration", {}).get("temperature", 1.0))
 
 # 预训练模型路径（从 config.yaml 读取）
 _model_cfg = _cfg.get("models", {})
@@ -69,7 +73,7 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
                 tp = sig_df.at[i-1, 'take_profit']
                 sl = sig_df.at[i-1, 'stop_loss']
                 is_strong = score >= 0.8
-                slip = 0.0 if is_strong else slippage_model.slippage_bp(1.0) / 10000.0
+                slip = 0.0 if is_strong else -slippage_model.slippage_bp(1.0) / 10000.0
                 price, fee = execute_signal(
                     df_sym.at[i, 'open'],
                     df_sym.at[i, 'high'],
@@ -119,6 +123,12 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
                 position_size=pos_size,
                 is_taker=True,
             )
+            slip = slippage_model.slippage_bp(1.0) / 10000.0
+            if direction == 1:
+                exit_price *= (1 - slip)
+            else:
+                exit_price *= (1 + slip)
+            exit_fee = policy.fee(exit_price, pos_size, is_taker=True)
             exit_time = df_sym.at[i + 1, 'open_time']
 
         if exit_price is not None and exit_fee == 0.0:
@@ -169,6 +179,12 @@ def simulate_trades(df_sym: pd.DataFrame, sig_df: pd.DataFrame, *, fee_rate: flo
             position_size=pos_size,
             is_taker=True,
         )
+        slip = slippage_model.slippage_bp(1.0) / 10000.0
+        if direction == 1:
+            exit_price *= (1 - slip)
+        else:
+            exit_price *= (1 + slip)
+        exit_fee = policy.fee(exit_price, pos_size, is_taker=True)
         exit_time = df_sym.at[len(df_sym)-1, 'close_time']
         pnl = (exit_price - entry_price) * direction * pos_size
         total_fee = entry_fee + exit_fee
@@ -367,14 +383,42 @@ def run_backtest(
                 }
             open_time = df_sym.at[idx + 1, 'open_time']
             details = result.get('details') or {}
+
+            probs = result.get('probs')
+            if probs is None:
+                logits = result.get('logits')
+                if logits is not None:
+                    probs = apply_temperature(np.asarray(logits), TEMP_MODEL)
+                else:
+                    score_val = result.get('score', 0.0)
+                    try:
+                        score_val = float(score_val)
+                    except (TypeError, ValueError):
+                        score_val = 0.0
+                    if not np.isfinite(score_val):
+                        score_val = 0.0
+                    p_up = (score_val + 1.0) / 2.0
+                    probs = np.array([1 - p_up, 0.0, p_up])
+
+            decision = decide_signal(
+                probs,
+                (details.get('rise_preds') or {}).get('1h'),
+                (details.get('drawdown_preds') or {}).get('1h'),
+                (details.get('vol_preds') or {}).get('1h'),
+                bool(details.get('flip')),
+                DECISION_CONFIG,
+            )
+            signal_val = 1 if decision['action'] == 'BUY' else -1 if decision['action'] == 'SELL' else 0
+
             log_record = {
                 'open_time': open_time,
                 'symbol': symbol,
-                'signal': result.get('signal', 0),
+                'signal': signal_val,
                 'score': result.get('score'),
-                'position_size': result.get('position_size', 0.0),
+                'position_size': decision['size'],
                 'take_profit': result.get('take_profit'),
                 'stop_loss': result.get('stop_loss'),
+                'note': decision['note'],
                 'details': result.get('details'),
                 'reasons': details.get('penalties', []),
                 'score_mult': details.get('score_mult', result.get('score_mult', 1.0)),
