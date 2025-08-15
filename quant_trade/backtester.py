@@ -37,7 +37,7 @@ DECISION_CONFIG = DecisionConfig.from_dict(_cfg.get("signal", {}))
 TEMP_MODEL = TemperatureModel(_cfg.get("calibration", {}).get("temperature", 1.0))
 
 # 预训练模型路径（从 config.yaml 读取）
-_model_cfg = _cfg.get("models", {})
+_model_cfg = _cfg.get("model_paths") or _cfg.get("models", {})
 MODEL_PATHS = {
     (period, tag): path
     for period, tags in _model_cfg.items()
