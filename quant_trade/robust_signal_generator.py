@@ -109,6 +109,7 @@ class RobustSignalGenerator:
         # 缓存采用线程安全的 LRU, 默认最多保存 300 条目
         self._factor_cache = LRU(maxsize=300)
         self._ai_score_cache = LRU(maxsize=300)
+        self.models: dict[str, dict] = {}
         # 币种到板块映射，默认空字典
         self.symbol_categories: Mapping[str, str] | Mapping[str, list[str]] = {}
         self.market_phase = "range"
@@ -428,7 +429,16 @@ class RobustSignalGenerator:
             elif isinstance(mp, str):
                 model_path = Path(mp)
 
-        model = safe_load(model_path or DEFAULT_MODEL_PATH)
+        models = getattr(self, "models", None)
+        if models is None:
+            models = {}
+            self.models = models
+        model_dict = models.get("voting_model")
+        model = model_dict.get("model") if isinstance(model_dict, Mapping) else None
+        if model is None:
+            model = safe_load(model_path or DEFAULT_MODEL_PATH)
+            if model is not None:
+                models["voting_model"] = {"model": model}
         vote: float
         prob: float
         confidence: float
