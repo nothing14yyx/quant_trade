@@ -105,6 +105,7 @@ class Scheduler:
         from quant_trade.feature_engineering import FeatureEngineer
         from quant_trade.ai_model_predictor import AIModelPredictor
         from quant_trade.signal import PredictorAdapter, FactorScorerImpl
+        from quant_trade.risk_manager import RiskManager
 
         cfg = load_config()
         self.cfg = cfg
@@ -125,6 +126,14 @@ class Scheduler:
         categories = load_symbol_categories(self.engine)
         self.sg.set_symbol_categories(categories)
         self.sg.update_weights()
+        rm_cfg = cfg.get("optimize_weights", {})
+        rm_kwargs = {}
+        if isinstance(rm_cfg, dict):
+            if "cap" in rm_cfg:
+                rm_kwargs["cap"] = rm_cfg["cap"]
+            if "max_weight" in rm_cfg:
+                rm_kwargs["max_weight"] = rm_cfg["max_weight"]
+        self.sg.risk_manager = RiskManager(**rm_kwargs)
         # 调度器与线程池，用于更精确和并发地执行任务
         import sched
         from concurrent.futures import ThreadPoolExecutor
@@ -358,7 +367,7 @@ class Scheduler:
             return
 
         scores = [d["signal"].get("score") for d in data]
-        weights = self.sg.risk_manager.optimize_weights(scores, max_weight=0.3)
+        weights = self.sg.risk_manager.optimize_weights(scores)
 
         results: list[dict] = []
         monitor_rows: list[dict] = []

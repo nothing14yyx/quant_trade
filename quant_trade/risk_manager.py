@@ -25,8 +25,16 @@ def cvar_limit(pnl_history: list[float] | np.ndarray, alpha: float) -> float:
 class RiskManager:
     """风险控制逻辑"""
 
-    def __init__(self, cap: float = 5.0):
+    def __init__(self, cap: float = 5.0, max_weight: float | None = None):
+        """初始化风险管理器。
+
+        Args:
+            cap: 风险值上限，用于 ``fused_to_risk`` 和 ``calc_risk``。
+            max_weight: ``optimize_weights`` 的单币种权重上限，``None`` 表示不限制。
+        """
+
         self.cap = cap
+        self.max_weight = max_weight
 
     def fused_to_risk(
         self, fused_score: float, logic_score: float, env_score: float
@@ -82,6 +90,8 @@ class RiskManager:
             return [0.0] * len(scores)
 
         weights = arr / arr.sum() * total
+        if max_weight is None:
+            max_weight = self.max_weight
         if max_weight is not None:
             weights = np.minimum(weights, max_weight)
         return weights.tolist()
