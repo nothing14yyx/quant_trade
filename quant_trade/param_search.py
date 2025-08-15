@@ -30,6 +30,8 @@ logger = get_logger(__name__)
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
     """根据历史数据计算各因子的 IC 分数"""
+    if not hasattr(rsg, "base_weights"):
+        raise ValueError("RobustSignalGenerator 必须先设置 base_weights 才能计算 IC 分数")
     df = df.sort_values("open_time").reset_index(drop=True)
     returns = df["close"].shift(-1) / df["open"].shift(-1) - 1
     scores = {k: [] for k in rsg.base_weights}
