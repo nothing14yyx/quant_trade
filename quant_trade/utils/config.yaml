@@ -8,7 +8,6 @@ enable_ai: true
 # 设置为 false 可跳过因子贡献度计算以提升回测速度
 enable_factor_breakdown: false
 max_stop_loss_pct: 0.05
-trailing_stop_pct: 0.03
 risk_budget_per_trade: 0.01
 cv:
   embargo: 1  # 交叉验证时的隔离步数(1~2 个 horizon)
@@ -120,23 +119,6 @@ feature_selector:
   - future_max_rise_d1
   - future_max_drawdown_d1
   top_n: 50             # 每周期保留前 N
-
-models:
-  1h:
-    cls: models/model_1h_cls.pkl
-    vol: models/model_1h_vol.pkl
-    rise: models/model_1h_rise.pkl
-    drawdown: models/model_1h_drawdown.pkl
-  4h:
-    cls: models/model_4h_cls.pkl
-    vol: models/model_4h_vol.pkl
-    rise: models/model_4h_rise.pkl
-    drawdown: models/model_4h_drawdown.pkl
-  d1:
-    cls: ""
-    vol: ""
-    rise: ""
-    drawdown: ""
 
 model_paths:
   1h:

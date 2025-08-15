@@ -118,7 +118,7 @@ class Scheduler:
         )
         rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
         self.sg = RobustSignalGenerator(rsg_cfg)
-        model_paths = cfg.get("model_paths", {})
+        model_paths = cfg.get("model_paths") or cfg.get("models", {})
         ai_predictor = AIModelPredictor(model_paths)
         self.sg.predictor = PredictorAdapter(ai_predictor)
         self.sg.models = self.sg.predictor.ai_predictor.models

@@ -66,13 +66,32 @@ class RobustSignalGeneratorConfig:
         cfg: Mapping[str, Any],
         cfg_path: str | Path | None = None,
     ) -> "RobustSignalGeneratorConfig":
+        vs_cfg = cfg.get("vote_system", {})
+        model_paths = cfg.get("model_paths") or cfg.get("models", {})
+
+        def _extract(period: str) -> list[str]:
+            direct = cfg.get(f"feature_cols_{period}")
+            if direct:
+                return list(direct)
+            fc = cfg.get("feature_cols", {}).get(period, [])
+            if isinstance(fc, Mapping):
+                cols: list[str] = []
+                for v in fc.values():
+                    if isinstance(v, list):
+                        cols.extend(v)
+                return cols
+            return list(fc)
+
+        fc_1h = _extract("1h")
+        fc_4h = _extract("4h")
+        fc_d1 = _extract("d1")
         return cls(
-            model_paths=cfg.get("model_paths", {}),
-            feature_cols_1h=cfg.get("feature_cols_1h", []),
-            feature_cols_4h=cfg.get("feature_cols_4h", []),
-            feature_cols_d1=cfg.get("feature_cols_d1", []),
-            prob_margin=cfg.get("prob_margin", 0.08),
-            strong_prob_th=cfg.get("strong_prob_th", 0.8),
+            model_paths=model_paths,
+            feature_cols_1h=fc_1h,
+            feature_cols_4h=fc_4h,
+            feature_cols_d1=fc_d1,
+            prob_margin=cfg.get("prob_margin", vs_cfg.get("prob_margin", 0.08)),
+            strong_prob_th=cfg.get("strong_prob_th", vs_cfg.get("strong_prob_th", 0.8)),
             config_path=cfg_path,
         )
 

@@ -22,70 +22,36 @@ python backtests/demo_backtest.py
 - **Market Phase Detection**：根据活跃地址与市值判断牛市、熊市或震荡阶段，可在 `utils/config.yaml` 的 `market_phase.symbols` 列表（或单个 `symbol`）指定参与判断的交易对，默认仅使用 BTCUSDT。若填写多个币种，函数会分别返回各链的得分 `S` 与阶段，并按市值加权给出整体结果，例如：
 
 ```python
-{
-    "BTCUSDT": {"phase": "bull", "S": 1.8},
-    "ETHUSDT": {"phase": "bear", "S": -0.9},
-    "TOTAL": {"phase": "range", "S": 0.3}
-}
-```
-`RobustSignalGenerator.update_market_phase()` 会读取 `market_phase.phase_th_mult` 与 `phase_dir_mult` 调整阈值和多空倾向，例如：
-
-```yaml
-market_phase:
-  phase_th_mult:
-    bull: 0.8
-    bear: 1.2
-    range: 1.0
-  phase_dir_mult:
-    bull:
-      long: 1.2
-      short: 0.8
-    bear:
-      long: 0.8
-      short: 1.2
-    range:
-      long: 1.0
-      short: 1.0
-```
-- **FeatureEngineer**：生成多周期特征并进行标准化处理，新增影线比例、长期成交量突破等衍生指标，并提供跨周期的 RSI、MACD 背离特征。现已利用 CoinGecko 市值数据计算价格差、市值/成交量涨跌率等额外因子；同时加入 HV_7d/14d/30d、KC 宽度变化率、Ichimoku 基准线、VWAP、随机指标等新指标，并支持买卖比、资金流量比、成交量密度、价差百分比及 BTC/ETH 短期相关性。
-  另外新增 `sma_5_*`、`sma_20_*` 均线及其交叉比值 `ma_ratio_5_20`，用于衡量短中期趋势变化。
--   `merge_features` 新增 `batch_size` 参数，可在内存有限时按币种分批写入：
-
--```python
--fe.merge_features(save_to_db=True, batch_size=1)
--```
--   现在还可通过 `use_polars=True` 启用 [Polars](https://pola.rs/) 加速批量拼接，
-    与 `n_jobs` 结合能更好利用多核性能。
-    并行模式会占用较多 CPU/内存，请在资源允许的环境下使用。
--   新增 `period_cfg.d1.smooth_window` 参数，可滚动平滑
-    `future_max_drawdown_d1`，默认窗口为 3。
-- **ModelTrainer**：使用 LightGBM 训练多周期预测模型。
-- **标签系统**：根据历史波动动态设定阈值，并额外提供未来波动率等辅助目标。
-- **RobustSignalGenerator**：融合 AI 与多因子得分，生成交易信号。
--   新增 `ma_cross_logic`，会检查 `sma_5_1h` 与 `sma_20_1h` 的形态，
-    在多空信号一致时适度放大得分，方向相反时则削弱或保持观望。
--   新增 `th_window` 与 `th_decay` 参数，用于控制动态阈值参考的历史得分
-    数量及衰减程度，默认 `th_window=150`、`th_decay=1.0`，
-    可根据策略需求适当调小窗口或衰减系数。
--   `signal_threshold.quantile` 指定历史得分分位数，默认 `0.78`，数值越高代表触发门槛越严格。
--   `signal_threshold.window` 与 `signal_threshold.dynamic_quantile`
-    控制动态阈值计算所用的窗口与分位数，可针对不同资产或市场阶段自定义。
--   `compute_dynamic_threshold` 会依据最近 `history_scores` 计算分位数，并结合 `atr_4h`、`adx_4h`、`atr_d1`、`adx_d1` 与 `pred_vol`、`vix_proxy` 等指标自适应调整门槛，`regime` 与 `reversal` 还能微调阈值和 `rev_boost`，参数统一封装在 `DynamicThresholdInput` 中。
--   阈值相关配置已整合为 `SignalThresholdParams`，方便统一管理。
--   新增 `dynamic_threshold` 配置项，可自定义 ATR、ADX 与 funding 对阈值的影响系数及上限。
--   新增 `smooth_window`、`smooth_alpha` 与 `smooth_limit` 参数，用于平滑最近得分，减少噪声影响。
--   `vote_system.prob_th` 为基础概率阈值（默认 0.5），`prob_margin` 用于弱票判定（如 0.08 表示 `0.5±0.08`），`strong_prob_th` 与 `_compute_vote` 结合使用以判定强票。
--   新增 `risk_budget_threshold` 函数，可依据历史波动率或换手率分布计算风险阈值：
-
-```python
 from quant_trade.robust_signal_generator import risk_budget_threshold
 vol_hist = [0.01, 0.02, 0.05, 0.03]
 th = risk_budget_threshold(vol_hist, quantile=0.9)
--   早期兼容函数 `robust_signal_generator()` 已移除，请直接调用
-    `RobustSignalGenerator.generate_signal()`。
--   因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
-    帮助更准确地衡量趋势和动量强度。
-    其中 `rsi_1h_mul_vol_ma_ratio_4h` 仅归入 `volume` 因子，不再在 `momentum` 中重复计分。
+```
+
+推荐使用以下方式实例化信号生成器：
+
+```python
+from quant_trade.utils import load_config
+from quant_trade.robust_signal_generator import (
+    RobustSignalGenerator,
+    RobustSignalGeneratorConfig,
+)
+
+cfg = load_config()
+rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
+rsg = RobustSignalGenerator(rsg_cfg)
+```
+
+为保持兼容，仍支持以下旧字段：
+
+- 顶层 `prob_margin`、`strong_prob_th`（已迁移至 `vote_system`）。
+- `models`（已迁移至 `model_paths`）。
+- `feature_cols_1h`/`4h`/`d1`（统一由 `feature_cols` 配置）。
+
+- 早期兼容函数 `robust_signal_generator()` 已移除，请直接调用
+  `RobustSignalGenerator.generate_signal()`。
+- 因子评分新增对 Ichimoku 云层厚度、VWAP 偏离率及跨周期 RSI 差值的考量，
+  帮助更准确地衡量趋势和动量强度。
+  其中 `rsi_1h_mul_vol_ma_ratio_4h` 仅归入 `volume` 因子，不再在 `momentum` 中重复计分。
 - **Backtester**：依据生成的信号回测策略表现。
 - **FeatureSelector**：综合 AUC、SHAP 与 Permutation Importance 评分，筛选去冗余的核心特征。生成的 YAML 文件现统一存放在 `quant_trade/selected_features/` 目录。
   可通过 `feature_selector.rows` 设置读取样本的最大行数，以避免内存不足。
@@ -195,7 +161,6 @@ crowding_limit: 1.05     # 允许的拥挤度上限
 risk_scale: 1.0         # risk_score 每增加 1，仓位乘以 e^{-risk_scale}
 risk_filters_enabled: true
 max_stop_loss_pct: 0.05     # 单笔最大止损比例
-trailing_stop_pct: 0.03     # 移动止损触发比例
 risk_budget_per_trade: 0.01 # 每笔占用的风险预算
 crowding_protection:
   enabled: true
@@ -203,7 +168,6 @@ crowding_protection:
   cool_down_minutes: 45
 
 - `max_stop_loss_pct` 控制单笔交易最大的允许亏损比例。
-- `trailing_stop_pct` 在获利回撤超过该比例时触发移动止损。
 - `risk_budget_per_trade` 定义每笔交易可占用的风险预算上限。
 - `crowding_protection` 用于监控市场同向拥挤度并在过热时暂停开仓。
 - `risk_adjust.factor` 控制风险值对 `fused_score` 的削减力度，公式为
@@ -314,7 +278,7 @@ features → AI → 因子 → (融合) → 阈值 → (风控倍率) → 两阶
 `mysql < scripts/migrate_add_feature_columns.sql`。
 
 通过 `python -m quant_trade.param_search --rows 10000` (可选) 调整信号权重。
-`param_search.compute_ic_scores` 需在 `RobustSignalGenerator` 已配置 `models`、`predictor`
+`param_search.compute_ic_scores` 需在 `RobustSignalGenerator` 已配置 `model_paths`、`predictor`
 和 `factor_scorer` 的前提下运行，否则会返回空结果并记录警告。
 参数搜索默认按时间拆分为训练集和验证集，可通过 `--test-ratio` 调整验证集比例。
 脚本默认使用 Optuna 搜索，并同时优化 Δ-boost 参数，例如：
