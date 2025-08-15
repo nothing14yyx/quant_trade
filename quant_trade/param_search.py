@@ -29,9 +29,28 @@ logger = get_logger(__name__)
 
 
 def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
-    """根据历史数据计算各因子的 IC 分数"""
+    """根据历史数据计算各因子的 IC 分数。
+
+    该函数依赖 `RobustSignalGenerator` 已正确初始化，其下列属性需同时存在：
+    - `models`
+    - `predictor`
+    - `factor_scorer`
+
+    若缺少上述任一组件，将记录警告并返回空字典。
+    """
     if not hasattr(rsg, "base_weights"):
         raise ValueError("RobustSignalGenerator 必须先设置 base_weights 才能计算 IC 分数")
+
+    missing = []
+    if not getattr(rsg, "models", None):
+        missing.append("models")
+    if not getattr(rsg, "predictor", None):
+        missing.append("predictor")
+    if not getattr(rsg, "factor_scorer", None):
+        missing.append("factor_scorer")
+    if missing:
+        logger.warning("RobustSignalGenerator 缺少依赖: %s", ", ".join(missing))
+        return {}
     df = df.sort_values("open_time").reset_index(drop=True)
     returns = df["close"].shift(-1) / df["open"].shift(-1) - 1
     scores = {k: [] for k in rsg.base_weights}
