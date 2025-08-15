@@ -138,6 +138,23 @@ models:
     rise: ""
     drawdown: ""
 
+model_paths:
+  1h:
+    cls: models/model_1h_cls.pkl
+    vol: models/model_1h_vol.pkl
+    rise: models/model_1h_rise.pkl
+    drawdown: models/model_1h_drawdown.pkl
+  4h:
+    cls: models/model_4h_cls.pkl
+    vol: models/model_4h_vol.pkl
+    rise: models/model_4h_rise.pkl
+    drawdown: models/model_4h_drawdown.pkl
+  d1:
+    cls: ""
+    vol: ""
+    rise: ""
+    drawdown: ""
+
 
 feature_cols:
   1h:
