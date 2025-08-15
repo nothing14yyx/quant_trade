@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import numpy as np
 import pandas as pd
 
 from quant_trade.utils.db import load_config, connect_mysql
@@ -21,6 +22,8 @@ from quant_trade.feature_loader import (
     load_symbol_categories,
 )
 from quant_trade.logging import get_logger
+from quant_trade.signal.decision import DecisionConfig, decide_signal
+from quant_trade.calibration import apply_temperature, TemperatureModel
 
 
 logger = get_logger(__name__)
@@ -29,6 +32,8 @@ logger = get_logger(__name__)
 def main(symbol: str = "ETHUSDT") -> None:
     cfg = load_config()
     engine = connect_mysql(cfg)
+    dec_cfg = DecisionConfig.from_dict(cfg.get("signal", {}))
+    temp_model = TemperatureModel(cfg.get("calibration", {}).get("temperature", 1.0))
 
     recent = load_latest_klines(engine, symbol, "1h", limit=20)
     params = load_scaler_params_from_json(cfg["feature_engineering"]["scaler_path"])
@@ -65,13 +70,43 @@ def main(symbol: str = "ETHUSDT") -> None:
         if sig is None:
             logger.debug("generate_signal returned None for idx %s", idx)
             continue
+        details = sig.get("details") or {}
+
+        probs = sig.get("probs")
+        if probs is None:
+            logits = sig.get("logits")
+            if logits is not None:
+                probs = apply_temperature(np.asarray(logits), temp_model)
+            else:
+                score_val = sig.get("score", 0.0)
+                try:
+                    score_val = float(score_val)
+                except (TypeError, ValueError):
+                    score_val = 0.0
+                if not np.isfinite(score_val):
+                    score_val = 0.0
+                p_up = (score_val + 1.0) / 2.0
+                probs = np.array([1 - p_up, 0.0, p_up])
+
+        decision = decide_signal(
+            probs,
+            (details.get("rise_preds") or {}).get("1h"),
+            (details.get("drawdown_preds") or {}).get("1h"),
+            (details.get("vol_preds") or {}).get("1h"),
+            bool(details.get("flip")),
+            dec_cfg,
+        )
+
         if latest_signal is None:
-            latest_signal = sig
+            latest_signal = decision
         results.append(
             {
                 "open_time": recent.iloc[-1 - idx]["open_time"],
                 "close": recent.iloc[-1 - idx]["close"],
                 "score": sig.get("score"),
+                "action": decision["action"],
+                "size": decision["size"],
+                "note": decision["note"],
             }
         )
 
