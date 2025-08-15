@@ -22,6 +22,8 @@ from quant_trade.backtester import (
     MODEL_PATHS,
     simulate_trades,
 )
+from quant_trade.ai_model_predictor import AIModelPredictor
+from quant_trade.signal import PredictorAdapter
 from quant_trade.utils.db import load_config, connect_mysql
 from quant_trade.logging import get_logger
 
@@ -92,6 +94,10 @@ def compute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
 
 def precompute_ic_scores(df: pd.DataFrame, rsg: RobustSignalGenerator) -> dict:
     """预先计算一次 IC 分数，供多次回测复用"""
+    if not getattr(rsg, "models", None):
+        predictor = PredictorAdapter(AIModelPredictor(MODEL_PATHS))
+        rsg.predictor = predictor
+        rsg.models = predictor.ai_predictor.models
     return compute_ic_scores(df, rsg)
 
 
