@@ -39,6 +39,7 @@ from .signal.utils import (
     softmax,
     risk_budget_threshold,
 )
+from quant_trade.signal.model_signal import model_score_from_proba, ModelSignalCfg
 
 
 @dataclass
@@ -388,9 +389,9 @@ class RobustSignalGenerator:
             direction = 1 if prob >= 0.5 else -1
             vote = direction * confidence
 
-        prob_margin = self.cfg.prob_margin if self.cfg else 0.0
+        prob_margin = getattr(self.cfg, "prob_margin", 0.0) if self.cfg else 0.0
         weak_vote = 0.5 - prob_margin <= prob <= 0.5 + prob_margin
-        strong_prob_th = self.cfg.strong_prob_th if self.cfg else 1.0
+        strong_prob_th = getattr(self.cfg, "strong_prob_th", 1.0) if self.cfg else 1.0
         strong_confirm = confidence >= strong_prob_th
 
         return {
@@ -442,6 +443,29 @@ class RobustSignalGenerator:
 
         cache = cache or {}
 
+        # ---------------------- model score fusion --------------------
+        s_factor = fused_score
+        proba_row = scores.get("cls_proba") if isinstance(scores, Mapping) else None
+        if self.cfg:
+            sig_cfg = self.cfg.get("signal", {}) if isinstance(self.cfg, Mapping) else getattr(self.cfg, "signal", {})
+        else:
+            sig_cfg = {}
+        ms_cfg = ModelSignalCfg(
+            p_min_up=sig_cfg.get("p_up_min", 0.60),
+            p_min_down=sig_cfg.get("p_down_min", 0.60),
+            margin_min=sig_cfg.get("margin_min", 0.10),
+            ix_up=sig_cfg.get("ix_up", 2),
+            ix_down=sig_cfg.get("ix_down", 0),
+        )
+        s_model = (
+            model_score_from_proba(proba_row, ms_cfg)
+            if proba_row is not None
+            else None
+        )
+        w_model = float(sig_cfg.get("w_model", 0.4))
+        s_fused = s_factor if s_model is None else (1 - w_model) * s_factor + w_model * s_model
+        score_for_thresholding = s_fused
+
         # ------------------------- risk pre-checks ----------------------
         account = getattr(self, "account", None)
         if account is not None:
@@ -459,7 +483,7 @@ class RobustSignalGenerator:
         pos_mult = risk_info.get("pos_mult")
         if score_mult is None or pos_mult is None:
             sm, pm, reasons = self.risk_filters.apply_risk_filters(
-                fused_score,
+                score_for_thresholding,
                 logic_score,
                 env_score,
                 std_1h,
@@ -483,11 +507,11 @@ class RobustSignalGenerator:
             pos_mult *= pm
             if reasons:
                 details.setdefault("penalties", []).extend(reasons)
-            fused_for_pos = fused_score * sm
+            fused_for_pos = score_for_thresholding * sm
             final_score = fused_for_pos * score_mult / sm
         else:
-            fused_for_pos = fused_score
-            final_score = fused_score * score_mult
+            fused_for_pos = score_for_thresholding
+            final_score = score_for_thresholding * score_mult
 
         # -------------------------- direction & vote --------------------
         vol_breakout = raw_f1h.get("vol_breakout_1h")

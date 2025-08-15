@@ -14,55 +14,57 @@ import numpy as np
 
 @dataclass
 class ModelSignalCfg:
-    """Configuration for converting probabilities to scores.
+    """Configuration for converting model probabilities to scores.
 
-    Attributes
-    ----------
-    center:
-        Probability regarded as a neutral point. Values above imply a
-        positive expectation while below imply negative.
-    scale:
-        Scaling factor controlling how sharply probabilities are mapped to
-        scores.
-    clip:
-        Optional absolute clip applied to the resulting score. ``None``
-        disables clipping.
+    This configuration supports two modes:
+
+    1. **Continuous**: interpret ``proba`` as a single probability and map
+       it to a score using a ``tanh`` transformation controlled by
+       ``center``/``scale``/``clip``.
+    2. **Categorical**: interpret ``proba`` as an array where indexes
+       ``ix_up`` and ``ix_down`` correspond to upward and downward class
+       probabilities. ``p_min_up``/``p_min_down`` and ``margin_min`` define
+       thresholds for emitting a directional score.
     """
 
     center: float = 0.5
     scale: float = 5.0
     clip: float | None = 1.0
+    p_min_up: float = 0.60
+    p_min_down: float = 0.60
+    margin_min: float = 0.10
+    ix_up: int = 2
+    ix_down: int = 0
 
 
 def model_score_from_proba(
     proba: float | Sequence[float] | np.ndarray,
     cfg: ModelSignalCfg | None = None,
-) -> float | np.ndarray:
+) -> float | None | np.ndarray:
     """Convert model probability to a standardized score.
 
-    Parameters
-    ----------
-    proba:
-        Probability or an array of probabilities representing the likelihood
-        of a positive outcome from the model.
-    cfg:
-        Optional :class:`ModelSignalCfg` instance providing conversion
-        parameters. If omitted a default configuration is used.
-
-    Returns
-    -------
-    float or :class:`numpy.ndarray`
-        Converted score(s) in the range ``[-clip, clip]`` if ``clip`` is set,
-        otherwise in ``(-inf, inf)``. Single input probabilities yield a
-        float; otherwise a NumPy array is returned.
+    Depending on the shape of ``proba`` this function either maps a single
+    probability to a continuous score or derives a discrete directional
+    score from categorical class probabilities.
     """
 
     cfg = cfg or ModelSignalCfg()
     p = np.asarray(proba, dtype=float)
-    score = np.tanh((p - cfg.center) * cfg.scale)
-    if cfg.clip is not None:
-        score = np.clip(score, -cfg.clip, cfg.clip)
-    return score.item() if score.ndim == 0 else score
+
+    if p.ndim == 0 or p.size == 1:
+        score = np.tanh((p - cfg.center) * cfg.scale)
+        if cfg.clip is not None:
+            score = np.clip(score, -cfg.clip, cfg.clip)
+        return score.item()
+
+    p_up = float(p[cfg.ix_up])
+    p_down = float(p[cfg.ix_down])
+    margin = p_up - p_down
+    if p_up >= cfg.p_min_up and margin >= cfg.margin_min:
+        return 1.0
+    if p_down >= cfg.p_min_down and -margin >= cfg.margin_min:
+        return -1.0
+    return None
 
 
 __all__ = ["ModelSignalCfg", "model_score_from_proba"]
