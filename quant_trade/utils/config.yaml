@@ -711,3 +711,59 @@ tp_sl:
 # 调度器设置
 scheduler:
   topn: 50         # run_scheduler 监控的币种数量
+
+signal:
+  p_up_min: 0.60
+  p_down_min: 0.60
+  margin_min: 0.10
+  enable_vol_adapt: true
+  vol_ref: 0.006
+  vol_alpha: 0.5
+  enable_ev_filter: true
+  enable_consistency_guard: false
+  pmin_bump_when_conflict: 0.03
+  kelly_gamma: 0.20
+  w_max: 0.5
+  1h:
+    p_up_min: 0.60
+    p_down_min: 0.60
+    margin_min: 0.10
+    enable_vol_adapt: true
+    vol_ref: 0.006
+    vol_alpha: 0.5
+    enable_ev_filter: true
+    enable_consistency_guard: false
+    pmin_bump_when_conflict: 0.03
+    kelly_gamma: 0.20
+    w_max: 0.5
+  4h:
+    p_up_min: 0.60
+    p_down_min: 0.60
+    margin_min: 0.10
+    enable_vol_adapt: true
+    vol_ref: 0.006
+    vol_alpha: 0.5
+    enable_ev_filter: true
+    enable_consistency_guard: false
+    pmin_bump_when_conflict: 0.03
+    kelly_gamma: 0.20
+    w_max: 0.5
+  d1:
+    p_up_min: 0.60
+    p_down_min: 0.60
+    margin_min: 0.10
+    enable_vol_adapt: true
+    vol_ref: 0.006
+    vol_alpha: 0.5
+    enable_ev_filter: true
+    enable_consistency_guard: false
+    pmin_bump_when_conflict: 0.03
+    kelly_gamma: 0.20
+    w_max: 0.5
+
+trading:
+  fees_bps: 3.0
+  slippage_bps: 2.0
+
+calibration:
+  temperature: 1.0

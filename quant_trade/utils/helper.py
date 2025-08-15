@@ -4,6 +4,8 @@ import pandas as pd
 import pandas_ta as ta
 import json
 import warnings
+from pathlib import Path
+import re
 from sklearn.preprocessing import RobustScaler
 from numba import njit
 from quant_trade.utils.soft_clip import soft_clip
@@ -20,15 +22,33 @@ def collect_feature_cols(cfg: dict, period: str) -> list[str]:
     兼容 ``{"1h": [..]}``、旧版 ``{"1h": {"up": [...]}}`` 与
     新版 ``{"1h": {"cls": [...], "vol": [...]}}`` 等格式，
     若为字典会合并各标签的特征并去重后返回。
+
+    若配置中提供 ``feature_engineering.feature_cols_path`` 且文件存在，
+    将优先从该文件读取并根据周期自动筛选，从而在同步特征后保持
+    ``feature_cols`` 的最新状态。
     """
-    cols = cfg.get("feature_cols", {}).get(period, [])
-    if isinstance(cols, dict):
-        union = set()
-        for v in cols.values():
-            if isinstance(v, list):
-                union.update(v)
-        cols = sorted(union)
-    return cols
+    cfg_period = cfg.get("feature_cols", {}).get(period)
+    if cfg_period is not None:
+        if isinstance(cfg_period, dict):
+            union = set()
+            for v in cfg_period.values():
+                if isinstance(v, list):
+                    union.update(v)
+            return sorted(union)
+        return list(cfg_period)
+
+    fe_cfg = cfg.get("feature_engineering", {})
+    path = fe_cfg.get("feature_cols_path")
+    if path:
+        p = Path(path)
+        if not p.is_absolute():
+            p = Path(__file__).resolve().parent.parent / p
+        if p.is_file():
+            lines = [c.strip() for c in p.read_text(encoding="utf-8").splitlines() if c.strip()]
+            suffix_pat = re.compile(r"_(1h|4h|d1)$")
+            return [c for c in lines if c.endswith(f"_{period}") or not suffix_pat.search(c)]
+
+    return []
 
 
 def _safe_ta(func, *args, index=None, cols=None, min_len=None, **kwargs):
