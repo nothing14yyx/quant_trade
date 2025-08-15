@@ -114,8 +114,10 @@ class Scheduler:
         )
         rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
         self.sg = RobustSignalGenerator(rsg_cfg)
+        self.sg.base_weights = self.cfg.get("ic_scores", {}).get("base_weights", {})
         categories = load_symbol_categories(self.engine)
         self.sg.set_symbol_categories(categories)
+        self.sg.update_weights()
         # 调度器与线程池，用于更精确和并发地执行任务
         import sched
         from concurrent.futures import ThreadPoolExecutor
@@ -269,6 +271,7 @@ class Scheduler:
             self.cfg = load_config()
             rsg_cfg = RobustSignalGeneratorConfig.from_cfg(self.cfg)
             self.sg = RobustSignalGenerator(rsg_cfg)
+            self.sg.base_weights = self.cfg.get("ic_scores", {}).get("base_weights", {})
             categories = load_symbol_categories(self.engine)
             self.sg.set_symbol_categories(categories)
             self.sg.update_weights()
