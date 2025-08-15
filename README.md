@@ -314,6 +314,8 @@ features → AI → 因子 → (融合) → 阈值 → (风控倍率) → 两阶
 `mysql < scripts/migrate_add_feature_columns.sql`。
 
 通过 `python -m quant_trade.param_search --rows 10000` (可选) 调整信号权重。
+`param_search.compute_ic_scores` 需在 `RobustSignalGenerator` 已配置 `models`、`predictor`
+和 `factor_scorer` 的前提下运行，否则会返回空结果并记录警告。
 参数搜索默认按时间拆分为训练集和验证集，可通过 `--test-ratio` 调整验证集比例。
 脚本默认使用 Optuna 搜索，并同时优化 Δ-boost 参数，例如：
 

@@ -22,6 +22,11 @@ def make_dummy_rsg():
     rsg.factor_scorer = FactorScorerImpl(rsg)
     rsg.history_scores = deque(maxlen=500)
     rsg.oi_change_history = deque(maxlen=500)
+    rsg.models = {
+        "1h": {"up": None, "down": None},
+        "4h": {"up": None, "down": None},
+        "d1": {"up": None, "down": None},
+    }
 
     rsg.symbol_categories = {}
 

@@ -7,6 +7,18 @@ from quant_trade import param_search
 import quant_trade.utils.db as db
 
 
+def test_compute_ic_scores_missing_components(caplog):
+    class DummyRSG:
+        def __init__(self):
+            self.base_weights = {"ai": 1}
+
+    df = pd.DataFrame({"open_time": [0], "open": [1], "close": [1]})
+    with caplog.at_level("WARNING"):
+        result = param_search.compute_ic_scores(df, DummyRSG())
+    assert result == {}
+    assert "缺少依赖" in caplog.text
+
+
 def dummy_study(*args, **kwargs):
     class DummyTrial:
         def suggest_float(self, name, low, high):
