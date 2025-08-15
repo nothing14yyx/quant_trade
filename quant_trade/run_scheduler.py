@@ -149,7 +149,7 @@ class Scheduler:
         self.safe_call(self.update_funding_rates, self.symbols)
         self.safe_call(self.update_daily_data, self.symbols)
         # 根据最新链上指标更新市场阶段参数
-        self.sg.update_market_phase(self.engine)
+        self.safe_call(self.sg.update_market_phase, self.engine)
         self.safe_call(self.update_ic_scores_from_db)
         self.safe_call(self.generate_signals, self.symbols)
         self.next_ic_update = self._calc_next_ic_update(datetime.now(UTC))
