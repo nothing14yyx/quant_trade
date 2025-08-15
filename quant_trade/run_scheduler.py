@@ -104,7 +104,8 @@ class Scheduler:
         from quant_trade.data_loader import DataLoader
         from quant_trade.feature_engineering import FeatureEngineer
         from quant_trade.ai_model_predictor import AIModelPredictor
-        from quant_trade.signal import PredictorAdapter, FactorScorerImpl
+        from quant_trade.signal import PredictorAdapter
+        from quant_trade.signal.factor_scorer import FactorScorerImpl
         from quant_trade.risk_manager import RiskManager
 
         cfg = load_config()
