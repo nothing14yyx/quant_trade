@@ -716,6 +716,9 @@ signal:
   p_up_min: 0.60
   p_down_min: 0.60
   margin_min: 0.10
+  ix_up: 2
+  ix_down: 0
+  w_model: 0.4
   enable_vol_adapt: true
   vol_ref: 0.006
   vol_alpha: 0.5
@@ -728,6 +731,9 @@ signal:
     p_up_min: 0.60
     p_down_min: 0.60
     margin_min: 0.10
+    ix_up: 2
+    ix_down: 0
+    w_model: 0.4
     enable_vol_adapt: true
     vol_ref: 0.006
     vol_alpha: 0.5
@@ -740,6 +746,9 @@ signal:
     p_up_min: 0.60
     p_down_min: 0.60
     margin_min: 0.10
+    ix_up: 2
+    ix_down: 0
+    w_model: 0.4
     enable_vol_adapt: true
     vol_ref: 0.006
     vol_alpha: 0.5
@@ -752,6 +761,9 @@ signal:
     p_up_min: 0.60
     p_down_min: 0.60
     margin_min: 0.10
+    ix_up: 2
+    ix_down: 0
+    w_model: 0.4
     enable_vol_adapt: true
     vol_ref: 0.006
     vol_alpha: 0.5
