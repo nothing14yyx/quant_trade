@@ -196,7 +196,12 @@ class Scheduler:
             self.dl.update_cg_market_data(symbols)
             self.dl.update_cg_coin_categories(symbols)
             self.dl.update_cg_category_stats()
-        except (requests.exceptions.RequestException, ValueError, OSError) as exc:
+        except (
+            requests.exceptions.RequestException,
+            ValueError,
+            OSError,
+            RuntimeError,
+        ) as exc:
             logger.exception("update coingecko failed")
         try:
             self.dl.update_cm_metrics(symbols)
