@@ -103,6 +103,8 @@ class Scheduler:
     def __init__(self) -> None:
         from quant_trade.data_loader import DataLoader
         from quant_trade.feature_engineering import FeatureEngineer
+        from quant_trade.ai_model_predictor import AIModelPredictor
+        from quant_trade.signal import PredictorAdapter, FactorScorerImpl
 
         cfg = load_config()
         self.cfg = cfg
@@ -114,6 +116,11 @@ class Scheduler:
         )
         rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
         self.sg = RobustSignalGenerator(rsg_cfg)
+        model_paths = cfg.get("model_paths", {})
+        ai_predictor = AIModelPredictor(model_paths)
+        self.sg.predictor = PredictorAdapter(ai_predictor)
+        self.sg.models = self.sg.predictor.ai_predictor.models
+        self.sg.factor_scorer = FactorScorerImpl(self.sg)
         self.sg.base_weights = self.cfg.get("ic_scores", {}).get("base_weights", {})
         categories = load_symbol_categories(self.engine)
         self.sg.set_symbol_categories(categories)
