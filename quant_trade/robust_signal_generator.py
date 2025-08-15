@@ -40,6 +40,12 @@ from .signal.utils import (
     risk_budget_threshold,
 )
 from quant_trade.signal.model_signal import model_score_from_proba, ModelSignalCfg
+from .config_manager import ConfigManager
+from .market_phase import get_market_phase  # noqa: F401
+from . import market_phase
+from quant_trade.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -105,6 +111,9 @@ class RobustSignalGenerator:
         self._ai_score_cache = LRU(maxsize=300)
         # 币种到板块映射，默认空字典
         self.symbol_categories: Mapping[str, str] | Mapping[str, list[str]] = {}
+        self.market_phase = "range"
+        self.phase_th_mult = 1.0
+        self.phase_dir_mult = {"long": 1.0, "short": 1.0}
 
     def set_symbol_categories(
         self,
@@ -119,7 +128,76 @@ class RobustSignalGenerator:
     def get_feat_value(self, row: Mapping[str, Any], key: str, default: Any = 0):  # pragma: no cover
         return row.get(key, default)
 
+    def update_market_phase(self, engine) -> str:
+        """更新市场阶段及相关倍率。
+
+        尝试从配置中读取 ``market_phase`` 配置, 并通过
+        :func:`get_market_phase` 获取当前阶段。如果配置缺失或网络
+        异常, 将使用默认值并记录日志。
+        """
+
+        cfg_path = getattr(self.cfg, "config_path", None)
+        phase_cfg: dict[str, Any] = {}
+        try:
+            if cfg_path:
+                phase_cfg = ConfigManager(cfg_path).get("market_phase", {})
+        except Exception as exc:  # pragma: no cover - graceful fallback
+            logger.exception("load market phase config failed: %s", exc)
+
+        phase = "range"
+        try:
+            data = market_phase.get_market_phase(engine, config_path=cfg_path)
+        except TypeError:
+            data = market_phase.get_market_phase(engine)
+        except Exception as exc:  # pragma: no cover - external dependency
+            logger.exception("get_market_phase failed: %s", exc)
+            data = {}
+        phase = data.get("phase", phase)
+        self.market_phase = phase
+
+        self.phase_th_mult = 1.0
+        self.phase_dir_mult = {"long": 1.0, "short": 1.0}
+
+        th_cfg = phase_cfg.get("phase_th_mult", {})
+        if isinstance(th_cfg, dict):
+            try:
+                self.phase_th_mult = float(th_cfg.get(phase, 1.0))
+            except Exception:  # pragma: no cover - fallback to default
+                pass
+
+        dir_cfg = phase_cfg.get("phase_dir_mult", {})
+        if isinstance(dir_cfg, dict):
+            selected = dir_cfg.get(phase)
+            if isinstance(selected, Mapping):
+                self.phase_dir_mult = {
+                    "long": float(selected.get("long", 1.0)),
+                    "short": float(selected.get("short", 1.0)),
+                }
+
+        setattr(core, "phase_th_mult", self.phase_th_mult)
+        setattr(core, "phase_dir_mult", self.phase_dir_mult)
+        return self.market_phase
+
     def generate_signal(self, features_1h, features_4h, features_d1, features_15m=None, **kwargs):
+        stub_methods = (
+            "_prepare_inputs",
+            "_compute_scores",
+            "_precheck_and_direction",
+            "_risk_checks",
+            "_calc_position_and_sl_tp",
+        )
+        if all(hasattr(self, m) for m in stub_methods):
+            data = self._prepare_inputs(features_1h, features_4h, features_d1, features_15m, **kwargs)
+            scores = self._compute_scores(**data)
+            _zr, direction, _flip = self._precheck_and_direction(scores)
+            risk = self._risk_checks(scores["fused_score"], direction, **data)
+            fused = risk.get("fused_score", scores["fused_score"])
+            if direction > 0:
+                fused *= self.phase_dir_mult.get("long", 1.0)
+            elif direction < 0:
+                fused *= self.phase_dir_mult.get("short", 1.0)
+            return self._calc_position_and_sl_tp(fused, risk.get("base_th"), direction, **data)
+
         kwargs.setdefault("ai_score_cache", self._ai_score_cache)
         return core.generate_signal(
             features_1h,
