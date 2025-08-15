@@ -19,6 +19,57 @@ def test_compute_ic_scores_missing_components(caplog):
     assert "缺少依赖" in caplog.text
 
 
+def test_precompute_ic_scores_load_models(monkeypatch, caplog):
+    class DummyAIModelPredictor:
+        def __init__(self, paths):
+            self.models = {"1h": {"up": object(), "down": object()}}
+
+        def get_ai_score(self, features, up, down):
+            return 0.1
+
+    class DummyPredictorAdapter:
+        def __init__(self, ai_predictor):
+            self.ai_predictor = ai_predictor
+
+        def get_ai_score(self, features, up, down):
+            return self.ai_predictor.get_ai_score(features, up, down)
+
+    monkeypatch.setattr(param_search, "AIModelPredictor", DummyAIModelPredictor)
+    monkeypatch.setattr(param_search, "PredictorAdapter", DummyPredictorAdapter)
+    monkeypatch.setattr(param_search, "FEATURE_COLS_1H", [])
+
+    class DummyFactorScorer:
+        def score(self, feats, period):
+            return {}
+
+    class DummyRSG:
+        def __init__(self):
+            self.base_weights = {"ai": 1.0}
+            self.factor_scorer = DummyFactorScorer()
+            self.models = {}
+            self.predictor = None
+
+    df = pd.DataFrame({
+        "open_time": [0, 1],
+        "open": [1, 1],
+        "close": [1, 1],
+    })
+
+    rsg = DummyRSG()
+    with caplog.at_level("WARNING"):
+        scores1 = param_search.precompute_ic_scores(df, rsg)
+    assert "缺少依赖" not in caplog.text
+    assert scores1 == {"ai": 0.0}
+    assert isinstance(rsg.predictor, DummyPredictorAdapter)
+    assert rsg.models == rsg.predictor.ai_predictor.models
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        scores2 = param_search.compute_ic_scores(df, rsg)
+    assert "缺少依赖" not in caplog.text
+    assert scores2 == scores1
+
+
 def dummy_study(*args, **kwargs):
     class DummyTrial:
         def suggest_float(self, name, low, high):
