@@ -218,6 +218,10 @@ class RobustSignalGenerator:
                 fused *= self.phase_dir_mult.get("short", 1.0)
             return self._calc_position_and_sl_tp(fused, risk.get("base_th"), direction, **data)
 
+        pred = getattr(self, "predictor", None)
+        kwargs.setdefault("predictor", pred)
+        kwargs.setdefault("models", getattr(pred, "models", {}))
+        kwargs.setdefault("calibrators", getattr(pred, "calibrators", {}))
         kwargs.setdefault("ai_score_cache", self._ai_score_cache)
         return core.generate_signal(
             features_1h,

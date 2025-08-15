@@ -13,6 +13,14 @@ class PredictorAdapter:
     def __init__(self, ai_predictor: AIModelPredictor | None) -> None:
         self.ai_predictor = ai_predictor
 
+    @property
+    def models(self) -> dict:
+        return self.ai_predictor.models if self.ai_predictor else {}
+
+    @property
+    def calibrators(self) -> dict:
+        return self.ai_predictor.calibrators if self.ai_predictor else {}
+
     def get_ai_score(self, features: Any, *args: Any, **kwargs: Any) -> float:
         if isinstance(features, pd.DataFrame):
             if len(features.index):
