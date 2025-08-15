@@ -11,6 +11,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGeneratorConfig,
 )
 from quant_trade.param_search import precompute_ic_scores, run_single_backtest
+from quant_trade.risk_manager import RiskManager
 
 
 KEYS = ["ai", "trend", "momentum", "volatility", "volume", "sentiment", "funding"]
@@ -63,6 +64,7 @@ def optimize_params(
 
     rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
     sg = RobustSignalGenerator(rsg_cfg)
+    sg.risk_manager = RiskManager(**cfg.get("risk_manager", {}))
     ic_scores = precompute_ic_scores(df, sg)
     history_window = cfg.get("history_window", 679)
 

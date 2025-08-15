@@ -7,6 +7,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from quant_trade.risk_manager import RiskManager
 import quant_trade.signal.core as core
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
@@ -36,6 +37,7 @@ def test_golden_single(case_data, monkeypatch):
         feature_cols_d1=[],
     )
     rsg = RobustSignalGenerator(cfg)
+    rsg.risk_manager = RiskManager()
 
     features = case_data["features"]
     raw = case_data["raw"]
@@ -92,6 +94,7 @@ def test_generate_signal_structure_consistency(case_data, monkeypatch):
         feature_cols_d1=[],
     )
     rsg = RobustSignalGenerator(cfg)
+    rsg.risk_manager = RiskManager()
 
     features = case_data["features"]
     raw = case_data["raw"]

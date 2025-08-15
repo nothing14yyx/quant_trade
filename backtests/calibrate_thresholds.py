@@ -13,6 +13,7 @@ from quant_trade.signal.core import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from quant_trade.risk_manager import RiskManager
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "quant_trade" / "utils" / "config.yaml"
 MIN_TRADES = 30
@@ -70,6 +71,7 @@ def _evaluate(
 ) -> Tuple[float, Dict[str, float]]:
     """使用给定参数评估指标并返回综合得分."""
     sg = RobustSignalGenerator(rsg_cfg)
+    sg.risk_manager = RiskManager()
     sg.ai_dir_eps = params["ai_dir_eps"]
     sg.signal_threshold_cfg["base_th"] = params["base_th"]
     sg.signal_threshold_cfg["dynamic_quantile"] = params["dynamic_quantile"]

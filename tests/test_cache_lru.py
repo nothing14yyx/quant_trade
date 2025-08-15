@@ -3,6 +3,7 @@ import threading
 from quant_trade.utils.lru import LRU
 from quant_trade.signal.ai_inference import get_period_ai_scores
 from quant_trade.robust_signal_generator import RobustSignalGenerator
+from quant_trade.risk_manager import RiskManager
 
 
 class DummyPredictor:
@@ -19,6 +20,7 @@ class DummyPredictor:
 
 def test_ai_cache_hit_and_eviction_and_init():
     rsg = RobustSignalGenerator()
+    rsg.risk_manager = RiskManager()
     assert isinstance(rsg._factor_cache, LRU)
     assert isinstance(rsg._ai_score_cache, LRU)
     assert rsg._factor_cache.maxsize == 300

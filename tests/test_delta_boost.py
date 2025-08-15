@@ -2,6 +2,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGenerator,
     RobustSignalGeneratorConfig,
 )
+from quant_trade.risk_manager import RiskManager
 
 
 def _fake_feat(**kv):
@@ -16,6 +17,7 @@ def test_delta_boost():
         feature_cols_d1=[],
     )
     g = RobustSignalGenerator(cfg)
+    g.risk_manager = RiskManager()
     f1 = _fake_feat(rsi_1h=50, macd_hist_1h=0.001)
     f2 = _fake_feat(rsi_1h=57, macd_hist_1h=0.003)
     g._prev_raw["1h"] = f1

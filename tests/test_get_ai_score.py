@@ -4,6 +4,7 @@ import pytest
 from sklearn.dummy import DummyClassifier
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator, RobustSignalGeneratorConfig
+from quant_trade.risk_manager import RiskManager
 
 
 def build_dummy_model(constant, features, path):
@@ -28,6 +29,7 @@ def test_get_ai_score_auto_features(tmp_path):
         feature_cols_d1=[],
     )
     rsg = RobustSignalGenerator(cfg)
+    rsg.risk_manager = RiskManager()
 
     df = pd.DataFrame({"f1": [0.5], "f2": [0.1]})
     score = rsg.predictor.get_ai_score(df, rsg.models["1h"]["up"], rsg.models["1h"]["down"])

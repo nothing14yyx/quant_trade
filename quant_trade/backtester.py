@@ -11,6 +11,7 @@ from quant_trade.robust_signal_generator import (
 from quant_trade.utils.helper import calc_features_raw, collect_feature_cols
 from quant_trade.logging import get_logger
 from quant_trade.json_logger import log_signal
+from quant_trade.risk_manager import RiskManager
 from quant_trade.backtest.backtester import ExecutionPolicy, execute_signal
 from quant_trade.slippage_model import SlippageModel
 from quant_trade.signal.decision import DecisionConfig, decide_signal
@@ -273,6 +274,7 @@ def run_backtest(
     all_symbols = df['symbol'].unique().tolist()
     rsg_cfg = RobustSignalGeneratorConfig.from_cfg(cfg)
     sg = RobustSignalGenerator(rsg_cfg)
+    sg.risk_manager = RiskManager(**cfg.get("risk_manager", {}))
     if cvar_alpha is not None:
         sg.cvar_alpha = cvar_alpha
 

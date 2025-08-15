@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from quant_trade.robust_signal_generator import RobustSignalGenerator, RobustSignalGeneratorConfig
+from quant_trade.risk_manager import RiskManager
 import quant_trade.signal.core as core
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
@@ -36,6 +37,7 @@ def test_golden_batch(cases_data, monkeypatch):
         feature_cols_d1=[],
     )
     rsg = RobustSignalGenerator(cfg)
+    rsg.risk_manager = RiskManager()
 
     feats_1h = [c["features"]["1h"] for c in cases_data]
     feats_4h = [c["features"]["4h"] for c in cases_data]

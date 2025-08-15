@@ -8,6 +8,7 @@ from quant_trade.robust_signal_generator import (
     RobustSignalGeneratorConfig,
 )
 import quant_trade.robust_signal_generator as rsg_mod
+from quant_trade.risk_manager import RiskManager
 
 
 def test_voting_model_train_and_predict(tmp_path):
@@ -49,6 +50,7 @@ def test_compute_vote_behavior(monkeypatch, prob, weak_vote, strong_confirm):
 
     cfg = RobustSignalGeneratorConfig(prob_margin=0.1, strong_prob_th=0.8)
     rsg = RobustSignalGenerator(cfg)
+    rsg.risk_manager = RiskManager()
 
     class DummyModel:
         feature_cols = VotingModel.FEATURE_COLS
