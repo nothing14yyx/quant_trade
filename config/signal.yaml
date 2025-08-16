@@ -15,3 +15,11 @@ cache:
   ttl: 3600
 batch:
   max_workers: 4
+fusion:
+  min_agree: 2
+  conflict_mult: 0.7
+  cycle_weight:
+    strong: 1.0
+    weak: 1.0
+    opposite: 1.0
+    conflict: 0.7

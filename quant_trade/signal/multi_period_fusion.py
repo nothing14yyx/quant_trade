@@ -159,23 +159,31 @@ def fuse_scores(
         and ("1h" not in active or signs["1h"] != signs["4h"])
     )
 
-    cw = cycle_weight or {}
+    cw_defaults = {
+        "strong": 1.0,
+        "weak": 1.0,
+        "opposite": 1.0,
+        "conflict": conflict_mult,
+    }
+    if cycle_weight:
+        cw_defaults.update(cycle_weight)
+    cw = cw_defaults
     if consensus_all:
         fused = w1 * s1 + w4 * s4 + wd * sd
         conf = 1.1
         if strong_confirm_4h:
             conf *= 1.05
-        fused *= cw.get("strong", 1.0)
+        fused *= cw["strong"]
     elif consensus_14:
         total = w1 + w4
         fused = (w1 / total) * s1 + (w4 / total) * s4
         conf = 0.9
-        fused *= cw.get("weak", 1.0)
+        fused *= cw["weak"]
     elif consensus_4d1:
         total = w4 + wd
         fused = (w4 / total) * s4 + (wd / total) * sd
         conf = 0.9
-        fused *= cw.get("weak", 1.0)
+        fused *= cw["weak"]
     else:
         fused = s1
         conf = 1.0
@@ -188,8 +196,8 @@ def fuse_scores(
             or (np.sign(sd) != 0 and np.sign(s1) != np.sign(sd))
         )
     ):
-        fused_score *= cw.get("opposite", 1.0)
-    conflict_mult = cw.get("conflict", conflict_mult)
+        fused_score *= cw["opposite"]
+    conflict_mult = cw["conflict"]
     if not (consensus_all or consensus_14 or consensus_4d1):
         fused_score *= conflict_mult
     return fused_score, consensus_all, consensus_14, consensus_4d1

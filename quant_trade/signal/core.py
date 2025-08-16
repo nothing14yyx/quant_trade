@@ -9,11 +9,13 @@
 from __future__ import annotations
 
 from typing import Any, Mapping, Tuple
+from pathlib import Path
 
 import numpy as np
 
 from . import features_to_scores, ai_inference, multi_period_fusion
 from . import dynamic_thresholds, risk_filters, position_sizing
+from ..config_manager import ConfigManager
 
 
 class AIModelPredictor:  # pragma: no cover - compatibility stub
@@ -45,6 +47,14 @@ def _safe_factor_scores(period_features: Mapping[str, Mapping[str, Any]]) -> dic
             stub._factor_cache = _Cache()
             scores[period] = features_to_scores.get_factor_scores(stub, feats, period)
     return scores
+
+
+def _load_fusion_cfg() -> dict:
+    cfg_path = Path(__file__).resolve().parent.parent / "config" / "signal.yaml"
+    try:
+        return ConfigManager(cfg_path).get("fusion", {}) or {}
+    except Exception:
+        return {}
 
 
 def generate_signal(
@@ -156,8 +166,15 @@ def generate_signal(
     # 3. 多周期融合
     ic_weights: Tuple[float, float, float] = (1.0, 1.0, 1.0)
     ic_periods = {p: ic_stats.get(p) for p in periods} if ic_stats else None
+    fusion_cfg = _load_fusion_cfg()
     fused_score, consensus_all, consensus_14, consensus_4d1 = multi_period_fusion.fuse_scores(
-        combined, ic_weights, False, ic_stats=ic_periods, min_agree=2
+        combined,
+        ic_weights,
+        False,
+        cycle_weight=fusion_cfg.get("cycle_weight"),
+        conflict_mult=float(fusion_cfg.get("conflict_mult", 0.7)),
+        ic_stats=ic_periods,
+        min_agree=int(fusion_cfg.get("min_agree", 2)),
     )
 
     # 4. 动态阈值计算

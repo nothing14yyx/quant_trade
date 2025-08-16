@@ -37,3 +37,20 @@ def test_ignore_period_with_zero_weight():
     fused, c_all, c_14, c_4d1 = fuse_scores(scores, weights, False)
     assert c_all and not c_14 and not c_4d1
     assert fused == pytest.approx(0.55)
+
+
+def test_cycle_weight_override():
+    scores = {"1h": 0.5, "4h": -0.5, "d1": 0.2}
+    weights = (0.5, 0.3, 0.2)
+    cw = {"opposite": 0.6, "conflict": 0.4}
+    fused, c_all, c_14, c_4d1 = fuse_scores(scores, weights, False, cycle_weight=cw, conflict_mult=0.8)
+    assert not (c_all or c_14 or c_4d1)
+    assert fused == pytest.approx(0.5 * 0.6 * 0.4)
+
+
+def test_min_agree_three_requires_full_consensus():
+    scores = {"1h": 0.5, "4h": 0.5, "d1": 0.0}
+    weights = (0.5, 0.3, 0.2)
+    fused, c_all, c_14, c_4d1 = fuse_scores(scores, weights, False, min_agree=3)
+    assert not (c_all or c_14 or c_4d1)
+    assert fused == pytest.approx(0.5 * 0.7)
