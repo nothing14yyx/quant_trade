@@ -10,6 +10,8 @@ import types
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
+import os
+import time
 
 from .signal import (
     core,
@@ -144,6 +146,8 @@ class RobustSignalGenerator:
             maxsize=cache_cfg.get("ai_maxsize", 300), ttl=cache_cfg.get("ttl")
         )
         self.batch_max_workers = batch_cfg.get("max_workers")
+        if self.batch_max_workers is None:
+            self.batch_max_workers = os.cpu_count()
         self.models: dict[str, dict] = {}
         # 币种到板块映射，默认空字典
         self.symbol_categories: Mapping[str, str] | Mapping[str, list[str]] = {}
@@ -189,17 +193,29 @@ class RobustSignalGenerator:
         return row.get(key, default)
 
     def _cleanup_caches(self) -> None:
-        self._factor_cache.cleanup()
-        self._ai_score_cache.cleanup()
+        """清理缓存中长期未访问的条目。"""
+        now = time.time()
+        idle = 3600  # 一小时未访问即视为过期
+        for cache in (self._factor_cache, self._ai_score_cache):
+            cache.cleanup()
+            if cache.ttl is None:
+                with cache._lock:  # pragma: no cover - 简单维护
+                    keys = [k for k, (_, ts) in cache._cache.items() if now - ts > idle]
+                    for k in keys:
+                        cache._cache.pop(k, None)
 
     def log_cache_stats(self) -> None:  # pragma: no cover
         try:
+            f_total = self._factor_cache.hits + self._factor_cache.misses
+            a_total = self._ai_score_cache.hits + self._ai_score_cache.misses
             logger.debug(
-                "cache hits f=%d/%d ai=%d/%d",
+                "cache hits f=%d/%d (%.1f%%) ai=%d/%d (%.1f%%)",
                 self._factor_cache.hits,
-                self._factor_cache.hits + self._factor_cache.misses,
+                f_total,
+                self._factor_cache.hit_rate() * 100,
                 self._ai_score_cache.hits,
-                self._ai_score_cache.hits + self._ai_score_cache.misses,
+                a_total,
+                self._ai_score_cache.hit_rate() * 100,
             )
         except Exception:
             pass

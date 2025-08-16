@@ -27,7 +27,8 @@ class LRU:
         with self._lock:
             self._purge()
             if key in self._cache:
-                value, ts = self._cache[key]
+                value, _ = self._cache[key]
+                self._cache[key] = (value, time.time())
                 self._cache.move_to_end(key)
                 self.hits += 1
                 return value

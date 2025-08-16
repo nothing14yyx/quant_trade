@@ -1,4 +1,6 @@
 import threading
+import os
+import time
 
 from quant_trade.utils.lru import LRU
 from quant_trade.signal.ai_inference import get_period_ai_scores
@@ -25,6 +27,7 @@ def test_ai_cache_hit_and_eviction_and_init():
     assert isinstance(rsg._ai_score_cache, LRU)
     assert rsg._factor_cache.maxsize == 300
     assert rsg._ai_score_cache.maxsize == 300
+    assert rsg.batch_max_workers == os.cpu_count()
 
     predictor = DummyPredictor()
     models = {"1h": {"up": {}, "down": {}}}
@@ -47,6 +50,26 @@ def test_ai_cache_hit_and_eviction_and_init():
     # 早期条目应被淘汰，重新计算会增加调用次数
     get_period_ai_scores(predictor, {"1h": feats}, models, cache=rsg._ai_score_cache)
     assert predictor.calls == prev + 1
+
+
+def test_cleanup_caches_removes_idle_entries():
+    rsg = RobustSignalGenerator()
+    rsg.risk_manager = RiskManager()
+    rsg._factor_cache.set("x", 1)
+    # 模拟长期未访问
+    old = time.time() - 4000
+    with rsg._factor_cache._lock:
+        rsg._factor_cache._cache["x"] = (1, old)
+    rsg._cleanup_caches()
+    assert "x" not in rsg._factor_cache
+
+
+def test_log_cache_stats_percentage(caplog):
+    rsg = RobustSignalGenerator()
+    caplog.set_level("DEBUG")
+    rsg._factor_cache.get("missing")
+    rsg.log_cache_stats()
+    assert "%" in caplog.text
 
 
 def test_lru_thread_safety():

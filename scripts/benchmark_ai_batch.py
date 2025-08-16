@@ -1,4 +1,5 @@
 import time
+import os
 import numpy as np
 
 from quant_trade.signal.ai_inference import compute_ai_scores_batch
@@ -21,6 +22,7 @@ def main():
     calibrators = {"1h": {"up": None, "down": None}}
     predictor = DummyPredictor()
 
+    print(f"Default max workers: {os.cpu_count()}")
     start_cpu = time.process_time()
     t0 = time.perf_counter()
     compute_ai_scores_batch(predictor, feats, models, calibrators)
