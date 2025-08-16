@@ -17,3 +17,7 @@
 - `w_ai_1h`、`w_ai_4h`、`w_ai_d1`：各周期 AI 分的初始权重。
 - `w_factor.<类别>`：因子类别的初始权重，如 `trend`、`momentum` 等。
 
+## 批处理参数
+
+- `batch.max_workers`：批量信号计算的线程数，缺省时取 `os.cpu_count()`。
+

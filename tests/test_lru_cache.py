@@ -1,4 +1,5 @@
 import threading
+import time
 
 from quant_trade.utils.lru import LRU
 
@@ -57,3 +58,15 @@ def test_thread_safety():
         t.join()
 
     assert len(cache) <= 10
+
+
+def test_ttl_resets_on_access():
+    cache = LRU(maxsize=10, ttl=0.05)
+    cache.set("a", 1)
+    time.sleep(0.03)
+    assert cache.get("a") == 1  # 刷新时间戳
+    time.sleep(0.03)
+    assert cache.get("a") == 1  # 未过期
+    time.sleep(0.06)
+    cache.cleanup()
+    assert "a" not in cache

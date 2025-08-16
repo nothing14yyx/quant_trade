@@ -23,3 +23,8 @@
 - **运行完整测试**：执行 `make test` 或 `pytest -q tests`，
   在提交前确保本地全部通过。CI 也将运行完整测试套件。
 
+## 性能测试
+
+可运行 `python scripts/benchmark_ai_batch.py` 评估批量推理性能。
+脚本会显示 CPU 核心数（即 `batch.max_workers` 默认值）及推理耗时。
+
