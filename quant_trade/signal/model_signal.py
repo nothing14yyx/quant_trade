@@ -24,7 +24,9 @@ class ModelSignalCfg:
     2. **Categorical**: interpret ``proba`` as an array where indexes
        ``ix_up`` and ``ix_down`` correspond to upward and downward class
        probabilities. ``p_min_up``/``p_min_down`` and ``margin_min`` define
-       thresholds for emitting a directional score.
+       thresholds for emitting a directional score. 可以通过
+       ``symbol_thresholds`` 为不同合约设置特定阈值, 其格式为
+       ``{symbol: {"p_min_up": x, "p_min_down": y, "margin_min": z}}``。
     """
 
     center: float = 0.5
@@ -35,6 +37,7 @@ class ModelSignalCfg:
     margin_min: float = 0.10
     ix_up: int = 2
     ix_down: int = 0
+    symbol_thresholds: Mapping[str, Mapping[str, float]] | None = None
 
     @classmethod
     def from_calibration(
@@ -72,6 +75,7 @@ class ModelSignalCfg:
 def model_score_from_proba(
     proba: float | Sequence[float] | np.ndarray,
     cfg: ModelSignalCfg | None = None,
+    symbol: str | None = None,
 ) -> float | None | np.ndarray:
     """Convert model probability to a standardized score.
 
@@ -92,9 +96,17 @@ def model_score_from_proba(
     p_up = float(p[cfg.ix_up])
     p_down = float(p[cfg.ix_down])
     margin = p_up - p_down
-    if p_up >= cfg.p_min_up and margin >= cfg.margin_min:
+
+    th = {}
+    if symbol and cfg.symbol_thresholds:
+        th = cfg.symbol_thresholds.get(symbol, {})
+    p_min_up = th.get("p_min_up", cfg.p_min_up)
+    p_min_down = th.get("p_min_down", cfg.p_min_down)
+    margin_min = th.get("margin_min", cfg.margin_min)
+
+    if p_up >= p_min_up and margin >= margin_min:
         return 1.0
-    if p_down >= cfg.p_min_down and -margin >= cfg.margin_min:
+    if p_down >= p_min_down and -margin >= margin_min:
         return -1.0
     return None
 
