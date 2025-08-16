@@ -137,6 +137,8 @@ class ObThreshold(BaseModel):
 class OIProtection(BaseModel):
     scale: float = 0.9
     crowding_threshold: float = 0.98
+    window: int = 20
+    std_mult: float = 2.0
 
 
 class CycleWeight(BaseModel):

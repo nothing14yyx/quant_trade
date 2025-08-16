@@ -68,13 +68,23 @@ class FusionRuleBased:
     def consensus_check(self, s1, s2, s3, min_agree: int = 2):
         return _consensus_check(s1, s2, s3, min_agree)
 
-    def crowding_protection(self, scores, current_score, base_th: float = 0.2):
+    def crowding_protection(
+        self,
+        scores,
+        current_score,
+        base_th: float = 0.2,
+        *,
+        market_depth: float | None = None,
+        position_skew: float | None = None,
+    ):
         return _crowding_protection(
             scores,
             current_score,
             base_th,
             max_same_direction_rate=self.core.max_same_direction_rate,
             equity_drawdown=getattr(self.core, "_equity_drawdown", 0.0),
+            market_depth=market_depth,
+            position_skew=position_skew,
         )
 
     def fuse(
