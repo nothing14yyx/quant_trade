@@ -242,24 +242,44 @@ class RobustSignalGenerator:
         **kwargs,
     ):
         features_15m_list = features_15m_list or [None] * len(features_1h_list)
+        enabled = set(getattr(self, "enabled_periods", ["1h", "4h", "d1", "15m"]))
+
+        if "1h" not in enabled:
+            features_1h_list = [{} for _ in features_1h_list]
+        if "4h" not in enabled:
+            features_4h_list = [{} for _ in features_4h_list]
+        if "d1" not in enabled:
+            features_d1_list = [{} for _ in features_d1_list]
+        if "15m" not in enabled:
+            features_15m_list = [None for _ in features_15m_list]
 
         # 预先批量计算因子分以利用缓存与矢量化实现
         try:
-            features_to_scores.get_factor_scores_batch(self, features_1h_list, "1h")
-            features_to_scores.get_factor_scores_batch(self, features_4h_list, "4h")
-            features_to_scores.get_factor_scores_batch(self, features_d1_list, "d1")
+            if "1h" in enabled:
+                features_to_scores.get_factor_scores_batch(self, features_1h_list, "1h")
+            if "4h" in enabled:
+                features_to_scores.get_factor_scores_batch(self, features_4h_list, "4h")
+            if "d1" in enabled:
+                features_to_scores.get_factor_scores_batch(self, features_d1_list, "d1")
         except Exception:
             pass
 
         # 预先批量计算 AI 分以复用缓存
         try:
             pred = getattr(self, "predictor", None)
-            period_batch = {
-                "1h": features_1h_list,
-                "4h": features_4h_list,
-                "d1": features_d1_list,
-            }
-            if pred is not None and any(features_15m_list) and "15m" in getattr(pred, "models", {}):
+            period_batch = {}
+            if "1h" in enabled:
+                period_batch["1h"] = features_1h_list
+            if "4h" in enabled:
+                period_batch["4h"] = features_4h_list
+            if "d1" in enabled:
+                period_batch["d1"] = features_d1_list
+            if (
+                pred is not None
+                and "15m" in enabled
+                and any(features_15m_list)
+                and "15m" in getattr(pred, "models", {})
+            ):
                 period_batch["15m"] = features_15m_list
             ai_inference.compute_ai_scores_batch(
                 pred,
