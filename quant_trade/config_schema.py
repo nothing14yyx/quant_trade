@@ -9,7 +9,7 @@ Default values correspond to the project’s ``config.yaml`` so that
 default configuration.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field
 
@@ -227,6 +227,10 @@ class SignalConfig(BaseModel):
     min_pos_vol_scale: float = 0.0
     min_trend_align: int = 2
     th_down_d1: float = 0.74
+    risk_rule_scopes: Dict[str, Literal["score", "pos", "both"]] = Field(
+        default_factory=dict,
+        description="指定各风险规则的作用范围: 仅得分、仅仓位或两者",
+    )
 
 
 __all__ = ["SignalConfig"]

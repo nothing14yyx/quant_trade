@@ -26,6 +26,13 @@ class RiskFiltersImpl:
         """
         self.core = core
 
+    def _get_scope(self, rule: str, default: str) -> str:
+        scopes = getattr(self.core, "risk_rule_scopes", {}) or {}
+        scope = scopes.get(rule, default)
+        if scope not in {"score", "pos", "both"}:
+            return default
+        return scope
+
     # ------------------------------------------------------------------
     # OI 过热保护
     # ------------------------------------------------------------------
@@ -218,15 +225,25 @@ class RiskFiltersImpl:
             f_rate = raw_f.get(f"funding_rate_{p}", 0)
             if abs(f_rate) > 0.0005 and np.sign(f_rate) * np.sign(fused_score) < 0:
                 penalty = min(abs(f_rate) * 20, 0.20)
-                score_mult *= 1 - penalty
+                scope = self._get_scope("funding_conflict", "score")
+                mult = 1 - penalty
+                if scope in ("score", "both"):
+                    score_mult *= mult
+                if scope in ("pos", "both"):
+                    pos_mult *= mult
                 funding_conflicts += 1
         if funding_conflicts >= core.veto_conflict_count:
+            scope = self._get_scope("funding_conflict", "score")
             if core.filter_penalty_mode:
-                score_mult *= core.penalty_factor
-                pos_mult *= core.penalty_factor
+                if scope in ("score", "both"):
+                    score_mult *= core.penalty_factor
+                if scope in ("pos", "both"):
+                    pos_mult *= core.penalty_factor
             else:
-                score_mult = 0.0
-                pos_mult = 0.0
+                if scope in ("score", "both"):
+                    score_mult = 0.0
+                if scope in ("pos", "both"):
+                    pos_mult = 0.0
 
         adj_score = fused_score * score_mult
         market_depth = None
@@ -247,10 +264,12 @@ class RiskFiltersImpl:
             vol_pred=vol_preds.get("1h"),
             oi_overheat=cache.get("oi_overheat", False),
             symbol=symbol,
-            market_depth=market_depth,
-            position_skew=position_skew,
         )
-        score_mult *= crowding_factor
+        scope = self._get_scope("crowding", "score")
+        if scope in ("score", "both"):
+            score_mult *= crowding_factor
+        if scope in ("pos", "both"):
+            pos_mult *= crowding_factor
         self.last_th_oi = th_oi
         risk_score = core.risk_manager.calc_risk(
             env_score,
@@ -258,7 +277,12 @@ class RiskFiltersImpl:
             oi_change=open_interest.get("oi_chg") if open_interest else None,
         )
 
-        pos_mult *= 1 - core.risk_adjust_factor * risk_score
+        risk_mult = 1 - core.risk_adjust_factor * risk_score
+        scope = self._get_scope("risk_score", "pos")
+        if scope in ("score", "both"):
+            score_mult *= risk_mult
+        if scope in ("pos", "both"):
+            pos_mult *= risk_mult
         with core._lock:
             atr_hist = [
                 r.get("atr_pct_1h")
@@ -298,15 +322,19 @@ class RiskFiltersImpl:
         self.last_funding_conflicts = funding_conflicts
 
         if abs(fused_score * score_mult) < risk_th:
-            score_mult = 0.0
-            pos_mult = 0.0
-
-        penalty_triggered = False
+            scope = self._get_scope("risk_threshold", "both")
+            if scope in ("score", "both"):
+                score_mult = 0.0
+            if scope in ("pos", "both"):
+                pos_mult = 0.0
         if risk_score > core.risk_score_limit:
-            penalty_triggered = True
+            if core.filter_penalty_mode:
+                score_mult *= core.penalty_factor
+                pos_mult *= core.penalty_factor
+            else:
+                score_mult = 0.0
+                pos_mult = 0.0
         if crowding_factor < 0 or crowding_factor > core.crowding_limit:
-            penalty_triggered = True
-        if penalty_triggered:
             if core.filter_penalty_mode:
                 score_mult *= core.penalty_factor
                 pos_mult *= core.penalty_factor
