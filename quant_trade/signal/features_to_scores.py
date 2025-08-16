@@ -17,6 +17,28 @@ from .utils import adjust_score, volume_guard
 logger = get_logger(__name__)
 
 
+FACTOR_CATEGORIES = [
+    "trend",
+    "momentum",
+    "volatility",
+    "volume",
+    "sentiment",
+    "funding",
+]
+
+# 记录每个因子类别的 IC，用于外部动态权重调整
+category_ic: dict[str, float] = {}
+
+
+def record_ic(stats: Mapping[str, float] | None) -> None:
+    """保存因子类别的 IC 数值."""
+    if not stats:
+        return
+    for k, v in stats.items():
+        if k in FACTOR_CATEGORIES and v is not None:
+            category_ic[k] = float(v)
+
+
 # ---------------------------------------------------------------------------
 # Helper functions migrated from ``core.py``
 # ---------------------------------------------------------------------------
