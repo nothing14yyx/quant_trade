@@ -8,7 +8,7 @@ from quant_trade.robust_signal_generator import (
     DynamicThresholdInput,
     RobustSignalGenerator,
 )
-from quant_trade.signal import compute_dynamic_threshold
+from quant_trade.signal import compute_dynamic_threshold, core
 
 
 def test_compute_tp_sl():
@@ -243,21 +243,21 @@ def test_generate_signal_raw_atr():
     assert res2['stop_loss'] is None
 
 
-def test_dynamic_threshold_use_raw_features():
+def test_dynamic_threshold_use_raw_features(monkeypatch):
     """动态阈值应使用原始特征数据"""
     rsg = make_dummy_rsg()
 
     captured = {}
 
-    def fake_dyn_th(atr, adx, funding, **kwargs):
-        captured['atr'] = atr
-        captured['adx'] = adx
-        captured['funding'] = funding
-        captured['atr_4h'] = kwargs.get('atr_4h')
-        captured['adx_4h'] = kwargs.get('adx_4h')
+    def fake_dyn_th(inp):
+        captured['atr'] = inp.atr
+        captured['adx'] = inp.adx
+        captured['funding'] = inp.funding
+        captured['atr_4h'] = inp.atr_4h
+        captured['adx_4h'] = inp.adx_4h
         return 0.1, 0.0
 
-    rsg.dynamic_threshold = fake_dyn_th
+    monkeypatch.setattr(core.dynamic_thresholds, "calc_dynamic_threshold", fake_dyn_th)
     rsg.predictor.get_ai_score = lambda f, up, down: 0
     rsg.factor_scorer.score = lambda f, p: {
         'trend': 0,

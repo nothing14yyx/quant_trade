@@ -82,6 +82,13 @@ def generate_signal(
     ic_threshold: float = 0.0,
     factor_weights: Mapping[str, float] | None = None,
     combine_score: Any | None = None,
+    atr: float | None = None,
+    adx: float | None = None,
+    atr_4h: float | None = None,
+    adx_4h: float | None = None,
+    atr_d1: float | None = None,
+    adx_d1: float | None = None,
+    funding: float | None = None,
 ) -> dict[str, Any]:
     """Generate trading signal using modular pipeline.
 
@@ -187,11 +194,52 @@ def generate_signal(
         ic_stats=ic_periods,
         min_agree=int(fusion_cfg.get("min_agree", 2)),
     )
-
+    
     # 4. 动态阈值计算
+    def _get_metric(feats, raw, *keys) -> float:
+        for k in keys:
+            if raw is not None and k in raw:
+                try:
+                    return float(raw[k])
+                except Exception:
+                    continue
+            if feats is not None and k in feats:
+                try:
+                    return float(feats[k])
+                except Exception:
+                    continue
+        return 0.0
+
+    atr_val = float(atr) if atr is not None else _get_metric(
+        features_1h, raw_features_1h, "atr_pct_1h", "atr_pct"
+    )
+    adx_val = float(adx) if adx is not None else _get_metric(
+        features_1h, raw_features_1h, "adx_1h", "adx"
+    )
+    funding_val = float(funding) if funding is not None else _get_metric(
+        features_1h, raw_features_1h, "funding_rate_1h", "funding_rate"
+    )
+    atr4_val = float(atr_4h) if atr_4h is not None else _get_metric(
+        features_4h, raw_features_4h, "atr_pct_4h", "atr_pct"
+    )
+    adx4_val = float(adx_4h) if adx_4h is not None else _get_metric(
+        features_4h, raw_features_4h, "adx_4h", "adx"
+    )
+    atrd_val = float(atr_d1) if atr_d1 is not None else _get_metric(
+        features_d1, raw_features_d1, "atr_pct_d1", "atr_pct"
+    )
+    adxd_val = float(adx_d1) if adx_d1 is not None else _get_metric(
+        features_d1, raw_features_d1, "adx_d1", "adx"
+    )
+
     dyn_input = dynamic_thresholds.DynamicThresholdInput(
-        atr=0.0,
-        adx=0.0,
+        atr=atr_val,
+        adx=adx_val,
+        funding=funding_val,
+        atr_4h=atr4_val if atr4_val else None,
+        adx_4h=adx4_val if adx4_val else None,
+        atr_d1=atrd_val if atrd_val else None,
+        adx_d1=adxd_val if adxd_val else None,
         history_scores=all_scores_list or [],
     )
     base_th, rev_boost = dynamic_thresholds.calc_dynamic_threshold(dyn_input)
@@ -214,7 +262,7 @@ def generate_signal(
 
     # 6. 仓位与 TP/SL
     final_score = fused_score * score_mult
-    cfg_path = Path(__file__).resolve().parent.parent / "config" / "signal.yaml"
+    cfg_path = Path(__file__).resolve().parents[2] / "config" / "signal.yaml"
     try:
         min_exp_base = float(ConfigManager(cfg_path).get("min_exposure_base", 0.0))
     except Exception:  # pragma: no cover - fallback to zero
