@@ -9,6 +9,8 @@ enable_ai: true
 enable_factor_breakdown: false
 max_stop_loss_pct: 0.05
 risk_budget_per_trade: 0.01
+ai:
+  enabled_periods: ["1h", "4h"]
 cv:
   embargo: 1  # 交叉验证时的隔离步数(1~2 个 horizon)
 binance:
