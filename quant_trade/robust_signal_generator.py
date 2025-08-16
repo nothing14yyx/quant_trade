@@ -216,20 +216,24 @@ class RobustSignalGenerator:
                 fused *= self.phase_dir_mult.get("long", 1.0)
             elif direction < 0:
                 fused *= self.phase_dir_mult.get("short", 1.0)
-            return self._calc_position_and_sl_tp(fused, risk.get("base_th"), direction, **data)
+            res = self._calc_position_and_sl_tp(
+                fused, risk.get("base_th"), direction, **data
+            )
+            return self._fill_disabled_periods(res)
 
         pred = getattr(self, "predictor", None)
         kwargs.setdefault("predictor", pred)
         kwargs.setdefault("models", getattr(pred, "models", {}))
         kwargs.setdefault("calibrators", getattr(pred, "calibrators", {}))
         kwargs.setdefault("ai_score_cache", self._ai_score_cache)
-        return core.generate_signal(
+        res = core.generate_signal(
             features_1h,
             features_4h,
             features_d1,
             features_15m,
             **kwargs,
         )
+        return self._fill_disabled_periods(res)
 
     def generate_signal_batch(
         self,
@@ -303,6 +307,36 @@ class RobustSignalGenerator:
 
     def diagnose(self):  # pragma: no cover
         return getattr(self, "_diagnostic", {})
+
+    def _fill_disabled_periods(self, result: dict) -> dict:
+        """在结果中为未启用的周期填入 ``None``。
+
+        Parameters
+        ----------
+        result : dict
+            ``generate_signal`` 等方法返回的结果字典。
+
+        Returns
+        -------
+        dict
+            处理后的结果字典，确保所有周期键存在且未启用周期为 ``None``。
+        """
+
+        details = result.get("details")
+        if not isinstance(details, dict):
+            return result
+
+        periods_all = ("1h", "4h", "d1", "15m")
+        enabled = set(getattr(self, "enabled_periods", periods_all))
+        for key in ("vol_preds", "rise_preds", "drawdown_preds"):
+            mapping = details.get(key)
+            if isinstance(mapping, dict):
+                for p in periods_all:
+                    if p in enabled:
+                        mapping.setdefault(p, None)
+                    else:
+                        mapping[p] = None
+        return result
 
     # ------------------------------------------------------------------
     # Weight management

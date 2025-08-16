@@ -251,6 +251,7 @@ class SignalEngine:
         )
         if result is None:
             return None
+        result = self.rsg._fill_disabled_periods(result)
         result["position_size"] = min(
             result.get("position_size", 0.0), self.rsg.max_position
         )
