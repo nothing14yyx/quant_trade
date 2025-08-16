@@ -8,6 +8,7 @@ from typing import Tuple
 
 import numpy as np
 
+PERIODS: Tuple[str, str, str] = ("1h", "4h", "d1")
 
 def consensus_check(s1: float, s2: float, s3: float, min_agree: int = 2) -> int:
     """多周期方向共振检查。
@@ -81,11 +82,7 @@ def get_ic_weights(core) -> Tuple[float, float, float]:
         return weights
 
     ic_scores = getattr(core, "ic_scores", {})
-    ic_periods = {
-        "1h": ic_scores.get("1h", 1.0),
-        "4h": ic_scores.get("4h", 1.0),
-        "d1": ic_scores.get("d1", 1.0),
-    }
+    ic_periods = {p: ic_scores.get(p, 1.0) for p in PERIODS}
     weights = core.get_ic_period_weights(ic_periods)
     if cache is not None:
         cache.set("ic_weights", weights)
@@ -101,7 +98,8 @@ def fuse_scores(
     conflict_mult: float = 0.7,
 ) -> tuple[float, bool, bool, bool]:
     """按照多周期共振逻辑融合得分。"""
-    s1, s4, sd = scores["1h"], scores["4h"], scores["d1"]
+    periods = PERIODS
+    s1, s4, sd = (scores[p] for p in periods)
     w1, w4, wd = ic_weights
 
     consensus_dir = consensus_check(s1, s4, sd)

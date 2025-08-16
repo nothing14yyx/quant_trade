@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Tuple
 
+PERIODS: Tuple[str, str, str] = ("1h", "4h", "d1")
+
 
 @dataclass
 class Vote:
@@ -37,15 +39,17 @@ def fuse_votes(
         是否启用否决逻辑。
     """
 
-    weighted = v1h.dir * w[0] + v4h.dir * w[1] + vd1.dir * w[2]
+    periods = PERIODS
+    votes = {periods[0]: v1h, periods[1]: v4h, periods[2]: vd1}
+    weighted = sum(votes[p].dir * w[i] for i, p in enumerate(periods))
     fused_dir = 1 if weighted > 0 else -1 if weighted < 0 else 0
 
     if veto:
-        if v4h.dir == -v1h.dir and abs(v4h.prob - v1h.prob) > 0.15:
+        if votes[periods[1]].dir == -votes[periods[0]].dir and abs(votes[periods[1]].prob - votes[periods[0]].prob) > 0.15:
             return 0
-        if vd1.dir == -v1h.dir and vd1.prob > 0.60:
+        if votes[periods[2]].dir == -votes[periods[0]].dir and votes[periods[2]].prob > 0.60:
             return 0
 
-    if fused_dir == v1h.dir and v1h.prob > 0.55:
+    if fused_dir == votes[periods[0]].dir and votes[periods[0]].prob > 0.55:
         return fused_dir
     return 0

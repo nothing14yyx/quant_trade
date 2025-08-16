@@ -83,6 +83,7 @@ def generate_signal(
     period_features = {"1h": features_1h, "4h": features_4h, "d1": features_d1}
     if features_15m is not None:
         period_features["15m"] = features_15m
+    periods = ["1h", "4h", "d1"]
 
     # 1. 因子分
     factor_scores = _safe_factor_scores(period_features)
@@ -99,7 +100,7 @@ def generate_signal(
 
     # 将因子分与 AI 分简单相加得到每周期的综合得分
     combined = {}
-    for p in ("1h", "4h", "d1"):
+    for p in periods:
         fs = factor_scores.get(p, {})
         f_val = float(np.mean(list(fs.values()))) if fs else 0.0
         combined[p] = ai_scores.get(p, 0.0) + f_val
