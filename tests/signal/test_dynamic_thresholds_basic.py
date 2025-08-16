@@ -76,6 +76,26 @@ def test_atr_funding_stack():
     assert th_both == pytest.approx(th_atr + th_fund)
 
 
+def test_extra_proxies_increase_threshold():
+    sig_p = SignalThresholdParams(base_th=0, low_base=0)
+    dyn_p = DynamicThresholdParams()
+    extra = DynamicThresholdInput(
+        atr=0,
+        adx=0,
+        funding=0,
+        iv_proxy=0.02,
+        macro_proxy=0.02,
+        onchain_proxy=0.02,
+        base=0,
+        low_base=0,
+        signal_params=sig_p,
+        dynamic_params=dyn_p,
+    )
+    th, _ = calc_dynamic_threshold(extra)
+    expected = min(dyn_p.funding_cap, (0.25 * 0.02 * 3) * dyn_p.funding_mult)
+    assert th == pytest.approx(expected)
+
+
 def test_phase_mult_with_history_scores():
     params = ThresholdParams(base_th=0.0, low_base=0.0, rev_boost=0.02)
     data = {

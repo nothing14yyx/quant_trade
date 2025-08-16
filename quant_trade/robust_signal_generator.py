@@ -151,15 +151,29 @@ class RobustSignalGenerator:
         self.phase_th_mult = 1.0
         self.phase_dir_mult = {"long": 1.0, "short": 1.0}
         self.phase_dyn_mult: Mapping[str, Mapping[str, float]] = {}
+        cfg_data: Mapping[str, Any] = {}
         if isinstance(cfg, Mapping):
-            dt_cfg = cfg.get("dynamic_threshold", {})
-            self.smooth_window = dt_cfg.get("smooth_window", 20)
-            self.th_window = dt_cfg.get("th_window", cfg.get("th_window", 60))
-            self.th_decay = dt_cfg.get("th_decay", cfg.get("th_decay", 2.0))
+            cfg_data = cfg
+        elif getattr(cfg, "config_path", None):
+            try:
+                cfg_data = ConfigManager(cfg.config_path).cfg
+            except Exception:
+                cfg_data = {}
         else:
-            self.smooth_window = 20
-            self.th_window = 60
-            self.th_decay = 2.0
+            try:
+                cfg_data = ConfigManager(cfg_path).cfg
+            except Exception:
+                cfg_data = {}
+
+        self.signal_threshold_cfg = cfg_data.get("signal_threshold", {})
+        dyn_cfg = cfg_data.get("dynamic_threshold", {})
+        self.dynamic_th_params = DynamicThresholdParams.from_cfg(dyn_cfg)
+        tp = ThresholdParams.from_cfg(cfg_data)
+        self.smooth_window = tp.smooth_window
+        self.smooth_alpha = tp.smooth_alpha
+        self.smooth_limit = tp.smooth_limit
+        self.th_window = tp.th_window
+        self.th_decay = tp.th_decay
 
     def set_symbol_categories(
         self,

@@ -65,6 +65,33 @@ class ThresholdParams(SignalThresholdParams, DynamicThresholdParams):
     th_window: int = 60
     th_decay: float = 2.0
 
+    @classmethod
+    def from_cfg(cls, cfg: Mapping[str, Any]) -> "ThresholdParams":  # pragma: no cover
+        if "signal_threshold" in cfg or "dynamic_threshold" in cfg:
+            sig = cfg.get("signal_threshold", {})
+            dyn = cfg.get("dynamic_threshold", {})
+        else:
+            sig = cfg
+            dyn = cfg
+        return cls(
+            base_th=sig.get("base_th", 0.0),
+            low_base=sig.get("low_base", 0.0),
+            quantile=sig.get("quantile", 0.8),
+            rev_boost=sig.get("rev_boost", 0.0),
+            rev_th_mult=sig.get("rev_th_mult", 1.0),
+            atr_mult=dyn.get("atr_mult", 3.63636363636),
+            atr_cap=dyn.get("atr_cap", 0.2),
+            funding_mult=dyn.get("funding_mult", 2.7586206897),
+            funding_cap=dyn.get("funding_cap", 0.2),
+            adx_div=dyn.get("adx_div", 25.0),
+            adx_cap=dyn.get("adx_cap", 0.2),
+            smooth_window=dyn.get("smooth_window", 20),
+            smooth_alpha=dyn.get("smooth_alpha", 0.2),
+            smooth_limit=dyn.get("smooth_limit", 1.0),
+            th_window=dyn.get("th_window", cfg.get("th_window", 60)),
+            th_decay=dyn.get("th_decay", cfg.get("th_decay", 2.0)),
+        )
+
 
 def _legacy_compute_dynamic_threshold(
     history_scores: Iterable[float], window: int, quantile: float
@@ -190,6 +217,12 @@ def compute_dynamic_threshold(
     iv = _get(data, "iv_proxy")
     if iv is not None:
         fund_eff += _mult("iv_proxy", 0.25) * abs(iv)
+    macro = _get(data, "macro_proxy")
+    if macro is not None:
+        fund_eff += _mult("macro_proxy", 0.25) * abs(macro)
+    onchain = _get(data, "onchain_proxy")
+    if onchain is not None:
+        fund_eff += _mult("onchain_proxy", 0.25) * abs(onchain)
     th += min(params.funding_cap, fund_eff * params.funding_mult)
 
     adx_eff = abs(_get(data, "adx") or 0.0)
@@ -240,6 +273,8 @@ class DynamicThresholdInput:
     pred_vol_d1: float | None = None
     vix_proxy: float | None = None
     iv_proxy: float | None = None
+    macro_proxy: float | None = None
+    onchain_proxy: float | None = None
     regime: str | None = None
     reversal: bool = False
     base: float | None = None
@@ -317,6 +352,12 @@ def calc_dynamic_threshold(params: DynamicThresholdInput) -> tuple[float, float]
         fund_eff += 0.15 * abs(params.pred_vol_d1)
     if params.vix_proxy is not None:
         fund_eff += 0.25 * abs(params.vix_proxy)
+    if params.iv_proxy is not None:
+        fund_eff += 0.25 * abs(params.iv_proxy)
+    if params.macro_proxy is not None:
+        fund_eff += 0.25 * abs(params.macro_proxy)
+    if params.onchain_proxy is not None:
+        fund_eff += 0.25 * abs(params.onchain_proxy)
     th += min(dyn_p.funding_cap, fund_eff * dyn_p.funding_mult)
 
     adx_eff = abs(params.adx)
@@ -396,6 +437,9 @@ class ThresholdingDynamic:
         pred_vol_4h=None,
         pred_vol_d1=None,
         vix_proxy=None,
+        iv_proxy=None,
+        macro_proxy=None,
+        onchain_proxy=None,
         base=None,
         regime=None,
         low_base=None,
@@ -417,6 +461,9 @@ class ThresholdingDynamic:
             pred_vol_4h=pred_vol_4h,
             pred_vol_d1=pred_vol_d1,
             vix_proxy=vix_proxy,
+            iv_proxy=iv_proxy,
+            macro_proxy=macro_proxy,
+            onchain_proxy=onchain_proxy,
             regime=regime,
             reversal=reversal,
             base=base,

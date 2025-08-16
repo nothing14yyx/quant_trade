@@ -84,3 +84,30 @@ signal_threshold:
     assert rsg.signal_threshold_cfg["base_th"] == pytest.approx(0.2)
     rsg.update_weights()
 
+
+def test_dynamic_threshold_from_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg_path = tmp_path / "cfg.yml"
+    cfg_path.write_text(
+        """
+dynamic_threshold:
+  atr_mult: 5.0
+  smooth_window: 15
+  th_window: 99
+  th_decay: 1.5
+""",
+        encoding="utf-8",
+    )
+    cfg = RobustSignalGeneratorConfig(
+        model_paths={},
+        feature_cols_1h=[],
+        feature_cols_4h=[],
+        feature_cols_d1=[],
+        config_path=cfg_path,
+    )
+    rsg = RobustSignalGenerator(cfg)
+    assert rsg.dynamic_th_params.atr_mult == pytest.approx(5.0)
+    assert rsg.smooth_window == 15
+    assert rsg.th_window == 99
+    assert rsg.th_decay == pytest.approx(1.5)
+
