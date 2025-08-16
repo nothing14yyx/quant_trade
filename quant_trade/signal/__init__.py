@@ -4,7 +4,7 @@ from .core import generate_signal
 from .features_to_scores import get_factor_scores, get_factor_scores_batch
 from .ai_inference import get_period_ai_scores, get_reg_predictions
 from .multi_period_fusion import fuse_scores
-from .decision import DecisionConfig, decide_signal
+from .decision import DecisionConfig, decide_signal, RollingStats
 from .dynamic_thresholds import (
     DynamicThresholdInput,
     SignalThresholdParams,
@@ -37,6 +37,7 @@ __all__ = [
     "fuse_scores",
     "DecisionConfig",
     "decide_signal",
+    "RollingStats",
     "DynamicThresholdInput",
     "SignalThresholdParams",
     "DynamicThresholdParams",
