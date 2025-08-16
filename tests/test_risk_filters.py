@@ -111,3 +111,50 @@ def test_oi_overheat_reason():
         cache={"oi_overheat": True},
     )
     assert RiskReason.OI_OVERHEAT.value in reasons
+
+
+def test_periods_excludes_d1():
+    rf = make_filters()
+    cache = base_cache()
+    score_mult_d1, _pos_mult, _ = rf.apply_risk_filters(
+        fused_score=1.0,
+        logic_score=1.0,
+        env_score=0.0,
+        std_1h={},
+        std_4h={},
+        std_d1={},
+        raw_f1h={},
+        raw_f4h={},
+        raw_fd1={"funding_rate_d1": -0.01},
+        vol_preds={"1h": 0.0},
+        open_interest=None,
+        all_scores_list=None,
+        rev_dir=0,
+        cache=cache,
+        global_metrics=None,
+        symbol="BTC",
+        dyn_base=None,
+    )
+    cache2 = base_cache()
+    score_mult_no_d1, _pos_mult, _ = rf.apply_risk_filters(
+        fused_score=1.0,
+        logic_score=1.0,
+        env_score=0.0,
+        std_1h={},
+        std_4h={},
+        std_d1={},
+        raw_f1h={},
+        raw_f4h={},
+        raw_fd1={"funding_rate_d1": -0.01},
+        vol_preds={"1h": 0.0},
+        open_interest=None,
+        all_scores_list=None,
+        rev_dir=0,
+        cache=cache2,
+        global_metrics=None,
+        symbol="BTC",
+        dyn_base=None,
+        periods=("1h", "4h"),
+    )
+    assert score_mult_d1 < 1.0
+    assert score_mult_no_d1 == 1.0

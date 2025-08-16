@@ -613,6 +613,10 @@ class RobustSignalGenerator:
         score_mult = risk_info.get("score_mult")
         pos_mult = risk_info.get("pos_mult")
         if score_mult is None or pos_mult is None:
+            periods = tuple(
+                p for p in getattr(self, "enabled_periods", ["1h", "4h", "d1"])
+                if p in ("1h", "4h", "d1")
+            )
             sm, pm, reasons = self.risk_filters.apply_risk_filters(
                 score_for_thresholding,
                 logic_score,
@@ -631,6 +635,7 @@ class RobustSignalGenerator:
                 global_metrics,
                 symbol,
                 dyn_base=None,
+                periods=periods,
             )
             score_mult = 1.0 if score_mult is None else score_mult
             pos_mult = 1.0 if pos_mult is None else pos_mult
