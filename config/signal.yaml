@@ -1,3 +1,9 @@
 w_ai: 1.0
 w_factor: 1.0
 ic_threshold: 0.0
+cache:
+  factor_maxsize: 300
+  ai_maxsize: 300
+  ttl: 3600
+batch:
+  max_workers: 4

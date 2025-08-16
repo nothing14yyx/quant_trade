@@ -8,6 +8,7 @@ import math
 import threading
 import types
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from .signal import (
@@ -122,12 +123,27 @@ class RobustSignalGenerator:
     veto_conflict_count = 1
     all_scores_list: list[float] = []
     eth_dom_history = deque(maxlen=500)
+    ma_cross_logic = staticmethod(features_to_scores.ma_cross_logic)
 
     def __init__(self, cfg: RobustSignalGeneratorConfig | None = None):
+        cfg_path = Path(__file__).resolve().parent.parent / "config" / "signal.yaml"
+        cache_cfg: dict[str, Any] = {}
+        batch_cfg: dict[str, Any] = {}
+        try:
+            cm = ConfigManager(cfg_path)
+            cache_cfg = cm.get("cache", {})
+            batch_cfg = cm.get("batch", {})
+        except Exception:
+            pass
         self.cfg = cfg
-        # 缓存采用线程安全的 LRU, 默认最多保存 300 条目
-        self._factor_cache = LRU(maxsize=300)
-        self._ai_score_cache = LRU(maxsize=300)
+        # 缓存采用线程安全的 LRU, 参数可配置
+        self._factor_cache = LRU(
+            maxsize=cache_cfg.get("factor_maxsize", 300), ttl=cache_cfg.get("ttl")
+        )
+        self._ai_score_cache = LRU(
+            maxsize=cache_cfg.get("ai_maxsize", 300), ttl=cache_cfg.get("ttl")
+        )
+        self.batch_max_workers = batch_cfg.get("max_workers")
         self.models: dict[str, dict] = {}
         # 币种到板块映射，默认空字典
         self.symbol_categories: Mapping[str, str] | Mapping[str, list[str]] = {}
@@ -157,6 +173,22 @@ class RobustSignalGenerator:
 
     def get_feat_value(self, row: Mapping[str, Any], key: str, default: Any = 0):  # pragma: no cover
         return row.get(key, default)
+
+    def _cleanup_caches(self) -> None:
+        self._factor_cache.cleanup()
+        self._ai_score_cache.cleanup()
+
+    def log_cache_stats(self) -> None:  # pragma: no cover
+        try:
+            logger.debug(
+                "cache hits f=%d/%d ai=%d/%d",
+                self._factor_cache.hits,
+                self._factor_cache.hits + self._factor_cache.misses,
+                self._ai_score_cache.hits,
+                self._ai_score_cache.hits + self._ai_score_cache.misses,
+            )
+        except Exception:
+            pass
 
     def update_market_phase(self, engine) -> str:
         """更新市场阶段及相关倍率。
@@ -294,6 +326,7 @@ class RobustSignalGenerator:
         symbols=None,
         **kwargs,
     ):
+        self._cleanup_caches()
         features_15m_list = features_15m_list or [None] * len(features_1h_list)
         enabled = set(getattr(self, "enabled_periods", ["1h", "4h", "d1", "15m"]))
 
@@ -344,14 +377,27 @@ class RobustSignalGenerator:
         except Exception:
             pass
 
-        results = []
-        for i, f1 in enumerate(features_1h_list):
-            f4 = features_4h_list[i]
-            fd = features_d1_list[i]
-            f15 = features_15m_list[i]
-            sym = symbols[i] if symbols else None
-            res = self.generate_signal(f1, f4, fd, f15, symbol=sym, **kwargs)
-            results.append(res)
+        symbols = symbols or [None] * len(features_1h_list)
+        tasks = list(
+            zip(features_1h_list, features_4h_list, features_d1_list, features_15m_list, symbols)
+        )
+        max_workers = kwargs.pop(
+            "max_workers", getattr(self, "batch_max_workers", None)
+        )
+        if max_workers and max_workers > 1:
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                results = list(
+                    ex.map(
+                        lambda t: self.generate_signal(*t[:4], symbol=t[4], **kwargs),
+                        tasks,
+                    )
+                )
+        else:
+            results = [
+                self.generate_signal(f1, f4, fd, f15, symbol=sym, **kwargs)
+                for f1, f4, fd, f15, sym in tasks
+            ]
+        self.log_cache_stats()
         return results
 
     def diagnose(self):  # pragma: no cover
