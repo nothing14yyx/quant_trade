@@ -66,6 +66,10 @@ def generate_signal(
     order_book_imbalance: Mapping[str, Any] | None = None,
     symbol: str | None = None,
     ai_score_cache: Any | None = None,
+    w_ai: float = 1.0,
+    w_factor: float = 1.0,
+    ic_stats: Mapping[str, float] | None = None,
+    ic_threshold: float = 0.0,
 ) -> dict[str, Any]:
     """Generate trading signal using modular pipeline.
 
@@ -98,12 +102,24 @@ def generate_signal(
         predictor, period_features, models
     )
 
-    # 将因子分与 AI 分简单相加得到每周期的综合得分
+    # 根据 IC 或回测收益动态调整权重
+    def _adjust_weight(weight: float, ic_val: float | None) -> float:
+        if ic_val is None:
+            return weight
+        if ic_threshold > 0 and ic_val < ic_threshold:
+            return weight * (ic_val / ic_threshold)
+        return weight
+
+    if ic_stats:
+        w_ai = _adjust_weight(w_ai, ic_stats.get("ai"))
+        w_factor = _adjust_weight(w_factor, ic_stats.get("factor"))
+
+    # 将因子分与 AI 分按权重求和得到每周期的综合得分
     combined = {}
     for p in periods:
         fs = factor_scores.get(p, {})
         f_val = float(np.mean(list(fs.values()))) if fs else 0.0
-        combined[p] = ai_scores.get(p, 0.0) + f_val
+        combined[p] = w_ai * ai_scores.get(p, 0.0) + w_factor * f_val
 
     # 3. 多周期融合
     ic_weights: Tuple[float, float, float] = (1.0, 1.0, 1.0)
