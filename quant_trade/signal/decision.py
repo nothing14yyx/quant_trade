@@ -9,10 +9,62 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from collections import deque
 from typing import Mapping, Any
 
 import numpy as np
+
+
+@dataclass
+class RollingStats:
+    """滚动统计胜率与盈亏比。
+
+    该结构可在外部维护, 并在 ``decide_signal`` 中传入以调整
+    ``kelly_gamma``。"""
+
+    window: int = 100
+    _results: deque[float] = field(default_factory=deque, init=False, repr=False)
+    wins: int = 0
+    losses: int = 0
+    profit: float = 0.0
+    loss: float = 0.0
+    consecutive_losses: int = 0
+
+    def update(self, pnl: float) -> None:
+        """记录一次交易盈亏。"""
+
+        self._results.append(pnl)
+        if len(self._results) > self.window:
+            old = self._results.popleft()
+            if old > 0:
+                self.wins -= 1
+                self.profit -= old
+            elif old < 0:
+                self.losses -= 1
+                self.loss -= old  # loss is negative
+
+        if pnl > 0:
+            self.wins += 1
+            self.profit += pnl
+            self.consecutive_losses = 0
+        elif pnl < 0:
+            self.losses += 1
+            self.loss += pnl
+            self.consecutive_losses += 1
+        else:
+            self.consecutive_losses = 0
+
+    @property
+    def win_rate(self) -> float:
+        total = self.wins + self.losses
+        return self.wins / total if total else 0.0
+
+    @property
+    def pl_ratio(self) -> float:
+        if self.loss < 0:
+            return self.profit / abs(self.loss)
+        return 0.0
 
 
 @dataclass
@@ -29,6 +81,7 @@ class DecisionConfig:
     pmin_bump_when_conflict: float = 0.03
     kelly_gamma: float = 0.20
     w_max: float = 0.5
+    adaptive: bool = False
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "DecisionConfig":
@@ -61,6 +114,7 @@ def decide_signal(
     vol_pred: float | None,
     higher_conflict: bool,
     config: DecisionConfig,
+    stats: RollingStats | None = None,
 ) -> Mapping[str, Any]:
     """根据概率和预测信息生成交易信号。
 
@@ -76,6 +130,8 @@ def decide_signal(
         上级周期是否与当前周期冲突的标志位。
     config:
         决策配置。
+    stats:
+        外部维护的滚动统计, 用于自适应调整 ``kelly_gamma``。
 
     Returns
     -------
@@ -91,13 +147,18 @@ def decide_signal(
     p_up_th = config.p_up_min + bump + vol_adj
     p_down_th = config.p_down_min + bump + vol_adj
 
+    gamma = config.kelly_gamma
+    if config.adaptive and stats is not None:
+        gamma *= stats.win_rate * stats.pl_ratio
+        gamma /= 1 + stats.consecutive_losses
+
     action = "HOLD"
     size = 0.0
     weight = 1.0
 
     if p_up >= p_up_th and margin >= config.margin_min:
         action = "BUY"
-        size = min(config.w_max, config.kelly_gamma * (p_up - p_up_th))
+        size = min(config.w_max, gamma * (p_up - p_up_th))
         profit = rise_pred if rise_pred is not None else 0.0
         risk = drawdown_pred if drawdown_pred is not None else 0.0
         if rise_pred is not None or drawdown_pred is not None:
@@ -106,7 +167,7 @@ def decide_signal(
             size = min(size, config.w_max)
     elif p_down >= p_down_th and -margin >= config.margin_min:
         action = "SELL"
-        size = min(config.w_max, config.kelly_gamma * (p_down - p_down_th))
+        size = min(config.w_max, gamma * (p_down - p_down_th))
         profit = drawdown_pred if drawdown_pred is not None else 0.0
         risk = rise_pred if rise_pred is not None else 0.0
         if rise_pred is not None or drawdown_pred is not None:
@@ -134,5 +195,5 @@ def decide_signal(
     return {"action": action, "size": size, "note": note}
 
 
-__all__ = ["DecisionConfig", "decide_signal"]
+__all__ = ["DecisionConfig", "decide_signal", "RollingStats"]
 

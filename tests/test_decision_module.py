@@ -3,7 +3,7 @@ import pytest
 import yaml
 from pathlib import Path
 
-from quant_trade.signal.decision import DecisionConfig, decide_signal
+from quant_trade.signal.decision import DecisionConfig, decide_signal, RollingStats
 
 
 def test_decide_signal_basic():
@@ -41,3 +41,18 @@ def test_decision_config_from_yaml():
     cfg = yaml.safe_load(path.read_text())
     dcfg = DecisionConfig.from_dict(cfg.get("signal", {}))
     assert isinstance(dcfg, DecisionConfig)
+
+
+def test_rolling_stats_and_adaptive_gamma():
+    stats = RollingStats(window=5)
+    stats.update(1.0)
+    stats.update(-1.0)
+    stats.update(-1.0)
+    assert stats.win_rate == pytest.approx(1 / 3)
+    assert stats.pl_ratio == pytest.approx(0.5)
+    cfg_base = DecisionConfig(p_up_min=0.6, margin_min=0.1, kelly_gamma=1.0, w_max=1.0)
+    cfg_adapt = DecisionConfig(p_up_min=0.6, margin_min=0.1, kelly_gamma=1.0, w_max=1.0, adaptive=True)
+
+    base = decide_signal(np.array([0.1, 0.1, 0.8]), None, None, None, False, cfg_base)
+    adapt = decide_signal(np.array([0.1, 0.1, 0.8]), None, None, None, False, cfg_adapt, stats=stats)
+    assert adapt["size"] < base["size"]
