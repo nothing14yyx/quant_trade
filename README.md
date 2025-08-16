@@ -155,6 +155,11 @@ risk_adjust_threshold: null     # 若为 null，将根据历史得分计算阈�
 risk_th_quantile: 0.6           # 自适应阈值的分位数
 veto_conflict_count: 2         # funding 冲突达到此数目直接放弃信号
 min_trend_align: 2             # 趋势方向至少在 N 个周期保持一致
+cycle_weight:
+  strong: 1.2
+  weak: 0.8
+  opposite: 0.6
+  conflict: 0.7
 protection_limits:
   risk_score: 1.0    # 允许的风险得分上限
 crowding_limit: 1.05     # 允许的拥挤度上限
@@ -170,6 +175,9 @@ crowding_protection:
 - `max_stop_loss_pct` 控制单笔交易最大的允许亏损比例。
 - `risk_budget_per_trade` 定义每笔交易可占用的风险预算上限。
 - `crowding_protection` 用于监控市场同向拥挤度并在过热时暂停开仓。
+- `cycle_weight` 可根据市场波动或单边趋势调整多周期融合时的加权系数，
+  其中 `strong/weak/opposite/conflict` 分别对应全周期共振、部分共振、方向相反
+  及无共识时的衰减倍率。
 - `risk_adjust.factor` 控制风险值对 `fused_score` 的削减力度，公式为
   `fused_score *= 1 - factor * risk_score`，一般建议取值在 `0.1`～`0.3` 之间。
 

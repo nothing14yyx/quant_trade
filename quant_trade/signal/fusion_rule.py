@@ -89,4 +89,6 @@ class FusionRuleBased:
             strong_confirm_4h,
             cycle_weight=self.core.cycle_weight,
             conflict_mult=getattr(self.core, "conflict_mult", 0.7),
+            ic_stats=getattr(self.core, "ic_cycle_scores", None),
+            min_agree=getattr(self.core, "min_trend_align", 2),
         )

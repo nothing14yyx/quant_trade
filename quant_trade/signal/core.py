@@ -123,8 +123,9 @@ def generate_signal(
 
     # 3. 多周期融合
     ic_weights: Tuple[float, float, float] = (1.0, 1.0, 1.0)
+    ic_periods = {p: ic_stats.get(p) for p in periods} if ic_stats else None
     fused_score, consensus_all, consensus_14, consensus_4d1 = multi_period_fusion.fuse_scores(
-        combined, ic_weights, False
+        combined, ic_weights, False, ic_stats=ic_periods, min_agree=2
     )
 
     # 4. 动态阈值计算
