@@ -1,5 +1,13 @@
-w_ai: 1.0
-w_factor: 1.0
+w_ai_1h: 1.0
+w_ai_4h: 1.0
+w_ai_d1: 1.0
+w_factor:
+  trend: 1.0
+  momentum: 1.0
+  volatility: 1.0
+  volume: 1.0
+  sentiment: 1.0
+  funding: 1.0
 ic_threshold: 0.0
 cache:
   factor_maxsize: 300

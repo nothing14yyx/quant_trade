@@ -66,10 +66,11 @@ def generate_signal(
     order_book_imbalance: Mapping[str, Any] | None = None,
     symbol: str | None = None,
     ai_score_cache: Any | None = None,
-    w_ai: float = 1.0,
-    w_factor: float = 1.0,
+    w_ai: float | Mapping[str, float] = 1.0,
+    w_factor: float | Mapping[str, float] = 1.0,
     ic_stats: Mapping[str, float] | None = None,
     ic_threshold: float = 0.0,
+    factor_weights: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     """Generate trading signal using modular pipeline.
 
@@ -110,16 +111,47 @@ def generate_signal(
             return weight * (ic_val / ic_threshold)
         return weight
 
+    if isinstance(w_ai, Mapping):
+        w_ai_periods = {p: float(w_ai.get(p, 1.0)) for p in periods}
+    else:
+        w_ai_periods = {p: float(w_ai) for p in periods}
+    if isinstance(w_factor, Mapping):
+        w_factor_periods = {p: float(w_factor.get(p, 1.0)) for p in periods}
+    else:
+        w_factor_periods = {p: float(w_factor) for p in periods}
+
+    cat_weights = dict(factor_weights or {})
     if ic_stats:
-        w_ai = _adjust_weight(w_ai, ic_stats.get("ai"))
-        w_factor = _adjust_weight(w_factor, ic_stats.get("factor"))
+        # 记录各类别 IC
+        features_to_scores.record_ic({k: ic_stats.get(k) for k in cat_weights})
+        for p in periods:
+            w_ai_periods[p] = _adjust_weight(
+                w_ai_periods[p], ic_stats.get(f"ai_{p}") or ic_stats.get("ai")
+            )
+            w_factor_periods[p] = _adjust_weight(
+                w_factor_periods[p], ic_stats.get(f"factor_{p}") or ic_stats.get("factor")
+            )
+        cat_weights = {
+            k: _adjust_weight(v, ic_stats.get(k)) for k, v in cat_weights.items()
+        }
+    else:
+        features_to_scores.record_ic(None)
 
     # 将因子分与 AI 分按权重求和得到每周期的综合得分
     combined = {}
     for p in periods:
         fs = factor_scores.get(p, {})
-        f_val = float(np.mean(list(fs.values()))) if fs else 0.0
-        combined[p] = w_ai * ai_scores.get(p, 0.0) + w_factor * f_val
+        if fs:
+            total_w = 0.0
+            weighted = 0.0
+            for k, v in fs.items():
+                w = cat_weights.get(k, 1.0)
+                weighted += w * v
+                total_w += w
+            f_val = weighted / total_w if total_w else 0.0
+        else:
+            f_val = 0.0
+        combined[p] = w_ai_periods[p] * ai_scores.get(p, 0.0) + w_factor_periods[p] * f_val
 
     # 3. 多周期融合
     ic_weights: Tuple[float, float, float] = (1.0, 1.0, 1.0)
@@ -168,6 +200,7 @@ def generate_signal(
         "vol_preds": vol_preds,
         "rise_preds": rise_preds,
         "drawdown_preds": drawdown_preds,
+        "scores": combined,
         "consensus_all": consensus_all,
         "consensus_14": consensus_14,
         "consensus_4d1": consensus_4d1,
