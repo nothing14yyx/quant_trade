@@ -34,6 +34,11 @@ def _make_rsg(tmp_path: Path, cfg: dict):
     config_obj = RobustSignalGeneratorConfig.from_cfg(init_cfg, cfg_path)
     rsg = RobustSignalGenerator(config_obj)
     rsg.risk_manager = RiskManager()
+    try:
+        rsg.cfg = SignalConfig.model_validate(cfg).model_dump()
+    except Exception as exc:  # pragma: no cover - validation fallback
+        logging.warning("Config validation failed: %s", exc)
+        rsg.cfg = cfg
     return rsg
 
 

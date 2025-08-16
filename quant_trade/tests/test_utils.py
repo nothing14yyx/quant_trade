@@ -73,6 +73,9 @@ def make_dummy_rsg():
     rsg.smooth_window = 20
     rsg.smooth_alpha = 0.2
     rsg.smooth_limit = 1.0
+    rsg.market_phase = "range"
+    rsg.phase_dyn_mult = {}
+    rsg.signal_params.rev_boost = 0.15
     cfg_dict = {
         'signal_threshold': {
             'mode': 'sigmoid',
