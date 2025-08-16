@@ -107,4 +107,5 @@ def make_dummy_rsg():
     rsg.risk_filters = RiskFiltersImpl(rsg)
     rsg.position_sizer = PositionSizerImpl(rsg)
     rsg.dynamic_weight_update = lambda *a, **k: rsg.base_weights
+    rsg.risk_rule_scopes = {}
     return rsg
