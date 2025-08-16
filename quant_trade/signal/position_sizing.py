@@ -29,7 +29,8 @@ def calc_position_size(
     gamma: ``sigmoid_dir`` 平滑系数。
     cvar_target: 来自 CVaR 管控的目标仓位(可选)。
     vol_target: 来自波动率管控的目标仓位(可选)。
-    min_exposure: 信号弱但方向未被否定时的最低敞口(可选)。
+    min_exposure: 信号弱但方向未被否定时的最低敞口(可选)，通常由配置
+        中的 ``min_exposure_base`` 与实时波动率计算得出。
     """
 
     strength = sigmoid_dir(fused_score, base_th, gamma)

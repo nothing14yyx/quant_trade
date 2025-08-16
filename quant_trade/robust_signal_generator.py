@@ -321,6 +321,7 @@ class RobustSignalGenerator:
         kwargs.setdefault("models", getattr(pred, "models", {}))
         kwargs.setdefault("calibrators", getattr(pred, "calibrators", {}))
         kwargs.setdefault("ai_score_cache", self._ai_score_cache)
+        kwargs.setdefault("combine_score", getattr(self, "combine_score", None))
         res = core.generate_signal(
             features_1h,
             features_4h,
