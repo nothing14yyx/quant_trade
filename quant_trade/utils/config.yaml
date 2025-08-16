@@ -66,6 +66,16 @@ market_phase:
     range:
       long: 1.0
       short: 1.0
+  phase_dyn_mult:
+    bull:
+      atr_mult: 1.0
+      funding_mult: 1.0
+    bear:
+      atr_mult: 1.0
+      funding_mult: 1.0
+    range:
+      atr_mult: 1.0
+      funding_mult: 1.0
 
 mysql:
   host: "localhost"
@@ -535,8 +545,6 @@ model_params:
     scale_pos_weight: 6       # ★ 新增，补偿空头稀缺
 
 history_window: 355
-th_window: 80
-th_decay: 0.5
 
 optimizer:
   method: optuna         # 搜索算法，可选 optuna 或 ga
@@ -641,6 +649,9 @@ dynamic_threshold:
   funding_cap: 0.08
   adx_div: 100.0
   adx_cap: 0.04
+  smooth_window: 20
+  th_window: 80
+  th_decay: 0.5
 position_coeff:
   range: 0.40
   trend: 0.60

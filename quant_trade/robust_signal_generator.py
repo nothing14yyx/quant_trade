@@ -134,6 +134,16 @@ class RobustSignalGenerator:
         self.market_phase = "range"
         self.phase_th_mult = 1.0
         self.phase_dir_mult = {"long": 1.0, "short": 1.0}
+        self.phase_dyn_mult: Mapping[str, Mapping[str, float]] = {}
+        if isinstance(cfg, Mapping):
+            dt_cfg = cfg.get("dynamic_threshold", {})
+            self.smooth_window = dt_cfg.get("smooth_window", 20)
+            self.th_window = dt_cfg.get("th_window", cfg.get("th_window", 60))
+            self.th_decay = dt_cfg.get("th_decay", cfg.get("th_decay", 2.0))
+        else:
+            self.smooth_window = 20
+            self.th_window = 60
+            self.th_decay = 2.0
 
     def set_symbol_categories(
         self,
@@ -194,8 +204,23 @@ class RobustSignalGenerator:
                     "short": float(selected.get("short", 1.0)),
                 }
 
+        dyn_cfg = phase_cfg.get("phase_dyn_mult", {})
+        if isinstance(dyn_cfg, Mapping):
+            try:
+                self.phase_dyn_mult = {
+                    k: {
+                        "atr_mult": float(v.get("atr_mult", 1.0)),
+                        "funding_mult": float(v.get("funding_mult", 1.0)),
+                    }
+                    for k, v in dyn_cfg.items()
+                    if isinstance(v, Mapping)
+                }
+            except Exception:  # pragma: no cover
+                self.phase_dyn_mult = {}
+
         setattr(core, "phase_th_mult", self.phase_th_mult)
         setattr(core, "phase_dir_mult", self.phase_dir_mult)
+        setattr(core, "phase_dyn_mult", self.phase_dyn_mult)
         return self.market_phase
 
     def generate_signal(self, features_1h, features_4h, features_d1, features_15m=None, **kwargs):
@@ -458,15 +483,20 @@ class RobustSignalGenerator:
         :func:`_compute_dynamic_threshold`.
         """
 
+        dyn = self.phase_dyn_mult.get(self.market_phase, {})
+        atr_mult = self.dynamic_th_params.atr_mult * float(dyn.get("atr_mult", 1.0))
+        funding_mult = (
+            self.dynamic_th_params.funding_mult * float(dyn.get("funding_mult", 1.0))
+        )
         params = ThresholdParams(
             base_th=self.signal_params.base_th if base is None else base,
             low_base=self.signal_params.low_base,
             quantile=self.signal_params.quantile,
             rev_boost=self.signal_params.rev_boost,
             rev_th_mult=self.signal_params.rev_th_mult,
-            atr_mult=self.dynamic_th_params.atr_mult,
+            atr_mult=atr_mult,
             atr_cap=self.dynamic_th_params.atr_cap,
-            funding_mult=self.dynamic_th_params.funding_mult,
+            funding_mult=funding_mult,
             funding_cap=self.dynamic_th_params.funding_cap,
             adx_div=self.dynamic_th_params.adx_div,
             adx_cap=self.dynamic_th_params.adx_cap,

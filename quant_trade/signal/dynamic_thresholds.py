@@ -187,6 +187,9 @@ def compute_dynamic_threshold(
     vp = _get(data, "vix_proxy")
     if vp is not None:
         fund_eff += _mult("vix_proxy", 0.25) * abs(vp)
+    iv = _get(data, "iv_proxy")
+    if iv is not None:
+        fund_eff += _mult("iv_proxy", 0.25) * abs(iv)
     th += min(params.funding_cap, fund_eff * params.funding_mult)
 
     adx_eff = abs(_get(data, "adx") or 0.0)
@@ -202,7 +205,7 @@ def compute_dynamic_threshold(
         th = min(th, hist_base)
 
     # --------------------------- regime & rev -------------------------
-    regime = _get(data, "phase") or _classify_regime(
+    regime = _get(data, "phase") or _get(data, "regime") or _classify_regime(
         _get(data, "adx"), _get(data, "bb_width_chg")
     )
     if _get(data, "reversal"):
@@ -236,6 +239,7 @@ class DynamicThresholdInput:
     pred_vol_4h: float | None = None
     pred_vol_d1: float | None = None
     vix_proxy: float | None = None
+    iv_proxy: float | None = None
     regime: str | None = None
     reversal: bool = False
     base: float | None = None

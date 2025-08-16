@@ -94,6 +94,8 @@ class DynamicThreshold(BaseModel):
     smooth_window: int = 20
     smooth_alpha: float = 0.2
     smooth_limit: float = 1.0
+    th_window: int = 60
+    th_decay: float = 2.0
 
 
 class VoteWeights(BaseModel):
