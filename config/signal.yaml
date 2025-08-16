@@ -23,3 +23,11 @@ fusion:
     weak: 1.0
     opposite: 1.0
     conflict: 0.7
+
+signal_threshold:
+  base_th: 0.1
+
+dynamic_threshold:
+  smooth_window: 20
+  th_window: 60
+  th_decay: 2.0

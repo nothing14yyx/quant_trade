@@ -11,8 +11,8 @@ from .dynamic_thresholds import (
     DynamicThresholdParams,
     ThresholdingDynamic,
     calc_dynamic_threshold,
+    compute_dynamic_threshold,
 )
-from .robust_signal_generator import compute_dynamic_threshold
 from .thresholding_dynamic import ThresholdParams
 from .predictor_adapter import PredictorAdapter
 from .factor_scorer import FactorScorerImpl
