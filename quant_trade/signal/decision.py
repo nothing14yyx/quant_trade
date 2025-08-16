@@ -87,21 +87,49 @@ def decide_signal(
     margin = p_up - p_down
 
     bump = config.pmin_bump_when_conflict if higher_conflict else 0.0
-    p_up_th = config.p_up_min + bump
-    p_down_th = config.p_down_min + bump
+    vol_adj = max(vol_pred or 0.0, 0.0)
+    p_up_th = config.p_up_min + bump + vol_adj
+    p_down_th = config.p_down_min + bump + vol_adj
 
     action = "HOLD"
     size = 0.0
-    note = "hold"
+    weight = 1.0
 
     if p_up >= p_up_th and margin >= config.margin_min:
         action = "BUY"
         size = min(config.w_max, config.kelly_gamma * (p_up - p_up_th))
-        note = f"p_up={p_up:.2f}"
+        profit = rise_pred if rise_pred is not None else 0.0
+        risk = drawdown_pred if drawdown_pred is not None else 0.0
+        if rise_pred is not None or drawdown_pred is not None:
+            weight = max(profit - risk, 0.0)
+            size *= weight
+            size = min(size, config.w_max)
     elif p_down >= p_down_th and -margin >= config.margin_min:
         action = "SELL"
         size = min(config.w_max, config.kelly_gamma * (p_down - p_down_th))
-        note = f"p_down={p_down:.2f}"
+        profit = drawdown_pred if drawdown_pred is not None else 0.0
+        risk = rise_pred if rise_pred is not None else 0.0
+        if rise_pred is not None or drawdown_pred is not None:
+            weight = max(profit - risk, 0.0)
+            size *= weight
+            size = min(size, config.w_max)
+
+    note_items = []
+    if action == "BUY":
+        note_items.append(f"p_up={p_up:.2f}")
+    elif action == "SELL":
+        note_items.append(f"p_down={p_down:.2f}")
+    else:
+        note_items.append("hold")
+    if vol_pred is not None:
+        note_items.append(f"vol={vol_pred:.2f}")
+    if rise_pred is not None:
+        note_items.append(f"rise={rise_pred:.2f}")
+    if drawdown_pred is not None:
+        note_items.append(f"dd={drawdown_pred:.2f}")
+    if action != "HOLD" and (rise_pred is not None or drawdown_pred is not None):
+        note_items.append(f"w={weight:.2f}")
+    note = ",".join(note_items)
 
     return {"action": action, "size": size, "note": note}
 
