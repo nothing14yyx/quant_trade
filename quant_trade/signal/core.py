@@ -10,12 +10,58 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Tuple
 from pathlib import Path
+import time
 
 import numpy as np
+import yaml
 
 from . import features_to_scores, ai_inference, multi_period_fusion
 from . import dynamic_thresholds, risk_filters, position_sizing
 from ..config_manager import ConfigManager
+
+# ---------------------------------------------------------------------------
+# 权重与 IC 缓存
+# ---------------------------------------------------------------------------
+
+_WEIGHT_CACHE_PATH = Path("/tmp/quant_trade_weight_cache.yaml")
+_FLUSH_INTERVAL = 600  # seconds
+_last_weight_flush = 0.0
+
+_cached_w_ai: dict[str, float] = {"1h": 1.0, "4h": 1.0, "d1": 1.0}
+_cached_w_factor: dict[str, float] = {"1h": 1.0, "4h": 1.0, "d1": 1.0}
+
+
+def refresh_weights(path: str | Path | None = None) -> tuple[dict[str, float], dict[str, float]]:
+    """外部模块可调用以刷新内部权重缓存."""
+    p = Path(path) if path else _WEIGHT_CACHE_PATH
+    if not p.exists():
+        return _cached_w_ai, _cached_w_factor
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        return _cached_w_ai, _cached_w_factor
+    _cached_w_ai.update({k: float(v) for k, v in (data.get("w_ai") or {}).items()})
+    _cached_w_factor.update({k: float(v) for k, v in (data.get("w_factor") or {}).items()})
+    features_to_scores.category_ic.update(
+        {k: float(v) for k, v in (data.get("category_ic") or {}).items()}
+    )
+    return _cached_w_ai, _cached_w_factor
+
+
+def _maybe_flush_weights(w_ai: Mapping[str, float], w_factor: Mapping[str, float]) -> None:
+    """定期将最新权重与 IC 写入缓存文件."""
+    global _last_weight_flush
+    now = time.time()
+    if now - _last_weight_flush < _FLUSH_INTERVAL:
+        return
+    data = {"w_ai": dict(w_ai), "w_factor": dict(w_factor), "category_ic": features_to_scores.category_ic}
+    try:
+        with open(_WEIGHT_CACHE_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f)
+        _last_weight_flush = now
+    except Exception:
+        pass
 
 
 class AIModelPredictor:  # pragma: no cover - compatibility stub
@@ -89,6 +135,7 @@ def generate_signal(
     atr_d1: float | None = None,
     adx_d1: float | None = None,
     funding: float | None = None,
+    backtest_returns: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     """Generate trading signal using modular pipeline.
 
@@ -129,6 +176,11 @@ def generate_signal(
             return weight * (ic_val / ic_threshold)
         return weight
 
+    def _adjust_return(weight: float, ret: float | None) -> float:
+        if ret is None:
+            return weight
+        return weight * (1.0 + ret)
+
     if isinstance(w_ai, Mapping):
         w_ai_periods = {p: float(w_ai.get(p, 1.0)) for p in periods}
     else:
@@ -137,6 +189,10 @@ def generate_signal(
         w_factor_periods = {p: float(w_factor.get(p, 1.0)) for p in periods}
     else:
         w_factor_periods = {p: float(w_factor) for p in periods}
+
+    for p in periods:
+        w_ai_periods[p] *= _cached_w_ai.get(p, 1.0)
+        w_factor_periods[p] *= _cached_w_factor.get(p, 1.0)
 
     cat_weights = dict(factor_weights or {})
     if ic_stats:
@@ -152,6 +208,27 @@ def generate_signal(
         cat_weights = {
             k: _adjust_weight(v, ic_stats.get(k)) for k, v in cat_weights.items()
         }
+        _cached_w_ai.update(w_ai_periods)
+        _cached_w_factor.update(w_factor_periods)
+        _maybe_flush_weights(_cached_w_ai, _cached_w_factor)
+    elif backtest_returns:
+        for p in periods:
+            w_ai_periods[p] = _adjust_return(
+                w_ai_periods[p],
+                backtest_returns.get(f"ai_{p}") or backtest_returns.get("ai"),
+            )
+            w_factor_periods[p] = _adjust_return(
+                w_factor_periods[p],
+                backtest_returns.get(f"factor_{p}") or backtest_returns.get("factor"),
+            )
+        cat_weights = {
+            k: _adjust_return(v, backtest_returns.get(k))
+            for k, v in cat_weights.items()
+        }
+        features_to_scores.record_ic(None)
+        _cached_w_ai.update(w_ai_periods)
+        _cached_w_factor.update(w_factor_periods)
+        _maybe_flush_weights(_cached_w_ai, _cached_w_factor)
     else:
         features_to_scores.record_ic(None)
 

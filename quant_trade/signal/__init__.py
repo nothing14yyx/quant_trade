@@ -1,6 +1,6 @@
 """Signal generation subpackage exports."""
 
-from .core import generate_signal
+from .core import generate_signal, refresh_weights
 from .features_to_scores import get_factor_scores, get_factor_scores_batch
 from .ai_inference import get_period_ai_scores, get_reg_predictions
 from .multi_period_fusion import fuse_scores
@@ -54,6 +54,7 @@ __all__ = [
     "VotingModel",
     "Vote",
     "fuse_votes",
+    "refresh_weights",
 ]
 if compute_risk_multipliers is not None:
     __all__.append("compute_risk_multipliers")
