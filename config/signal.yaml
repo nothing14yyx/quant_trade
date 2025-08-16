@@ -8,6 +8,7 @@ w_factor:
   volume: 1.0
   sentiment: 1.0
   funding: 1.0
+min_exposure_base: 0.2
 ic_threshold: 0.0
 cache:
   factor_maxsize: 300

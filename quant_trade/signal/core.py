@@ -50,7 +50,7 @@ def _safe_factor_scores(period_features: Mapping[str, Mapping[str, Any]]) -> dic
 
 
 def _load_fusion_cfg() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent / "config" / "signal.yaml"
+    cfg_path = Path(__file__).resolve().parents[2] / "config" / "signal.yaml"
     try:
         return ConfigManager(cfg_path).get("fusion", {}) or {}
     except Exception:
@@ -81,6 +81,7 @@ def generate_signal(
     ic_stats: Mapping[str, float] | None = None,
     ic_threshold: float = 0.0,
     factor_weights: Mapping[str, float] | None = None,
+    combine_score: Any | None = None,
 ) -> dict[str, Any]:
     """Generate trading signal using modular pipeline.
 
@@ -148,20 +149,30 @@ def generate_signal(
         features_to_scores.record_ic(None)
 
     # 将因子分与 AI 分按权重求和得到每周期的综合得分
-    combined = {}
-    for p in periods:
-        fs = factor_scores.get(p, {})
-        if fs:
-            total_w = 0.0
-            weighted = 0.0
-            for k, v in fs.items():
-                w = cat_weights.get(k, 1.0)
-                weighted += w * v
-                total_w += w
-            f_val = weighted / total_w if total_w else 0.0
-        else:
-            f_val = 0.0
-        combined[p] = w_ai_periods[p] * ai_scores.get(p, 0.0) + w_factor_periods[p] * f_val
+    if callable(combine_score):
+        combined = {
+            p: float(
+                combine_score(
+                    ai_scores.get(p, 0.0), factor_scores.get(p, {}), cat_weights
+                )
+            )
+            for p in periods
+        }
+    else:
+        combined = {}
+        for p in periods:
+            fs = factor_scores.get(p, {})
+            if fs:
+                total_w = 0.0
+                weighted = 0.0
+                for k, v in fs.items():
+                    w = cat_weights.get(k, 1.0)
+                    weighted += w * v
+                    total_w += w
+                f_val = weighted / total_w if total_w else 0.0
+            else:
+                f_val = 0.0
+            combined[p] = w_ai_periods[p] * ai_scores.get(p, 0.0) + w_factor_periods[p] * f_val
 
     # 3. 多周期融合
     ic_weights: Tuple[float, float, float] = (1.0, 1.0, 1.0)
@@ -203,11 +214,24 @@ def generate_signal(
 
     # 6. 仓位与 TP/SL
     final_score = fused_score * score_mult
+    cfg_path = Path(__file__).resolve().parent.parent / "config" / "signal.yaml"
+    try:
+        min_exp_base = float(ConfigManager(cfg_path).get("min_exposure_base", 0.0))
+    except Exception:  # pragma: no cover - fallback to zero
+        min_exp_base = 0.0
+    min_exposure = min_exp_base * pos_mult
+    if isinstance(vol_preds, dict):
+        vol_ref = vol_preds.get("1h") or vol_preds.get("4h")
+        if vol_ref is not None and np.isfinite(vol_ref):
+            vol_ref = min(max(abs(float(vol_ref)), 0.0), 1.0)
+            min_exposure *= 1 - vol_ref
+    if min_exposure <= 0:
+        min_exposure = None
     pos_size = position_sizing.calc_position_size(
         final_score,
         base_th,
         max_position=pos_mult,
-        min_exposure=0.2 * pos_mult,
+        min_exposure=min_exposure,
     )
     take_profit, stop_loss = None, None
 
