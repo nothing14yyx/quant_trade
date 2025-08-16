@@ -106,6 +106,7 @@ class RiskFiltersImpl:
         symbol: str | None,
         *,
         dyn_base: float | None,
+        periods: Sequence[str] = ("1h", "4h", "d1"),
     ) -> tuple[float, float]:
         """计算风险乘数"""
         core = self.core
@@ -129,8 +130,10 @@ class RiskFiltersImpl:
 
         atr_4h = raw_f4h.get("atr_pct_4h") if raw_f4h else None
         adx_4h = raw_f4h.get("adx_4h") if raw_f4h else None
-        atr_d1 = raw_fd1.get("atr_pct_d1") if raw_fd1 else None
-        adx_d1 = raw_fd1.get("adx_d1") if raw_fd1 else None
+
+        use_d1 = "d1" in periods
+        atr_d1 = raw_fd1.get("atr_pct_d1") if (use_d1 and raw_fd1) else None
+        adx_d1 = raw_fd1.get("adx_d1") if (use_d1 and raw_fd1) else None
 
         vix_p = None
         if global_metrics is not None:
@@ -147,17 +150,18 @@ class RiskFiltersImpl:
             bb_chg,
             channel_pos,
         )
-        rsi_d1 = std_d1.get("rsi_d1", 50)
-        hist_d1 = cache.get("_raw_history", {}).get("d1", [])
-        pairs = [(h.get("rsi_d1"), h.get("vol_ma_ratio_d1")) for h in hist_d1]
-        rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
-        vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
-        lower, _ = ThresholdingDynamic.adaptive_rsi_threshold(
-            rsi_hist, vol_hist, core.rsi_k
-        )
-        if std_d1.get("break_support_d1", 0) > 0 and rsi_d1 < lower:
-            regime = "range"
-            rev_dir = 1
+        if use_d1:
+            rsi_d1 = std_d1.get("rsi_d1", 50)
+            hist_d1 = cache.get("_raw_history", {}).get("d1", [])
+            pairs = [(h.get("rsi_d1"), h.get("vol_ma_ratio_d1")) for h in hist_d1]
+            rsi_hist = [p[0] for p in pairs if p[0] is not None and p[1] is not None]
+            vol_hist = [p[1] for p in pairs if p[0] is not None and p[1] is not None]
+            lower, _ = ThresholdingDynamic.adaptive_rsi_threshold(
+                rsi_hist, vol_hist, core.rsi_k
+            )
+            if std_d1.get("break_support_d1", 0) > 0 and rsi_d1 < lower:
+                regime = "range"
+                rev_dir = 1
         cfg_th = core.signal_threshold_cfg
         params = core.signal_params
         cfg_base = cfg_th.get("base_th", params.base_th)
@@ -175,7 +179,7 @@ class RiskFiltersImpl:
                 channel_pos=channel_pos,
                 pred_vol=vol_preds.get("1h"),
                 pred_vol_4h=vol_preds.get("4h"),
-                pred_vol_d1=vol_preds.get("d1"),
+                pred_vol_d1=vol_preds.get("d1") if use_d1 else None,
                 vix_proxy=vix_p,
                 regime=regime,
                 base=base_input,
@@ -203,7 +207,7 @@ class RiskFiltersImpl:
 
         funding_conflicts = 0
         for p, raw_f in [("1h", raw_f1h), ("4h", raw_f4h), ("d1", raw_fd1)]:
-            if raw_f is None:
+            if p not in periods or raw_f is None:
                 continue
             f_rate = raw_f.get(f"funding_rate_{p}", 0)
             if abs(f_rate) > 0.0005 and np.sign(f_rate) * np.sign(fused_score) < 0:
@@ -348,6 +352,7 @@ class RiskFiltersImpl:
         symbol: str | None,
         *,
         dyn_base: float | None,
+        periods: Sequence[str] = ("1h", "4h", "d1"),
     ) -> tuple[float, float, list[str]]:
         """兼容旧接口的包装函数"""
         score_mult, pos_mult = self.compute_risk_multipliers(
@@ -368,6 +373,7 @@ class RiskFiltersImpl:
             global_metrics,
             symbol,
             dyn_base=dyn_base,
+            periods=periods,
         )
         reasons = self.collect_risk_reasons(
             fused_score, score_mult, pos_mult, cache
