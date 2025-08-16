@@ -4,13 +4,20 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Tuple
+from typing import Mapping, Tuple
 
 import numpy as np
 
 PERIODS: Tuple[str, str, str] = ("1h", "4h", "d1")
 
-def consensus_check(s1: float, s2: float, s3: float, min_agree: int = 2) -> int:
+def consensus_check(
+    s1: float,
+    s2: float,
+    s3: float,
+    min_agree: int = 2,
+    *,
+    weights: Tuple[float, float, float] | None = None,
+) -> int:
     """多周期方向共振检查。
 
     Parameters
@@ -19,13 +26,18 @@ def consensus_check(s1: float, s2: float, s3: float, min_agree: int = 2) -> int:
         三个周期的得分。
     min_agree : int, default 2
         至少多少个周期同向才认为有效。
+    weights : tuple of float, optional
+        对应周期的融合权重, 为 0 时忽略该周期。
 
     Returns
     -------
     int
         方向标记, 1 表示向上, -1 表示向下, 0 表示无共识。
     """
-    signs = np.sign([s1, s2, s3])
+    scores = np.array([s1, s2, s3], dtype=float)
+    if weights is not None:
+        scores = np.array([s if w != 0 else 0.0 for s, w in zip(scores, weights)])
+    signs = np.sign(scores)
     non_zero = [g for g in signs if g != 0]
     if len(non_zero) < min_agree:
         return 0
@@ -96,21 +108,45 @@ def fuse_scores(
     *,
     cycle_weight: dict | None = None,
     conflict_mult: float = 0.7,
+    ic_stats: Mapping[str, float] | None = None,
+    min_agree: int = 2,
 ) -> tuple[float, bool, bool, bool]:
     """按照多周期共振逻辑融合得分。"""
     periods = PERIODS
     s1, s4, sd = (scores[p] for p in periods)
     w1, w4, wd = ic_weights
 
-    consensus_dir = consensus_check(s1, s4, sd)
-    consensus_all = (
-        consensus_dir != 0 and np.sign(s1) == np.sign(s4) == np.sign(sd)
-    )
+    if ic_stats:
+        adj = []
+        total = 0.0
+        for p, w in zip(periods, (w1, w4, wd)):
+            ic_val = ic_stats.get(p, 0.0)
+            new_w = w * (1 + ic_val)
+            adj.append(new_w)
+            total += new_w
+        if total > 0:
+            w1, w4, wd = [a / total for a in adj]
+
+    weights = (w1, w4, wd)
+    consensus_dir = consensus_check(s1, s4, sd, min_agree, weights=weights)
+
+    signs = {
+        p: (np.sign(scores[p]) if w != 0 else 0)
+        for p, w in zip(periods, weights)
+    }
+    active = [p for p, w in zip(periods, weights) if w != 0]
+    consensus_all = consensus_dir != 0 and all(signs[p] == consensus_dir for p in active)
     consensus_14 = (
-        consensus_dir != 0 and np.sign(s1) == np.sign(s4) and not consensus_all
+        consensus_dir != 0
+        and all(p in active for p in ("1h", "4h"))
+        and signs["1h"] == signs["4h"]
+        and not consensus_all
     )
     consensus_4d1 = (
-        consensus_dir != 0 and np.sign(s4) == np.sign(sd) and np.sign(s1) != np.sign(s4)
+        consensus_dir != 0
+        and all(p in active for p in ("4h", "d1"))
+        and signs["4h"] == signs["d1"]
+        and ("1h" not in active or signs["1h"] != signs["4h"])
     )
 
     cw = cycle_weight or {}
@@ -143,6 +179,7 @@ def fuse_scores(
         )
     ):
         fused_score *= cw.get("opposite", 1.0)
+    conflict_mult = cw.get("conflict", conflict_mult)
     if not (consensus_all or consensus_14 or consensus_4d1):
         fused_score *= conflict_mult
     return fused_score, consensus_all, consensus_14, consensus_4d1

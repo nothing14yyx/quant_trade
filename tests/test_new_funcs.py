@@ -122,10 +122,11 @@ def test_fuse_multi_cycle():
 
 def test_fuse_multi_cycle_conflict_mult():
     rsg = make_dummy_rsg()
+    rsg.cycle_weight['conflict'] = 0.5
+    rsg.conflict_mult = 0.9
     scores = {'1h': 0.2, '4h': -0.1, 'd1': 0.1}
     fused, a, b, c = rsg.fuse_multi_cycle(scores, (0.5, 0.3, 0.2), False)
-    expected = scores['1h'] * getattr(rsg, 'conflict_mult', 0.7)
-    assert fused == pytest.approx(expected)
+    assert fused == pytest.approx(0.2 * 0.5)
     assert not (a or b or c)
 
 
