@@ -85,6 +85,7 @@ def make_dummy_rsg():
             'quantile': 0.80,
         },
         'ob_threshold': {'min_ob_th': 0.10},
+        'oi_protection': {'scale': 0.9, 'crowding_threshold': 0.98, 'window': 20, 'std_mult': 2.0},
         'risk_budget_per_trade': 0.01,
         'max_pos_pct': 0.3,
         'model_paths': {},

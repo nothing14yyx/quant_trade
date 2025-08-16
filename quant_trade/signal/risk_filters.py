@@ -51,6 +51,8 @@ class RiskFiltersImpl:
         vol_pred: float | None,
         oi_overheat: bool,
         symbol: str | None,
+        market_depth: float | None = None,
+        position_skew: float | None = None,
     ) -> tuple[float, float, float | None]:
         """计算拥挤度因子并调整 ``fused_score``"""
         th_oi = cache.get("th_oi")
@@ -61,7 +63,11 @@ class RiskFiltersImpl:
         crowding_factor = 1.0
         if not oi_overheat and all_scores_list is not None:
             factor = self.core.crowding_protection(
-                all_scores_list, fused_score, base_th
+                all_scores_list,
+                fused_score,
+                base_th,
+                market_depth=market_depth,
+                position_skew=position_skew,
             )
             fused_score *= factor
             crowding_factor *= factor
@@ -223,6 +229,15 @@ class RiskFiltersImpl:
                 pos_mult = 0.0
 
         adj_score = fused_score * score_mult
+        market_depth = None
+        position_skew = None
+        if open_interest is not None:
+            market_depth = open_interest.get("market_depth", market_depth)
+            position_skew = open_interest.get("position_skew", position_skew)
+        if global_metrics is not None:
+            market_depth = global_metrics.get("market_depth", market_depth)
+            position_skew = global_metrics.get("position_skew", position_skew)
+
         _, crowding_factor, th_oi = self.apply_crowding_protection(
             adj_score,
             base_th=base_th,
@@ -232,6 +247,8 @@ class RiskFiltersImpl:
             vol_pred=vol_preds.get("1h"),
             oi_overheat=cache.get("oi_overheat", False),
             symbol=symbol,
+            market_depth=market_depth,
+            position_skew=position_skew,
         )
         score_mult *= crowding_factor
         self.last_th_oi = th_oi
@@ -241,7 +258,7 @@ class RiskFiltersImpl:
             oi_change=open_interest.get("oi_chg") if open_interest else None,
         )
 
-        score_mult *= 1 - core.risk_adjust_factor * risk_score
+        pos_mult *= 1 - core.risk_adjust_factor * risk_score
         with core._lock:
             atr_hist = [
                 r.get("atr_pct_1h")

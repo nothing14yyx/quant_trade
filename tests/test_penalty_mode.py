@@ -51,8 +51,8 @@ def test_penalty_on_risk_filters():
     )
     assert res is not None
     score_mult, pos_mult, reasons = res
-    assert pytest.approx(score_mult, rel=1e-6) == 0.0245
-    assert pytest.approx(pos_mult, rel=1e-6) == 0.25
+    assert pytest.approx(score_mult, rel=1e-6) == 0.245
+    assert pytest.approx(pos_mult, rel=1e-6) == 0.025
     assert RiskReason.FUNDING_PENALTY.value in reasons
     assert RiskReason.RISK_LIMIT.value in reasons
 

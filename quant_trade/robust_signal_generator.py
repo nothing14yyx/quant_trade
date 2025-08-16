@@ -223,6 +223,30 @@ class RobustSignalGenerator:
         setattr(core, "phase_dyn_mult", self.phase_dyn_mult)
         return self.market_phase
 
+    def get_dynamic_oi_threshold(self, pred_vol: float | None = None) -> float:
+        """根据 OI 变化历史计算动态阈值。
+
+        阈值 = 均值 + ``std_mult`` × 标准差，并可根据预测波动放大。
+        """
+
+        cfg = getattr(self.cfg, "oi_protection", {})
+        window = getattr(cfg, "window", 20)
+        std_mult = getattr(cfg, "std_mult", 2.0)
+
+        hist = list(getattr(self, "oi_change_history", []))
+        if window > 0:
+            hist = hist[-window:]
+        if not hist:
+            return 0.0
+
+        arr = np.abs(np.asarray(hist, dtype=float))
+        mean = float(arr.mean())
+        std = float(arr.std())
+        th = mean + std_mult * std
+        if pred_vol is not None and not np.isnan(pred_vol):
+            th *= 1 + abs(pred_vol)
+        return th
+
     def generate_signal(self, features_1h, features_4h, features_d1, features_15m=None, **kwargs):
         stub_methods = (
             "_prepare_inputs",

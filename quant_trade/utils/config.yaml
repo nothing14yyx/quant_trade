@@ -626,6 +626,8 @@ signal_filters:
 oi_protection:
   scale: 0.9
   crowding_threshold: 0.98
+  window: 20
+  std_mult: 2.0
 veto_level: 0.9
 veto_conflict_count: 1
 flip_coeff: 0.6

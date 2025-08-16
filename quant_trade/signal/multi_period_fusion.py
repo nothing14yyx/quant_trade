@@ -54,6 +54,8 @@ def crowding_protection(
     *,
     max_same_direction_rate: float = 0.9,
     equity_drawdown: float = 0.0,
+    market_depth: float | None = None,
+    position_skew: float | None = None,
 ) -> float:
     """根据同向排名抑制过度拥挤的信号, 返回衰减系数。"""
     if not scores or len(scores) < 30:
@@ -83,6 +85,14 @@ def crowding_protection(
 
     factor = 1.0 - 0.2 * intensity
     factor *= max(0.6, 1 - equity_drawdown)
+
+    if market_depth is not None and not np.isnan(market_depth):
+        depth_adj = max(0.5, min(1.0, float(market_depth)))
+        factor *= depth_adj
+    if position_skew is not None and not np.isnan(position_skew):
+        skew_adj = 1 - min(0.5, abs(float(position_skew)))
+        factor *= max(0.0, skew_adj)
+
     return factor
 
 
